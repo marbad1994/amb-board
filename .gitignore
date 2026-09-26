@@ -2,7 +2,7 @@ node_modules/
 dist/
 build/
 .env
-server/data/*.sqlite
+server/data/*.sqlite*
 server/uploads/*
 !server/uploads/.gitkeep
 *.log
