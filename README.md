@@ -4,6 +4,9 @@ A self-hosted, mobile-first task board. Multiple projects, each with its own
 board of draggable columns and cards, plus a shared idea board for loose
 "post-it" style notes. Card and note descriptions support voice dictation in
 English, Romanian or Swedish, with output always normalized to English.
+Cards also support labels, and an "AI task" helper lets you describe a task
+in plain speech (any of the three languages) and have the title, description,
+owner, column and labels filled in automatically.
 
 ## Stack
 
@@ -16,6 +19,10 @@ English, Romanian or Swedish, with output always normalized to English.
 - **Translation**: server-side call to xAI's Grok API to translate dictated
   Romanian/Swedish text to English. Requires an API key (see below); without
   one, dictated non-English text is saved as-is.
+- **AI task helper**: same xAI Grok API, prompted to extract a structured
+  task (title, description, owner, column, labels) from a free-form
+  description in English, Romanian or Swedish. Without the API key it falls
+  back to a manual form pre-filled with the raw text.
 
 ## Requirements
 
@@ -95,3 +102,14 @@ selector next to the microphone button on any description or comment field.
 English speech is used as-is; Romanian and Swedish speech is sent to the
 server's `/api/translate` endpoint and translated to English before being
 inserted into the text field.
+
+## AI task helper
+
+On any project board, the "AI task" button opens a helper where you speak or
+type what you want done, in English, Romanian or Swedish — mentioning who
+should do it and any relevant context — then tap "Generate task". The
+description is sent to `/api/ai/parse-task`, which asks Grok to translate it
+and extract a title, description, owner, target column, and up to three
+labels (reusing labels already used on the board where they fit). You can
+edit any of the fields before creating the card. Labels are also editable
+directly on any card, from its detail view.

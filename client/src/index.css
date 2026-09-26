@@ -585,6 +585,51 @@ a {
   gap: 2px;
 }
 
+/* ---------- Labels ---------- */
+
+.card__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.label-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+
+.label-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  border-radius: 50%;
+  width: 15px;
+  height: 15px;
+  color: white;
+  padding: 0;
+}
+
+.label-chip--sm {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
 /* ---------- Modal ---------- */
 
 .modal-overlay {

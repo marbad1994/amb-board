@@ -3,6 +3,7 @@ import { X, Trash2, Paperclip, Send, FileText } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
 import DictationButton from './DictationButton.jsx';
+import { labelColor } from '../utils/labelColor.js';
 
 const STATUSES = [
   { value: 'todo', label: 'To do' },
@@ -16,6 +17,7 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
   const [card, setCard] = useState(null);
   const [error, setError] = useState('');
   const [commentText, setCommentText] = useState('');
+  const [labelInput, setLabelInput] = useState('');
   const fileInputRef = useRef(null);
   const saveTimer = useRef(null);
 
@@ -88,6 +90,20 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
     onChanged?.(updated);
   };
 
+  const addLabel = () => {
+    const text = labelInput.trim();
+    if (!text) return;
+    const current = card.labels || [];
+    if (!current.some((l) => l.toLowerCase() === text.toLowerCase())) {
+      patch({ labels: [...current, text] });
+    }
+    setLabelInput('');
+  };
+
+  const removeLabel = (label) => {
+    patch({ labels: (card.labels || []).filter((l) => l !== label) });
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -143,6 +159,40 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="field">
+              <label>Labels</label>
+              <div className="label-chip-row">
+                {(card.labels || []).map((label) => (
+                  <span key={label} className="label-chip" style={{ background: labelColor(label) }}>
+                    {label}
+                    <button type="button" onClick={() => removeLabel(label)} title="Remove label">
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+                {!card.labels?.length && (
+                  <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No labels yet.</span>
+                )}
+              </div>
+              <div className="field-with-mic__row" style={{ marginTop: 6 }}>
+                <input
+                  type="text"
+                  placeholder="Add a label"
+                  value={labelInput}
+                  onChange={(e) => setLabelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addLabel();
+                    }
+                  }}
+                />
+                <button type="button" className="btn btn-ghost" onClick={addLabel}>
+                  Add
+                </button>
+              </div>
             </div>
 
             <div className="field-with-mic">

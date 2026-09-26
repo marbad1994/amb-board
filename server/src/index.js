@@ -10,6 +10,7 @@ import cardsRouter from './routes/cards.js';
 import attachmentsRouter from './routes/attachments.js';
 import ideasRouter from './routes/ideas.js';
 import translateRouter from './routes/translate.js';
+import aiRouter from './routes/ai.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uploadsDir = join(__dirname, '..', 'uploads');
@@ -29,6 +30,7 @@ app.use('/api/cards', cardsRouter);
 app.use('/api/cards', attachmentsRouter);
 app.use('/api/ideas', ideasRouter);
 app.use('/api/translate', translateRouter);
+app.use('/api/ai', aiRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

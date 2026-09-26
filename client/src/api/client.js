@@ -67,4 +67,8 @@ export const api = {
   // translate
   translate: (text, sourceLang) =>
     request('/translate', { method: 'POST', body: JSON.stringify({ text, sourceLang }) }),
+
+  // AI task helper
+  aiParseTask: (projectId, text, sourceLang) =>
+    request('/ai/parse-task', { method: 'POST', body: JSON.stringify({ projectId, text, sourceLang }) }),
 };

@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { MessageSquare, Paperclip, User } from 'lucide-react';
+import { labelColor } from '../utils/labelColor.js';
 
 const STATUS_LABEL = {
   todo: 'To do',
@@ -30,6 +31,15 @@ export default function CardItem({ card, onOpen }) {
       onClick={() => !isDragging && onOpen(card)}
     >
       <p className="card__title">{card.title}</p>
+      {card.labels?.length > 0 && (
+        <div className="card__labels">
+          {card.labels.map((label) => (
+            <span key={label} className="label-chip label-chip--sm" style={{ background: labelColor(label) }}>
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="card__meta">
         <span className={`badge status-${card.status}`}>{STATUS_LABEL[card.status] || card.status}</span>
         {card.owner && (

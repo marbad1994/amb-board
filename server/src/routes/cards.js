@@ -1,12 +1,28 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
-import { db, nowIso } from '../db.js';
+import { db, nowIso, parseLabels } from '../db.js';
 
 const router = Router();
+
+export function sanitizeLabels(labels) {
+  if (!Array.isArray(labels)) return [];
+  const seen = new Set();
+  const clean = [];
+  for (const label of labels) {
+    const text = String(label || '').trim().slice(0, 24);
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    clean.push(text);
+    if (clean.length >= 6) break;
+  }
+  return clean;
+}
 
 function fullCard(id) {
   const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(id);
   if (!card) return null;
+  card.labels = parseLabels(card);
   card.comments = db.prepare('SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC').all(id);
   card.attachments = db.prepare('SELECT * FROM attachments WHERE card_id = ? ORDER BY uploaded_at ASC').all(id);
   return card;
@@ -19,15 +35,27 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/columns/:columnId/cards', (req, res) => {
-  const { title, description, owner, creator, status } = req.body;
+  const { title, description, owner, creator, status, labels } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title is required' });
   const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM cards WHERE column_id = ?')
     .get(req.params.columnId).m;
   const id = nanoid();
   const ts = nowIso();
-  db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, position, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, req.params.columnId, title.trim(), description || '', status || 'todo', owner || '', creator || '', maxPos + 1, ts, ts);
+  db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, labels, position, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      id,
+      req.params.columnId,
+      title.trim(),
+      description || '',
+      status || 'todo',
+      owner || '',
+      creator || '',
+      JSON.stringify(sanitizeLabels(labels)),
+      maxPos + 1,
+      ts,
+      ts
+    );
   res.status(201).json(fullCard(id));
 });
 
@@ -39,8 +67,9 @@ router.patch('/:id', (req, res) => {
   for (const f of fields) {
     if (req.body[f] !== undefined) updated[f] = req.body[f];
   }
-  db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, updated_at = ? WHERE id = ?`)
-    .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, nowIso(), req.params.id);
+  const labels = req.body.labels !== undefined ? sanitizeLabels(req.body.labels) : parseLabels(card);
+  db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, updated_at = ? WHERE id = ?`)
+    .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), nowIso(), req.params.id);
   res.json(fullCard(req.params.id));
 });
 

@@ -10,12 +10,13 @@ import {
   useSensors,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, Sparkles } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
 import Column from '../components/Column.jsx';
 import CardItem from '../components/CardItem.jsx';
 import CardModal from '../components/CardModal.jsx';
+import AITaskModal from '../components/AITaskModal.jsx';
 
 function findColumnOfCard(columns, cardId) {
   return columns.find((col) => col.cards.some((c) => c.id === cardId));
@@ -34,6 +35,7 @@ export default function BoardPage() {
   const [activeCardId, setActiveCardId] = useState(null);
   const [activeColumnId, setActiveColumnId] = useState(null);
   const [openCardId, setOpenCardId] = useState(null);
+  const [aiHelperOpen, setAiHelperOpen] = useState(false);
 
   useEffect(() => {
     api.getProject(projectId).then(setProject).catch((err) => setError(err.message));
@@ -178,6 +180,17 @@ export default function BoardPage() {
     }
   };
 
+  const createCardFull = async ({ columnId, ...fields }) => {
+    try {
+      const card = await api.createCard(columnId, fields);
+      setColumns((prev) =>
+        prev.map((c) => (c.id === columnId ? { ...c, cards: [...c.cards, { ...card, commentCount: 0, attachmentCount: 0 }] } : c))
+      );
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleCardChanged = (updatedCard) => {
     setColumns((prev) =>
       prev.map((col) => ({
@@ -215,6 +228,17 @@ export default function BoardPage() {
           <ArrowLeft size={18} />
         </button>
         <h2>{project?.name || 'Loading…'}</h2>
+        {columns && columns.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setAiHelperOpen(true)}
+            title="AI task helper"
+          >
+            <Sparkles size={16} />
+            AI task
+          </button>
+        )}
       </div>
 
       {columns === null ? (
@@ -298,6 +322,16 @@ export default function BoardPage() {
           onClose={() => setOpenCardId(null)}
           onChanged={handleCardChanged}
           onDeleted={handleCardDeleted}
+        />
+      )}
+
+      {aiHelperOpen && columns && (
+        <AITaskModal
+          projectId={projectId}
+          columns={columns.map((c) => ({ id: c.id, name: c.name }))}
+          defaultName={name}
+          onClose={() => setAiHelperOpen(false)}
+          onCreate={createCardFull}
         />
       )}
     </div>

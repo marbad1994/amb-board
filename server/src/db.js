@@ -36,6 +36,7 @@ db.exec(`
     status TEXT DEFAULT 'todo',
     owner TEXT DEFAULT '',
     creator TEXT DEFAULT '',
+    labels TEXT DEFAULT '[]',
     position INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -76,6 +77,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_comments_card ON comments(card_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_card ON attachments(card_id);
 `);
+
+// Migration for databases created before the `labels` column existed.
+const cardColumns = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name);
+if (!cardColumns.includes('labels')) {
+  db.exec("ALTER TABLE cards ADD COLUMN labels TEXT DEFAULT '[]'");
+}
+
+export function parseLabels(row) {
+  try {
+    const labels = JSON.parse(row.labels || '[]');
+    return Array.isArray(labels) ? labels : [];
+  } catch {
+    return [];
+  }
+}
 
 export function nowIso() {
   return new Date().toISOString();

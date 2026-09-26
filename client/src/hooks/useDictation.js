@@ -10,7 +10,7 @@ const LANG_LOCALES = {
 const SpeechRecognitionImpl =
   typeof window !== 'undefined' ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
 
-export function useDictation({ onResult }) {
+export function useDictation({ onResult, translate = true }) {
   const [listening, setListening] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [error, setError] = useState('');
@@ -48,7 +48,7 @@ export function useDictation({ onResult }) {
           .trim();
         if (!transcript) return;
 
-        if (lang === 'en') {
+        if (lang === 'en' || !translate) {
           onResult(transcript, { translated: false });
           return;
         }
@@ -68,7 +68,7 @@ export function useDictation({ onResult }) {
       recognitionRef.current = recognition;
       recognition.start();
     },
-    [onResult, supported]
+    [onResult, supported, translate]
   );
 
   return { start, stop, listening, translating, error, supported };

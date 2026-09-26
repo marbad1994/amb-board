@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
-import { db, nowIso } from '../db.js';
+import { db, nowIso, parseLabels } from '../db.js';
 
 const router = Router();
 
@@ -16,7 +16,7 @@ router.get('/:projectId/columns', (req, res) => {
   `);
   const result = columns.map((col) => ({
     ...col,
-    cards: cardsStmt.all(col.id),
+    cards: cardsStmt.all(col.id).map((card) => ({ ...card, labels: parseLabels(card) })),
   }));
   res.json(result);
 });
