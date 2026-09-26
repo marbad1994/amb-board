@@ -1,0 +1,16 @@
+{
+  "name": "amb-board-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --experimental-sqlite src/index.js",
+    "start": "node --experimental-sqlite src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^2.4.0",
+    "nanoid": "^5.0.9"
+  }
+}
