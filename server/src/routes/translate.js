@@ -19,32 +19,35 @@ router.post('/', async (req, res) => {
     return res.json({ text: text.trim(), translated: false, sourceLang: 'en' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.X_GROK_API_KEY;
   if (!apiKey) {
     return res.json({
       text: text.trim(),
       translated: false,
       sourceLang: sourceLang || 'unknown',
-      warning: 'ANTHROPIC_API_KEY is not configured on the server; text was left untranslated.',
+      warning: 'X_GROK_API_KEY is not configured on the server; text was left untranslated.',
     });
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system:
-          'You are a translation engine. Translate the user text from ' +
-          source +
-          ' into natural, fluent English. Respond with ONLY the translated text, no preamble, no quotes, no explanation.',
-        messages: [{ role: 'user', content: text.trim() }],
+        model: 'grok-4',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a translation engine. Translate the user text from ' +
+              source +
+              ' into natural, fluent English. Respond with ONLY the translated text, no preamble, no quotes, no explanation.',
+          },
+          { role: 'user', content: text.trim() },
+        ],
       }),
     });
 
@@ -55,7 +58,7 @@ router.post('/', async (req, res) => {
     }
 
     const data = await response.json();
-    const translated = data.content?.[0]?.text?.trim() || text.trim();
+    const translated = data.choices?.[0]?.message?.content?.trim() || text.trim();
     res.json({ text: translated, translated: true, sourceLang: sourceLang || 'unknown' });
   } catch (err) {
     console.error('Translate error:', err);

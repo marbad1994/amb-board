@@ -13,14 +13,14 @@ English, Romanian or Swedish, with output always normalized to English.
   (no CSS framework), icons via `lucide-react`.
 - **Dictation**: browser Web Speech API (no external service, works offline
   per-browser support).
-- **Translation**: server-side call to Anthropic's API to translate dictated
+- **Translation**: server-side call to xAI's Grok API to translate dictated
   Romanian/Swedish text to English. Requires an API key (see below); without
   one, dictated non-English text is saved as-is.
 
 ## Requirements
 
 - Node.js 22.5+ (uses the built-in experimental `node:sqlite` module).
-- (Optional) an Anthropic API key for AI translation.
+- (Optional) an xAI API key (`X_GROK_API_KEY`) for AI translation.
 - (Optional) [Tailscale](https://tailscale.com) installed on this machine and
   on the devices you want to reach it from, for access outside your LAN.
 
@@ -29,7 +29,7 @@ English, Romanian or Swedish, with output always normalized to English.
 ```bash
 npm install                 # installs root, server and client workspaces
 cp server/.env.example server/.env
-# edit server/.env and set ANTHROPIC_API_KEY if you want AI translation
+# edit server/.env and set X_GROK_API_KEY if you want AI translation
 ```
 
 ## Development
