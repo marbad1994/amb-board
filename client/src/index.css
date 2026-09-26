@@ -266,6 +266,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-bottom: 14px;
 }
 
 .field-with-mic__row {
@@ -281,20 +282,11 @@ a {
 /* ---------- Dictation ---------- */
 
 .dictation {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-}
-
-.dictation__lang {
-  min-height: var(--touch-target);
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .dictation__mic {
@@ -322,9 +314,18 @@ a {
 }
 
 .dictation__error {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  width: 160px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-text);
+  color: var(--color-bg);
   font-size: 11px;
-  color: var(--color-danger);
-  max-width: 140px;
+  line-height: 1.35;
+  box-shadow: var(--shadow-elevated);
 }
 
 /* ---------- Projects list ---------- */
@@ -382,6 +383,7 @@ a {
 
 .project-card h3 {
   margin: 0 0 4px;
+  padding-right: 32px;
   font-size: 16px;
 }
 
@@ -810,7 +812,7 @@ a {
 
 .postit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
   max-width: 1100px;
   margin: 0 auto;
@@ -819,12 +821,20 @@ a {
 .postit {
   border-radius: 6px;
   padding: 14px;
-  min-height: 140px;
+  padding-top: 34px;
+  min-height: 160px;
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   position: relative;
+}
+
+.postit__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
 }
 
 .postit textarea {
@@ -835,18 +845,23 @@ a {
   font-size: 14px;
   line-height: 1.4;
   color: #1c1f26;
+  min-height: 60px;
 }
 
 .postit textarea:focus {
   outline: none;
 }
 
-.postit__meta {
+.postit__footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.postit__author {
   font-size: 11px;
-  color: rgba(28, 31, 38, 0.55);
+  font-weight: 600;
+  color: rgba(28, 31, 38, 0.6);
 }
 
 .postit__delete {
@@ -866,6 +881,7 @@ a {
 
 .color-swatches {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -923,4 +939,5 @@ a {
   background: #fef3c7;
   color: #92400e;
   margin-top: 6px;
+  margin-bottom: 14px;
 }

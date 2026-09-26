@@ -80,17 +80,18 @@ export default function IdeaBoardPage() {
               >
                 <Trash2 size={14} />
               </button>
-              <textarea
-                value={note.text}
-                placeholder="Type or dictate an idea…"
-                onChange={(e) => updateLocalText(note.id, e.target.value)}
-              />
-              <DictationButton
-                size="sm"
-                onText={(text) => updateLocalText(note.id, `${note.text ? note.text + ' ' : ''}${text}`)}
-              />
-              <div className="postit__meta">
-                <span>{note.author || 'Anonymous'}</span>
+              <div className="postit__row">
+                <textarea
+                  value={note.text}
+                  placeholder="Type or dictate an idea…"
+                  onChange={(e) => updateLocalText(note.id, e.target.value)}
+                />
+                <DictationButton
+                  onText={(text) => updateLocalText(note.id, `${note.text ? note.text + ' ' : ''}${text}`)}
+                />
+              </div>
+              <div className="postit__footer">
+                <span className="postit__author">{note.author || 'Anonymous'}</span>
                 <div className="color-swatches">
                   {COLORS.map((c) => (
                     <button

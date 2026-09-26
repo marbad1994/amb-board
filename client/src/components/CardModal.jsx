@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Trash2, Paperclip, Send, FileText } from 'lucide-react';
+import { X, Trash2, Paperclip, Send, FileText, Plus } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
 import DictationButton from './DictationButton.jsx';
@@ -190,6 +190,7 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
                   }}
                 />
                 <button type="button" className="btn btn-ghost" onClick={addLabel}>
+                  <Plus size={16} />
                   Add
                 </button>
               </div>

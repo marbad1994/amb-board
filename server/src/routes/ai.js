@@ -44,18 +44,22 @@ router.post('/parse-task', async (req, res) => {
     });
   }
 
-  const source = LANGUAGE_NAMES[sourceLang] || 'the source language';
+  const knownSource = LANGUAGE_NAMES[sourceLang];
+  const languageInstruction = knownSource
+    ? `The text is in ${knownSource}.`
+    : 'Detect which of English, Romanian or Swedish the text is written in.';
   const columnNames = columns.map((c) => c.name);
 
-  const systemPrompt = `You are a task-intake assistant for a kanban board. The user will describe a task, possibly in ${source}. Extract a structured task and respond with ONLY a single JSON object (no markdown, no commentary) with exactly these keys:
+  const systemPrompt = `You are a task-intake assistant for a kanban board. The user will describe a task. ${languageInstruction} Extract a structured task and respond with ONLY a single JSON object (no markdown, no commentary) with exactly these keys:
 {
   "title": "short English task title, max 8 words",
   "description": "fuller English description of what needs to be done, may be empty string",
   "owner": "the person's name responsible, in the casing the user used, or empty string if none mentioned",
   "column": "the single best-matching board column from this list: ${JSON.stringify(columnNames)} (default to the first one if unclear)",
-  "labels": ["0 to 3 short single/two-word English tags capturing things like urgency, type of work, or theme. Reuse one of these existing labels when it fits: ${JSON.stringify(existingLabels)}. Otherwise invent a short, generic tag (e.g. \\"urgent\\", \\"bug\\", \\"design\\")."]
+  "labels": ["0 to 3 short single/two-word English tags capturing things like urgency, type of work, or theme. Reuse one of these existing labels when it fits: ${JSON.stringify(existingLabels)}. Otherwise invent a short, generic tag (e.g. \\"urgent\\", \\"bug\\", \\"design\\")."],
+  "detectedLanguage": "one of: english, romanian, swedish"
 }
-Always translate every text field to English, even if the input is Romanian or Swedish. Respond with raw JSON only.`;
+Always translate every text field (title, description, owner, labels) to English, even if the input is Romanian or Swedish. Respond with raw JSON only.`;
 
   try {
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
@@ -92,6 +96,10 @@ Always translate every text field to English, even if the input is Romanian or S
     const matchedColumn =
       columns.find((c) => c.name.toLowerCase() === String(parsed.column || '').toLowerCase()) || columns[0];
 
+    const detected = String(parsed.detectedLanguage || '').toLowerCase();
+    const detectedCode = Object.keys(LANGUAGE_NAMES).find((code) => LANGUAGE_NAMES[code].toLowerCase() === detected);
+    const resolvedLang = knownSource ? sourceLang : detectedCode || 'unknown';
+
     res.json({
       available: true,
       title: String(parsed.title || '').trim().slice(0, 200) || text.trim().slice(0, 80),
@@ -100,8 +108,8 @@ Always translate every text field to English, even if the input is Romanian or S
       column: matchedColumn.name,
       columnId: matchedColumn.id,
       labels: sanitizeLabels(parsed.labels),
-      sourceLang: sourceLang || 'unknown',
-      translated: sourceLang !== 'en',
+      sourceLang: resolvedLang,
+      translated: resolvedLang !== 'en',
     });
   } catch (err) {
     console.error('AI task parse error:', err);

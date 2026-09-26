@@ -1,28 +1,17 @@
 import { useState } from 'react';
-import { Mic, Square, Loader2, Sparkles, X } from 'lucide-react';
+import { Loader2, Sparkles, X, Plus } from 'lucide-react';
 import { api } from '../api/client.js';
-import { useDictation } from '../hooks/useDictation.js';
+import DictationButton from './DictationButton.jsx';
 import { labelColor } from '../utils/labelColor.js';
 
-const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'ro', label: 'Română' },
-  { code: 'sv', label: 'Svenska' },
-];
-
 export default function AITaskModal({ projectId, columns, defaultName, onClose, onCreate }) {
-  const [lang, setLang] = useState('en');
   const [rawText, setRawText] = useState('');
+  const [detectedLang, setDetectedLang] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [result, setResult] = useState(null);
   const [labelInput, setLabelInput] = useState('');
-
-  const { start, stop, listening, error: dictationError, supported } = useDictation({
-    translate: false,
-    onResult: (text) => setRawText((prev) => (prev ? `${prev} ${text}` : text)),
-  });
 
   const generate = async () => {
     if (!rawText.trim()) return;
@@ -30,7 +19,7 @@ export default function AITaskModal({ projectId, columns, defaultName, onClose, 
     setError('');
     setWarning('');
     try {
-      const parsed = await api.aiParseTask(projectId, rawText.trim(), lang);
+      const parsed = await api.aiParseTask(projectId, rawText.trim(), detectedLang || 'auto');
       if (!parsed.available) {
         setWarning(parsed.warning || 'AI task helper is unavailable.');
         setResult({
@@ -95,21 +84,10 @@ export default function AITaskModal({ projectId, columns, defaultName, onClose, 
           {!result && (
             <>
               <p style={{ color: 'var(--color-text-muted)', fontSize: 13, marginTop: 0 }}>
-                Say or type what you want done, in English, Romanian or Swedish — mention who should do it,
-                what it involves, and how urgent it is. The AI will fill in the title, description, owner,
-                column and labels for you.
+                Say or type what you want done — English, Romanian or Swedish are detected automatically.
+                Mention who should do it, what it involves, and how urgent it is. The AI will fill in the
+                title, description, owner, column and labels for you.
               </p>
-
-              <div className="field">
-                <label htmlFor="ai-task-lang">Spoken language</label>
-                <select id="ai-task-lang" value={lang} onChange={(e) => setLang(e.target.value)}>
-                  {LANGUAGES.map((l) => (
-                    <option key={l.code} value={l.code}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
 
               <div className="field-with-mic">
                 <label htmlFor="ai-task-text">What do you need?</label>
@@ -120,18 +98,14 @@ export default function AITaskModal({ projectId, columns, defaultName, onClose, 
                     placeholder="e.g. Ion trebuie să repare ușa de la intrare până vineri, e urgent"
                     onChange={(e) => setRawText(e.target.value)}
                   />
-                  {supported && (
-                    <button
-                      type="button"
-                      className={`dictation__mic ${listening ? 'is-listening' : ''}`}
-                      onClick={() => (listening ? stop() : start(lang))}
-                      title={listening ? 'Stop dictation' : 'Start dictation'}
-                    >
-                      {listening ? <Square size={16} /> : <Mic size={18} />}
-                    </button>
-                  )}
+                  <DictationButton
+                    translate={false}
+                    onText={(text, meta) => {
+                      setRawText((prev) => (prev ? `${prev} ${text}` : text));
+                      if (meta?.detectedLang) setDetectedLang(meta.detectedLang);
+                    }}
+                  />
                 </div>
-                {dictationError && <p className="dictation__error">{dictationError}</p>}
               </div>
 
               {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
@@ -224,6 +198,7 @@ export default function AITaskModal({ projectId, columns, defaultName, onClose, 
                     }}
                   />
                   <button type="button" className="btn btn-ghost" onClick={addLabel}>
+                    <Plus size={16} />
                     Add
                   </button>
                 </div>
