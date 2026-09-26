@@ -243,10 +243,10 @@ a {
   color: var(--color-text-muted);
 }
 
-.field input[type='text'],
-.field input[type='search'],
-.field textarea,
-.field select {
+input[type='text'],
+input[type='search'],
+textarea,
+select {
   min-height: var(--touch-target);
   padding: 10px 12px;
   border-radius: var(--radius-sm);
@@ -257,7 +257,7 @@ a {
   resize: vertical;
 }
 
-.field textarea {
+textarea {
   min-height: 100px;
   line-height: 1.4;
 }
