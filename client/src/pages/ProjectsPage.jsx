@@ -46,14 +46,7 @@ export default function ProjectsPage() {
             placeholder="New project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{
-              flex: 1,
-              minHeight: 'var(--touch-target)',
-              padding: '10px 12px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-surface)',
-            }}
+            style={{ flex: 1 }}
           />
           <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
             <Plus size={18} />

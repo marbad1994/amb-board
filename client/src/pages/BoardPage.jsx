@@ -275,14 +275,7 @@ export default function BoardPage() {
                       placeholder="Column name"
                       value={newColumnName}
                       onChange={(e) => setNewColumnName(e.target.value)}
-                      style={{
-                        width: '100%',
-                        minHeight: 'var(--touch-target)',
-                        padding: '8px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--color-border)',
-                        marginBottom: 8,
-                      }}
+                      style={{ marginBottom: 8 }}
                     />
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button type="submit" className="btn btn-primary" disabled={!newColumnName.trim()}>

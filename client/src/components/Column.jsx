@@ -82,14 +82,7 @@ export default function Column({ column, onOpenCard, onAddCard, onRename, onDele
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onBlur={() => !title.trim() && setAdding(false)}
-              style={{
-                width: '100%',
-                minHeight: 'var(--touch-target)',
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-border)',
-                marginBottom: 6,
-              }}
+              style={{ marginBottom: 6 }}
             />
             <div style={{ display: 'flex', gap: 6 }}>
               <button type="submit" className="btn btn-primary" disabled={!title.trim()}>
