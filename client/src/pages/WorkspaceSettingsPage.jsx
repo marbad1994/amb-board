@@ -137,15 +137,23 @@ function McpTokens() {
 function NotificationPrefs() {
   const [prefs, setPrefs] = useState(null);
   useEffect(() => { api.notificationPrefs().then(setPrefs).catch(() => {}); }, []);
-  const set = (k, v) => { setPrefs((p) => ({ ...p, [k]: v })); api.setNotificationPrefs({ [k]: v }).then(setPrefs).catch(() => {}); };
+  const [msg, setMsg] = useState('');
+  const { user } = useAuth();
+  const set = (k, v) => { setMsg(''); setPrefs((p) => ({ ...p, [k]: v })); api.setNotificationPrefs({ [k]: v }).then(setPrefs).catch((e) => { setMsg(e.message); api.notificationPrefs().then(setPrefs).catch(() => {}); }); };
+  const test = async () => { setMsg('Sending...'); try { const r = await api.sendTestEmail(); setMsg(`Test email sent to ${r.sent_to}.`); } catch (e) { setMsg(e.message); } };
   const rows = [['event_reminders', 'Event reminders'], ['task_due', 'Tasks due today or overdue'], ['budget_alerts', 'Budget alerts']];
   return (
     <section className="panel" aria-labelledby="np-h">
       <div className="panel__title"><h2 id="np-h">Notifications</h2></div>
       {!prefs ? <p className="muted">Loading…</p> : <div className="notify-prefs">{rows.map(([k, l]) => (
         <label key={k} className="check"><input type="checkbox" checked={prefs[k]} onChange={(e) => set(k, e.target.checked)} /> {l}</label>
-      ))}</div>}
-      <p className="hint">In-app only for now. Email and push delivery are not set up.</p>
+      ))}
+        <label className="check"><input type="checkbox" checked={prefs.email} disabled={!prefs.email_available && !prefs.email} onChange={(e) => set('email', e.target.checked)} /> Also email me these notifications{user?.email ? ` (${user.email})` : ''}</label>
+        {prefs.email && <div><button type="button" className="btn" onClick={test}>Send a test email</button></div>}
+      </div>}
+      {prefs && !prefs.email_available && <p className="hint">Email delivery is not set up on this server yet. The administrator adds the SMTP settings to the server environment.</p>}
+      {msg && <p className="hint" role="status">{msg}</p>}
+      <p className="hint">Only notifications from the moment you switch email on are sent, grouped into one message at a time. Push delivery is not available.</p>
     </section>
   );
 }

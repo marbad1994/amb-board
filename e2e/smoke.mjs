@@ -660,6 +660,20 @@ try {
     await shot(page, '23-column-limit');
   });
 
+  await step('copy a project to another workspace; the original stays', async () => {
+    const made = await page.request.post(`${base}/api/workspaces`, { data: { name: 'E2E Team' } });
+    assert.equal(made.status(), 201);
+    await page.reload();   // the app learns about the new workspace
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    await page.getByRole('button', { name: 'Copy Move plan project to another workspace' }).first().click();
+    await page.getByLabel(/Copy "Move plan project" to/).selectOption({ label: 'E2E Team' });
+    await page.getByRole('button', { name: 'Copy', exact: true }).click();
+    await page.getByText(/Copied "Move plan project" to/).waitFor();
+    await page.getByText(/3 columns/).waitFor();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.locator('.project-card', { hasText: 'Move plan project' }).first().waitFor();
+  });
+
   await step('sign out, then sign in again with the same credentials', async () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
@@ -669,8 +683,8 @@ try {
     await page.getByText('invalid email or password').waitFor();
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.getByRole('heading', { name: /Move plan project/ }).waitFor(); // session restored on the page we left
-    assert.match(page.url(), /\/projects\/[^/]+$/);
+    await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor(); // session restored on the page we left
+    assert.match(page.url(), /\/projects$/);
   });
 
   await step('a second user cannot see the first user\'s project', async () => {

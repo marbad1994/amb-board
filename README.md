@@ -110,6 +110,10 @@ The deploy also maps `amb.makketing.com` to the app with an nginx reverse proxy 
 
 Do not set `NODE_ENV=production` unless the site is served over HTTPS: production mode makes the session cookie `Secure`, so logins fail over plain HTTP.
 
+## Email notifications
+
+Set the SMTP values in `server/.env` (see `server/.env.example`; Zoho EU: `smtppro.zoho.eu`, port 465, SSL, sender `admin@makketing.com`, `SMTP_USER` is the full mailbox address and `SMTP_PASS` its password or application-specific password). Restart with `sudo bash deploy.sh`. Each person then turns on "Also email me these notifications" under Workspace & account and can send themselves a test email. Only notifications created after they turn it on are mailed.
+
 ## Tests
 
 ```bash

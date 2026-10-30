@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
 import DictationButton from '../components/DictationButton.jsx';
+import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 
 const COLORS = ['#fde68a', '#fca5a5', '#a7f3d0', '#93c5fd', '#ddd6fe', '#fbcfe8'];
 
@@ -112,6 +113,7 @@ export default function IdeaBoardPage() {
                   <button type="button" className="postit__convert" onClick={() => convert(note)} disabled={!note.text.trim()}
                     aria-label="Convert idea to project"><FolderPlus size={14} aria-hidden="true" /> To project</button>
                 )}
+                {note.text.trim() && <CopyToWorkspace entity="idea" id={note.id} label="idea" className="postit__convert" iconOnly />}
                 <div className="color-swatches">
                   {COLORS.map((c) => (
                     <button

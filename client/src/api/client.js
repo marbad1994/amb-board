@@ -148,6 +148,8 @@ export const api = {
   readNotification: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
   readAllNotifications: () => request('/notifications/read-all', { method: 'POST' }),
   notificationPrefs: () => request('/notifications/preferences'),
+  copyToWorkspace: (data) => request('/transfer', json('POST', data)),
+  sendTestEmail: () => request('/notifications/email-test', json('POST', {})),
   setNotificationPrefs: (data) => request('/notifications/preferences', json('PUT', data)),
   monthBudget: (month) => request(`/finance/budget?month=${month}`),
   setMonthBudget: (data) => request('/finance/budget', json('PUT', data)),

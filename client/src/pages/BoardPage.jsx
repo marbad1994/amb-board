@@ -19,6 +19,7 @@ import Column from '../components/Column.jsx';
 import CardItem from '../components/CardItem.jsx';
 import CardModal from '../components/CardModal.jsx';
 import AITaskModal from '../components/AITaskModal.jsx';
+import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 
 function findColumnOfCard(columns, cardId) {
   return columns.find((col) => col.cards.some((c) => c.id === cardId));
@@ -271,6 +272,7 @@ export default function BoardPage() {
         {project && canWrite(active?.role) && (
           <button type="button" className="btn" onClick={async () => { try { const r = await api.createReport({ kind: 'project_status', project_id: projectId }); navigate(`/reports/${r.id}`); } catch (err) { setError(err.message); } }}>Report</button>
         )}
+        {project && canWrite(active?.role) && <CopyToWorkspace entity="project" id={projectId} label={project.name} />}
         {project && (
           <button type="button" className="btn" onClick={() => setDetailsOpen(true)}>
             Details · {project.progress}%

@@ -19,6 +19,7 @@ import myDayRouter from './routes/myday.js';
 import financeExtraRouter from './routes/financeExtra.js';
 import financeAiRouter from './routes/financeAi.js';
 import automationsRouter from './routes/automations.js';
+import transferRouter from './routes/transfer.js';
 import mcpRouter, { tokensRouter } from './routes/mcp.js';
 import reportsRouter from './routes/reports.js';
 import notificationsRouter from './routes/notifications.js';
@@ -68,6 +69,7 @@ export function createApp() {
   app.use('/api/search', searchRouter);
   app.use('/api/reports', reportsRouter);
   app.use('/api/automations', automationsRouter);
+  app.use('/api/transfer', transferRouter);
   app.use('/api/tokens', tokensRouter);
   app.use('/api/finance', financeRouter);
   app.use('/api/finance', financeExtraRouter);

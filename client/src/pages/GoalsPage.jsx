@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Trash2, Plus } from 'lucide-react';
 import { api } from '../api/client.js';
+import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import { formatDate } from '../lib/labels.js';
 
@@ -46,6 +47,7 @@ function GoalCard({ g, projects, writable, reload, onError }) {
       {writable && (
         <div className="inline-form">
           {g.status === 'active' && <button type="button" className="btn" onClick={() => act(() => api.updateGoal(g.id, { status: 'achieved' }))}>Mark achieved</button>}
+          <CopyToWorkspace entity="goal" id={g.id} label={g.title} />
           {g.status !== 'active' && <button type="button" className="btn" onClick={() => act(() => api.updateGoal(g.id, { status: 'active' }))}>Reopen</button>}
           <button type="button" className="btn" onClick={() => act(() => api.updateGoal(g.id, { status: 'archived' }))}>Archive</button>
         </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Lock, Trash2, Users } from 'lucide-react';
 import { api } from '../api/client.js';
+import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -83,6 +84,7 @@ export default function NotesPage() {
               <div className="inline-form">
                 <button type="button" className="btn" onClick={() => setEditing({ id: n.id, title: n.title, body: n.body })}>Edit</button>
                 {!journal && <button type="button" className="btn" onClick={() => act(() => api.updateNote(n.id, { privacy: n.privacy === 'private' ? 'workspace' : 'private' }))}>{n.privacy === 'private' ? 'Share' : 'Make private'}</button>}
+                {!journal && <CopyToWorkspace entity="note" id={n.id} label={n.title || 'note'} />}
                 <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete ${journal ? n.entry_date : n.title || 'note'}`} onClick={() => window.confirm('Delete permanently?') && act(() => api.deleteNote(n.id))}><Trash2 size={14} color="var(--color-danger)" /></button>
               </div>
             )}
