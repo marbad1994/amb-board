@@ -361,7 +361,7 @@ try {
     await page.getByRole('button', { name: 'What is overdue?' }).click();
     await page.getByText('Focus on your renovation project today.').waitFor();
     await page.getByText(/Read your projects/).waitFor();
-    await page.getByText(/1 suggested change was discarded because it did not match your data/).waitFor();
+    await page.getByText(/I tried to fix 1 suggested change that did not match your data and could not/).waitFor();
     await page.getByText('Create task "Call the contractor" in project "Apartment Renovation"').waitFor();
     await page.getByRole('link', { name: 'Tasks', exact: true }).click();
     await page.getByRole('link', { name: 'Order tiles' }).waitFor();
