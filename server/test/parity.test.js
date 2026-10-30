@@ -93,6 +93,30 @@ test('events, goals, habits, notes, ideas', async () => {
   assert.ok(db.prepare("SELECT 1 FROM idea_notes WHERE text = 'Balcony garden'").get());
 });
 
+test('money: removing a category moves entries, promotes children, deletes limits', async () => {
+  const { u } = await world('ParCat');
+  await run(u, 'create_category', { name: 'Aquarium' });
+  await run(u, 'create_category', { name: 'Fish food', parent: 'Aquarium' });
+  await run(u, 'create_category', { name: 'Critters' });
+  await run(u, 'set_monthly_budget', { month: '2027-05', category: 'Aquarium', currency: 'EUR', amount: 100 });
+  const cats = (await u.c.get('/api/finance/categories')).json;
+  const aq = cats.find((c) => c.name === 'Aquarium'); const fish = cats.find((c) => c.name === 'Fish food'); const crit = cats.find((c) => c.name === 'Critters');
+  const t = (await u.c.post('/api/finance/transactions', { type: 'expense', amount_minor: 500, currency: 'EUR', date: '2027-05-02', description: 'Food', categoryId: aq.id })).json;
+  assert.deepEqual((await u.c.get(`/api/finance/categories/${aq.id}/usage`)).json, { transactions: 1, recurring: 0, budget_lines: 1, children: 1 });
+  const p = await propose(u, 'delete_category', { category: 'Aquarium', move_to: 'Critters' });
+  assert.match(p.p.description, /^DELETE category "Aquarium": 1 transaction\(s\)/);
+  assert.equal((await propose(u, 'delete_category', { category: 'Aquarium', move_to: 'Aquarium' })).dropped.length, 1, 'cannot move into itself');
+  await approve(u, p.p);
+  assert.equal(db.prepare('SELECT category_id FROM transactions WHERE id = ?').get(t.id).category_id, crit.id);
+  assert.equal(db.prepare('SELECT parent_id FROM transaction_categories WHERE id = ?').get(fish.id).parent_id, null);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM monthly_budgets WHERE category_id = ?').get(aq.id).n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM transaction_categories WHERE id = ?').get(aq.id).n, 0);
+  // the screen's API does the same, leaving entries uncategorised without move_to
+  assert.equal((await u.c.del(`/api/finance/categories/${crit.id}`)).status, 200);
+  assert.equal(db.prepare('SELECT category_id FROM transactions WHERE id = ?').get(t.id).category_id, null);
+  assert.equal((await u.c.del(`/api/finance/categories/${crit.id}`)).status, 404);
+});
+
 test('money: categories, monthly budget (budget permission), voiding', async () => {
   const { u } = await world('Par3');
   await run(u, 'create_category', { name: 'Zebra food' });

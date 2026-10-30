@@ -86,3 +86,5 @@ Task titles, descriptions, owner names and project metadata of the active worksp
 
 ## TODO
 Native function-calling (the loop uses JSON replies for provider independence), weekly/monthly/financial summaries, user-defined automation policies that pre-authorise narrow actions, streaming responses, cost caps in currency, per-workspace AI opt-out, routing the legacy helper through the gateway, evaluation set.
+
+- **Categories:** `create_category` and `delete_category` (name, optional `move_to`) are proposals. Removing moves the category's transactions and recurring expenses to `move_to` (or leaves them uncategorised), turns sub-categories into top-level ones and deletes its monthly limits (owner/admin only when it has limits). It is destructive: never auto-approved, not offered to MCP token holders.

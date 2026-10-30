@@ -14,6 +14,7 @@ import { forget } from './mcpServers.js';
 import { assertSafeUrl } from './mcpClient.js';
 import { encryptSecret } from '../secrets.js';
 import { CURRENCY_RE } from '../finance/money.js';
+import { planCategoryRemoval, removeCategory } from '../categories.js';
 
 // Everything a person can do in the app that is not already a proposal type in actions.js. The same rules as the screens apply:
 // the person's CURRENT role is checked, every id must belong to the workspace, and descriptions are generated here from checked values.
@@ -35,6 +36,7 @@ export const MORE_DOCS = {
   delete_note: '{"note_id":"your note"} cannot be undone',
   create_idea: '{"text":""} adds a sticky note to the idea board',
   create_category: '{"name":"","parent":"existing category name or empty"}',
+  delete_category: '{"category":"category name","move_to":"another category name, or empty to leave the entries uncategorised"} removes the category; its transactions and recurring expenses move to move_to, its sub-categories become top level and its monthly budget limits are deleted (owner/admin only when it has limits); cannot be undone',
   set_monthly_budget: '{"month":"YYYY-MM","category":"existing category name","currency":"EUR","amount":450} needs the budget permission; amount 0 removes the line',
   void_transaction: '{"transaction_id":""} marks a transaction as void (it stops counting)',
   create_column: '{"project_id":"","name":"","status":"todo|doing|blocked|done or empty","card_limit":5}',
@@ -51,7 +53,7 @@ export const MORE_DOCS = {
 };
 export const MORE_TYPES = Object.keys(MORE_DOCS);
 export const MORE_ASYNC = new Set(['run_automation', 'connect_mcp_server']);
-export const MORE_DESTRUCTIVE = new Set(['delete_project', 'delete_task', 'delete_event', 'delete_note', 'delete_automation', 'delete_email_template']);
+export const MORE_DESTRUCTIVE = new Set(['delete_project', 'delete_task', 'delete_event', 'delete_note', 'delete_automation', 'delete_email_template', 'delete_category']);
 export const MORE_PERSONAL = new Set(['connect_mcp_server', 'disconnect_mcp_server']);
 
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
@@ -181,6 +183,15 @@ export function validateMore(type, a, ws, user) {
     if (a.parent_id) { parent = db.prepare('SELECT id, name FROM transaction_categories WHERE id = ? AND workspace_id = ?').get(str(a.parent_id, 40), ws); if (!parent) return { error: 'unknown parent category' }; }
     else if (str(a.parent, 60)) { parent = catByName(ws, a.parent); if (!parent) return { error: 'unknown parent category' }; }
     return { payload: { name, parent_id: parent?.id ?? null }, target: { entity: 'category', id: null }, description: `Create category "${name}"${parent ? ` under "${parent.name}"` : ''}` };
+  }
+  if (type === 'delete_category') {
+    const cat = a.category_id ? { id: str(a.category_id, 40) } : catByName(ws, a.category); if (!cat) return { error: 'unknown category' };
+    const mv = a.move_to_id ? { id: str(a.move_to_id, 40) } : (str(a.move_to, 60) ? catByName(ws, a.move_to) : null);
+    if (str(a.move_to, 60) && !mv) return { error: 'unknown category to move entries to' };
+    const plan = planCategoryRemoval(ws, role, can, cat.id, mv?.id ?? null); if (plan.error) return { error: plan.error };
+    const u = plan.usage;
+    return { payload: { category_id: plan.cat.id, move_to_id: plan.moveTo?.id ?? null }, target: { entity: 'category', id: plan.cat.id },
+      description: `DELETE category "${plan.cat.name}": ${u.transactions} transaction(s) and ${u.recurring} recurring expense(s) ${plan.moveTo ? `move to "${plan.moveTo.name}"` : 'become uncategorised'}, ${u.children} sub-categor${u.children === 1 ? 'y' : 'ies'} become top level, ${u.budget_lines} budget line(s) are deleted` };
   }
   if (type === 'set_monthly_budget') {
     if (!can(role, 'budget:approve')) return { error: 'only an owner or admin can change budgets' };
@@ -356,6 +367,7 @@ export function applyMore(type, p, ws, actor, ts) {
       db.prepare('INSERT INTO transaction_categories (id, workspace_id, name, parent_id, created_at) VALUES (?, ?, ?, ?, ?)').run(id, ws, p.name, p.parent_id, ts);
       return { entity: 'category', id };
     }
+    case 'delete_category': removeCategory(ws, p.category_id, p.move_to_id); return { entity: 'category', id: p.category_id };
     case 'set_monthly_budget':
       if (p.amount_minor === 0) db.prepare('DELETE FROM monthly_budgets WHERE workspace_id = ? AND month = ? AND category_id = ? AND currency = ?').run(ws, p.month, p.category_id, p.currency);
       else db.prepare(`INSERT INTO monthly_budgets (workspace_id, month, category_id, currency, amount_minor) VALUES (?, ?, ?, ?, ?)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { fmt, toMinor, lastCurrency, rememberCurrency } from '../lib/money.js';
 import { canManage } from '../context/AuthContext.jsx';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Trash2 } from 'lucide-react';
 import { BudgetBars } from './Charts.jsx';
 import AiBudgetWizard from './AiBudgetWizard.jsx';
 
@@ -25,6 +25,7 @@ export function BudgetTab({ role, writable }) {
   const [vals, setVals] = useState({});
   const [saved, setSaved] = useState('');
   const [newCat, setNewCat] = useState({ name: '', parentId: '' });
+  const [removing, setRemoving] = useState(null); // { cat, usage, moveTo }
   const [wizard, setWizard] = useState(false);
   const manage = canManage(role);
 
@@ -67,6 +68,17 @@ export function BudgetTab({ role, writable }) {
     try { await api.createCategory(newCat.name.trim(), newCat.parentId); setNewCat({ name: '', parentId: '' }); await loadCats(); } catch (err) { setError(err.message); }
   };
 
+  const askRemove = async (cat) => {
+    try { setRemoving({ cat, usage: await api.categoryUsage(cat.id), moveTo: '' }); setError(''); } catch (err) { setError(err.message); }
+  };
+  const confirmRemove = async () => {
+    try {
+      await api.deleteCategory(removing.cat.id, removing.moveTo);
+      setSaved(`Removed category "${removing.cat.name}".`); setRemoving(null);
+      await loadCats(); await load();
+    } catch (err) { setError(err.message); }
+  };
+
   const rows = data?.rows.filter((r) => r.currency === currency) || [];
 
   return (
@@ -95,7 +107,7 @@ export function BudgetTab({ role, writable }) {
         {!manage && <p className="hint">Only owners and admins can change budgets.</p>}
         <div className="table-wrap">
           <table className="table" aria-label="Monthly limits by category">
-            <thead><tr><th>Category</th><th>Monthly limit ({currency})</th><th>Spent</th></tr></thead>
+            <thead><tr><th>Category</th><th>Monthly limit ({currency})</th><th>Spent</th>{manage && <th><span className="sr-only">Remove</span></th>}</tr></thead>
             <tbody>
               {ordered.map((c) => {
                 const r = rows.find((x) => x.category_id === c.id);
@@ -104,12 +116,31 @@ export function BudgetTab({ role, writable }) {
                     <td style={{ paddingLeft: c.child ? 28 : 8 }}>{c.child ? '- ' : ''}{c.name}</td>
                     <td><input type="text" inputMode="decimal" aria-label={`Limit for ${c.name}`} placeholder="none" disabled={!manage} value={vals[c.id] ?? ''} onChange={(e) => { setVals({ ...vals, [c.id]: e.target.value }); setSaved(''); }} /></td>
                     <td>{r ? `${fmt(r.actual_minor, currency)} (${r.used_pct}%)` : ''}</td>
+                    {manage && <td><button type="button" className="btn btn-ghost btn-sm" aria-label={`Remove category ${c.name}`} title="Remove category" onClick={() => askRemove(c)}><Trash2 size={16} aria-hidden="true" /></button></td>}
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+        {removing && (
+          <div className="panel" role="alertdialog" aria-label={`Remove category ${removing.cat.name}`} style={{ marginTop: 12 }}>
+            <p><strong>Remove "{removing.cat.name}"?</strong> This cannot be undone.</p>
+            <p className="muted">
+              {removing.usage.transactions} transaction(s) and {removing.usage.recurring} recurring expense(s) use it;
+              {' '}{removing.usage.children} sub-categor{removing.usage.children === 1 ? 'y' : 'ies'} will become top level;
+              {' '}{removing.usage.budget_lines} monthly limit(s) will be deleted.
+            </p>
+            <div className="inline-form inline-form--wide">
+              <select aria-label="Move entries to" value={removing.moveTo} onChange={(e) => setRemoving({ ...removing, moveTo: e.target.value })}>
+                <option value="">Leave entries uncategorised</option>
+                {cats.filter((c) => c.id !== removing.cat.id).map((c) => <option key={c.id} value={c.id}>Move entries to {c.name}</option>)}
+              </select>
+              <button type="button" className="btn btn-danger" onClick={confirmRemove}>Remove category</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setRemoving(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
         {manage && (
           <div className="inline-form inline-form--wide" style={{ marginTop: 12 }}>
             <button type="button" className="btn btn-primary" disabled={badInput} onClick={save}>Save budget</button>

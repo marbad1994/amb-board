@@ -424,6 +424,12 @@ try {
     await page.getByLabel('Parent category').selectOption({ label: 'Inside Food' });
     await page.getByRole('button', { name: 'Add category' }).click();
     await page.getByLabel('Limit for Coffee').waitFor();
+    // ...and remove it again (confirmation shows what happens to its entries)
+    await page.getByRole('button', { name: 'Remove category Coffee' }).click();
+    await page.getByRole('alertdialog', { name: 'Remove category Coffee' }).waitFor();
+    await page.getByRole('button', { name: 'Remove category', exact: true }).click();
+    await page.getByText('Removed category "Coffee".').waitFor();
+    await page.getByLabel('Limit for Coffee').waitFor({ state: 'detached' });
     await page.getByRole('button', { name: 'Copy from previous month' }).click();
     await page.getByText(/No EUR budget found for/).waitFor();
     // Create with AI: prompt only. Figures the user typed are labelled as theirs, the rest as AI estimates

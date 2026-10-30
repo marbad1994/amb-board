@@ -138,6 +138,8 @@ export const api = {
   // budget builder, charts, AI budget
   bulkBudget: (data) => request('/finance/budget/bulk', json('PUT', data)),
   financeTrend: (months = 6) => request(`/finance/trend?months=${months}`),
+  categoryUsage: (id) => request(`/finance/categories/${id}/usage`),
+  deleteCategory: (id, moveTo) => request(`/finance/categories/${id}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ''}`, { method: 'DELETE' }),
   createCategory: (name, parentId) => request('/finance/categories', json('POST', { name, parentId: parentId || null })),
   aiBudgetDraft: (formData) => request('/finance/ai-budget/draft', { method: 'POST', body: formData }),
   applyAiBudget: (id, data) => request(`/finance/ai-budget/drafts/${id}/apply`, json('POST', data)),
