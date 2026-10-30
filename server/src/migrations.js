@@ -360,6 +360,101 @@ const assistantTables = `
   CREATE INDEX idx_ai_prop_conv ON ai_action_proposals(conversation_id);
 `;
 
+const lifeTables = `
+  CREATE TABLE goals (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    life_area_id TEXT REFERENCES life_areas(id) ON DELETE SET NULL,
+    target_date TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','achieved','archived')),
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_goals_ws ON goals(workspace_id);
+  CREATE TABLE goal_milestones (
+    id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    due_date TEXT,
+    done INTEGER NOT NULL DEFAULT 0,
+    completed_at TEXT,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_milestones_goal ON goal_milestones(goal_id);
+  CREATE TABLE goal_projects (
+    goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    PRIMARY KEY (goal_id, project_id)
+  );
+
+  -- Habits are personal: only their creator sees them, even in a shared workspace.
+  CREATE TABLE habits (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    frequency TEXT NOT NULL CHECK (frequency IN ('daily','weekly')),
+    target_per_week INTEGER NOT NULL DEFAULT 7 CHECK (target_per_week BETWEEN 1 AND 7),
+    goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
+    archived_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_habits_user ON habits(workspace_id, user_id);
+  CREATE TABLE habit_entries (
+    habit_id TEXT NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (habit_id, date)
+  );
+  CREATE TABLE challenges (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    habit_id TEXT NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  -- Journal entries are ALWAYS private to their author. Notes are workspace-visible unless marked private.
+  CREATE TABLE notes (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('note','journal')),
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    entry_date TEXT,
+    privacy TEXT NOT NULL DEFAULT 'workspace' CHECK (privacy IN ('private','workspace')),
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_notes_ws ON notes(workspace_id, kind, updated_at);
+
+  CREATE TABLE documents (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    privacy TEXT NOT NULL DEFAULT 'workspace' CHECK (privacy IN ('private','workspace')),
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
+    uploaded_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_documents_ws ON documents(workspace_id, created_at);
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -380,6 +475,7 @@ export const migrations = [
     }
   } },
   { id: '006_assistant', up: (db) => db.exec(assistantTables) },
+  { id: '007_life', up: (db) => db.exec(lifeTables) },
 ];
 
 function appliedIds(db) {

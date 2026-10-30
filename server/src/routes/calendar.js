@@ -87,6 +87,10 @@ router.get('/', (req, res) => {
     items.push({ id: `deadline:${p.id}`, source: 'project', kind: 'project_deadline', title: `${p.name} deadline`, date: p.target_date, all_day: true,
       done: p.status === 'done', project_id: p.id, project_name: p.name });
   }
+  for (const m of db.prepare(`SELECT m.id, m.title, m.due_date, m.done, g.id AS goal_id, g.title AS goal_title FROM goal_milestones m JOIN goals g ON g.id = m.goal_id
+      WHERE g.workspace_id = ? AND g.status = 'active' AND m.due_date BETWEEN ? AND ?`).all(req.ws.id, from, to)) {
+    items.push({ id: `milestone:${m.id}`, source: 'goal', kind: 'milestone', title: `${m.title} (${m.goal_title})`, date: m.due_date, all_day: true, done: !!m.done, goal_id: m.goal_id });
+  }
   items.sort((a, b) => (a.date + (a.start_local || '')).localeCompare(b.date + (b.start_local || '')));
 
   // Scheduling pressure: days with something due and 3+ timed commitments. Advice only; nothing is moved.

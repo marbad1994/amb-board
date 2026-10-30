@@ -1934,3 +1934,16 @@ input[type='month'], input[type='date'], input[type='time'], input[type='number'
 .proposal__actions { display: flex; gap: 8px; }
 .chat__form { display: flex; gap: 8px; margin-top: 16px; }
 .chat__form input { flex: 1; }
+
+/* ---------- Goals, habits, notes ---------- */
+.cal-chip--milestone { background: #e8f1ff; border-color: #3b82f6; }
+.goal .progress { margin-bottom: 4px; }
+.chips-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.chips-row select { width: auto; min-height: 36px; padding: 4px 8px; font-size: 12px; }
+.chip-link { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--color-surface-alt); font-size: 12px; }
+.chip-link a { text-decoration: none; }
+.chip-link button { background: transparent; border: 0; padding: 2px 6px; color: var(--color-text-muted); }
+.dots { display: flex; gap: 3px; margin-top: 6px; }
+.dots i { width: 10px; height: 10px; border-radius: 3px; background: var(--color-border); }
+.dots i.on { background: var(--color-accent); }
+.note__body { white-space: pre-wrap; font-size: 13px; margin: 0 0 8px; max-height: 220px; overflow: auto; }

@@ -20,3 +20,11 @@ MFA, email verification, password recovery, OAuth, per-session management UI, fi
 - Rate limiter and sessions' cleanup are per-process; expired sessions are rejected but not yet purged.
 - `PATCH /cards/:id` accepts free-text `owner`; it is not tied to workspace members yet.
 - First-account adoption of legacy data (DECISIONS D4) assumes the first registrant is the legitimate owner; register on a fresh deployment before exposing it publicly.
+
+
+## Added in Phases 3-5
+- Finance: budget approval limited to owner/admin; transactions validated (integer minor units, currency code, real dates, project/category in workspace); idempotency via `external_ref`; CSV export neutralises spreadsheet formulas.
+- AI assistant: read-only tools scoped to the caller's workspace; only 4 proposal types exist; every change needs approval by the conversation owner with a fresh role check; proposals re-validated at execution; all decisions audited; conversations private per user.
+- Notes/journal: single visibility predicate on every query; journal never shared and never sent to AI; only authors edit.
+- Documents: type allow-list + magic bytes + size cap; filename sanitised; random storage names; authenticated download with `nosniff`, inline only for raster images; private uploads visible only to the uploader.
+- Known gap: no antivirus scanning; no encryption at rest for stored files/DB; free-text task owner is not a member reference.

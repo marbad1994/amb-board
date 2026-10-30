@@ -10,6 +10,10 @@ import BoardPage from './pages/BoardPage.jsx';
 import FinancePage from './pages/FinancePage.jsx';
 import CalendarPage from './pages/CalendarPage.jsx';
 import AssistantPage from './pages/AssistantPage.jsx';
+import MyDayPage from './pages/MyDayPage.jsx';
+import GoalsPage from './pages/GoalsPage.jsx';
+import NotesPage from './pages/NotesPage.jsx';
+import DocumentsPage from './pages/DocumentsPage.jsx';
 import TasksPage from './pages/TasksPage.jsx';
 import IdeaBoardPage from './pages/IdeaBoardPage.jsx';
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
@@ -37,6 +41,10 @@ export default function App() {
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/assistant" element={<AssistantPage />} />
+        <Route path="/my-day" element={<MyDayPage />} />
+        <Route path="/goals" element={<GoalsPage />} />
+        <Route path="/notes" element={<NotesPage />} />
+        <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/ideas" element={<IdeaBoardPage />} />
         <Route path="/settings" element={<WorkspaceSettingsPage />} />

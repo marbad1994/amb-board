@@ -120,7 +120,7 @@ export default function DashboardPage() {
 
             <section className="panel panel--note" aria-labelledby="dash-soon">
               <div className="panel__title"><h2 id="dash-soon">Coming next</h2></div>
-              <p className="muted">My Day, Habits, Notes and Documents are planned but not built yet. They are shown disabled in the sidebar and will appear here as they ship.</p>
+              <p className="muted">Everything planned in the first roadmap is now available. Next: hardening, notifications and external calendar sync. They are shown disabled in the sidebar and will appear here as they ship.</p>
             </section>
           </div>
         </>
