@@ -8,9 +8,14 @@
 # Settings can be overridden with environment variables, e.g.:
 #   sudo GIT_USER=marcus DEST_DIR=/opt/amb-board3 PORT=3417 bash deploy.sh
 #
-# Public address: DOMAIN (default amb.makketing.com) is served by Caddy as a reverse proxy to the app, with automatic HTTPS
-# (Caddy gets and renews the certificate itself). Set DOMAIN= (empty) to skip. Needs: caddy installed, the domain's DNS record
-# pointing at this server, and ports 80 and 443 open. Optional: ACME_EMAIL=you@example.com for certificate expiry notices.
+# Public address: DOMAIN (default amb.makketing.com) is added to the web server that ALREADY owns ports 80/443 (detected
+# automatically: nginx or caddy; set PROXY=nginx|caddy|none to force it). No second web server is started. Set DOMAIN= to skip.
+#   nginx : writes a server block; for HTTPS give ACME_EMAIL (certbot --nginx) or SSL_CERT and SSL_KEY (e.g. a wildcard cert).
+#   caddy : writes a site file and imports it; Caddy gets the certificate itself.
+#   other (apache, traefik ...): prints the address to proxy to; nothing is changed.
+# If something else (e.g. a Docker proxy) owns port 443, nginx serves the site on port 80 only. When HTTPS is handled in front of
+# nginx (Cloudflare, the container on 443) deploy with HTTPS=true so the session cookie is Secure.
+# The domain's DNS record must point at this server.
 #
 # Never overwritten or deleted in the destination: server/.env, server/data (your database),
 # server/uploads (attachments and documents), node_modules. The database is also copied to a
@@ -27,7 +32,11 @@ KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
 DOMAIN="${DOMAIN-amb.makketing.com}"   # "-" not ":-": an explicitly empty DOMAIN disables the mapping
 ACME_EMAIL="${ACME_EMAIL:-}"
+SSL_CERT="${SSL_CERT:-}"; SSL_KEY="${SSL_KEY:-}"
+HTTPS="${HTTPS:-}"   # true = visitors use https although this server only sees http (Cloudflare, a proxy container in front)
+PROXY="${PROXY:-auto}"
 CADDY_DIR="${CADDY_DIR:-/etc/caddy}"
+NGINX_DIR="${NGINX_DIR:-/etc/nginx}"
 
 PID_FILE="${DEST_DIR}/.amb-board.pid"
 LOG_FILE="${DEST_DIR}/amb-board.log"
@@ -119,40 +128,124 @@ in_dest "npm run build"
 PORT="${PORT:-$(grep -E '^PORT=' "${DEST_DIR}/server/.env" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d '"' | tr -d "'" || true)}"
 PORT="${PORT:-3417}"
 
-# ---------------------------------------------------------------- map the domain to the app (Caddy reverse proxy + automatic HTTPS)
-SECURE=false; BEHIND_PROXY=false
-if [ -n "$DOMAIN" ]; then
-  if command -v caddy >/dev/null; then
-    SITE_DIR="${CADDY_DIR}/sites"; SITE="${SITE_DIR}/amb-board.caddy"; MAIN="${CADDY_DIR}/Caddyfile"
-    mkdir -p "$SITE_DIR"
-    log "Mapping ${DOMAIN} -> 127.0.0.1:${PORT} in ${SITE}"
-    # Caddy keeps the Host header and adds X-Forwarded-*; the app's cross-origin check compares Origin with Host.
-    {
-      printf '# Managed by deploy.sh: regenerated on every deploy.\n%s {\n    encode gzip\n    request_body {\n        max_size 12MB\n    }\n    reverse_proxy 127.0.0.1:%s\n}\n' "$DOMAIN" "$PORT"
-    } > "$SITE"
-    # the main Caddyfile must import the sites folder (added once; the original is kept as Caddyfile.bak-deploy)
-    IMPORT_LINE="import ${SITE_DIR}/*.caddy"
-    if [ ! -f "$MAIN" ]; then
-      { [ -n "$ACME_EMAIL" ] && printf '{\n    email %s\n}\n\n' "$ACME_EMAIL"; printf '%s\n' "$IMPORT_LINE"; } > "$MAIN"
-    elif ! grep -qF "$IMPORT_LINE" "$MAIN"; then
-      cp -n "$MAIN" "${MAIN}.bak-deploy" || true
-      printf '\n%s\n' "$IMPORT_LINE" >> "$MAIN"
+# ---------------------------------------------------------------- map the domain to the app (through the web server already on 80/443)
+SECURE=false; BEHIND_PROXY=false; TLS_ELSEWHERE=""
+[ "$HTTPS" = true ] && SECURE=true
+
+# who listens on 80/443 right now? (nginx, caddy, apache2/httpd, traefik, ...)
+detect_proxy() {
+  local who
+  who="$(ss -ltnpH 2>/dev/null | awk '$4 ~ /:(80|443)$/' | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"//')"
+  case "$who" in
+    nginx) echo nginx ;; caddy) echo caddy ;; "") command -v nginx >/dev/null && echo nginx || { command -v caddy >/dev/null && echo caddy || echo none; } ;; *) echo "other:${who}" ;;
+  esac
+}
+
+# name of the program holding port 443, empty if none
+owner_443() { ss -ltnpH 2>/dev/null | awk '$4 ~ /:443$/' | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"//'; }
+
+map_nginx() {
+  local dir="${NGINX_DIR}/conf.d" conf listen_tls="" o443
+  o443="$(owner_443)"
+  if [ -n "$o443" ] && [ "$o443" != nginx ]; then
+    [ -n "$SSL_CERT$SSL_KEY$ACME_EMAIL" ] && warn "port 443 is held by '${o443}', so nginx cannot terminate HTTPS here; ignoring SSL_CERT/SSL_KEY/ACME_EMAIL and serving ${DOMAIN} on port 80."
+    SSL_CERT=""; SSL_KEY=""; ACME_EMAIL=""; TLS_ELSEWHERE="$o443"
+  fi
+  [ -d "${NGINX_DIR}/sites-available" ] && dir="${NGINX_DIR}/sites-available"
+  mkdir -p "$dir"; conf="${dir}/amb-board.conf"
+  log "Adding ${DOMAIN} -> 127.0.0.1:${PORT} to nginx (${conf})"
+  # Host must reach the app unchanged: its cross-origin check compares the browser's Origin with Host.
+  local common="client_max_body_size 12m;
+    location / {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 120s;
+    }"
+  if [ -n "$SSL_CERT" ] && [ -n "$SSL_KEY" ] && [ -f "$SSL_CERT" ] && [ -f "$SSL_KEY" ]; then
+    cat > "$conf" <<NGINX
+# Managed by deploy.sh: regenerated on every deploy.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    return 301 https://\$host\$request_uri;
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+    ssl_certificate ${SSL_CERT};
+    ssl_certificate_key ${SSL_KEY};
+    ${common}
+}
+NGINX
+    SECURE=true
+  else
+    cat > "$conf" <<NGINX
+# Managed by deploy.sh: regenerated on every deploy. certbot (ACME_EMAIL) adds the HTTPS block next to this one.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    ${common}
+}
+NGINX
+  fi
+  [ "$dir" = "${NGINX_DIR}/sites-available" ] && mkdir -p "${NGINX_DIR}/sites-enabled" && ln -sf "$conf" "${NGINX_DIR}/sites-enabled/amb-board.conf"
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx 2>/dev/null || nginx -s reload || warn "could not reload nginx; run: sudo systemctl reload nginx"
+    BEHIND_PROXY=true
+    if [ "$SECURE" != true ] && [ -n "$ACME_EMAIL" ]; then
+      if command -v certbot >/dev/null; then
+        certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ACME_EMAIL" --redirect && SECURE=true || warn "certbot failed (does the DNS record for ${DOMAIN} point here?); the site stays on plain HTTP"
+      else warn "ACME_EMAIL is set but certbot is not installed (sudo pacman -S certbot certbot-nginx)"; fi
     fi
-    if caddy validate --config "$MAIN" --adapter caddyfile >/dev/null 2>&1; then
-      if systemctl is-active --quiet caddy 2>/dev/null; then systemctl reload caddy || warn "could not reload caddy; run: sudo systemctl reload caddy"
-      elif systemctl list-unit-files caddy.service >/dev/null 2>&1 && systemctl enable --now caddy 2>/dev/null; then :
-      else caddy reload --config "$MAIN" --adapter caddyfile 2>/dev/null || warn "caddy is not running; start it with: sudo systemctl enable --now caddy"; fi
-      BEHIND_PROXY=true; SECURE=true   # Caddy serves HTTPS and redirects http to it, so the session cookie is Secure
-    else
-      caddy validate --config "$MAIN" --adapter caddyfile || true
-      warn "the Caddy config is invalid, so ${DOMAIN} is NOT mapped. The app itself is unaffected."
-    fi
-    if [ -f /etc/nginx/conf.d/amb-board.conf ] || [ -f /etc/nginx/sites-enabled/amb-board.conf ]; then
-      warn "an older nginx site for amb-board exists and may hold port 80/443. Remove it and stop nginx: sudo rm -f /etc/nginx/conf.d/amb-board.conf /etc/nginx/sites-enabled/amb-board.conf /etc/nginx/sites-available/amb-board.conf && sudo systemctl disable --now nginx"
+    if [ "$SECURE" != true ]; then
+      if [ -n "$TLS_ELSEWHERE" ]; then warn "${DOMAIN} is served over plain HTTP on port 80. If HTTPS is handled in front of nginx (Cloudflare, or the '${TLS_ELSEWHERE}' container on 443), deploy with HTTPS=true; otherwise route https://${DOMAIN} to this nginx from that container."
+      else warn "${DOMAIN} is served over plain HTTP. For HTTPS give ACME_EMAIL=... (certbot) or SSL_CERT/SSL_KEY, or HTTPS=true if TLS is handled in front, and deploy again."; fi
     fi
   else
-    warn "caddy is not installed, so ${DOMAIN} is not mapped. Install it (sudo pacman -S caddy) and deploy again."
+    nginx -t || true
+    warn "the generated nginx config is invalid, so ${DOMAIN} is NOT mapped (nginx keeps running with its old config). The app itself is unaffected."
   fi
+}
+
+map_caddy() {
+  local site_dir="${CADDY_DIR}/sites" site main import_line
+  site="${site_dir}/amb-board.caddy"; main="${CADDY_DIR}/Caddyfile"; mkdir -p "$site_dir"
+  log "Adding ${DOMAIN} -> 127.0.0.1:${PORT} to Caddy (${site})"
+  # Caddy keeps the Host header and adds X-Forwarded-*; the app's cross-origin check compares Origin with Host.
+  printf '# Managed by deploy.sh: regenerated on every deploy.\n%s {\n    encode gzip\n    request_body {\n        max_size 12MB\n    }\n    reverse_proxy 127.0.0.1:%s\n}\n' "$DOMAIN" "$PORT" > "$site"
+  import_line="import ${site_dir}/*.caddy"
+  if [ ! -f "$main" ]; then
+    { [ -n "$ACME_EMAIL" ] && printf '{\n    email %s\n}\n\n' "$ACME_EMAIL"; printf '%s\n' "$import_line"; } > "$main"
+  elif ! grep -qF "$import_line" "$main"; then
+    cp -n "$main" "${main}.bak-deploy" || true
+    printf '\n%s\n' "$import_line" >> "$main"
+  fi
+  if caddy validate --config "$main" --adapter caddyfile >/dev/null 2>&1; then
+    if systemctl is-active --quiet caddy 2>/dev/null; then systemctl reload caddy || warn "could not reload caddy; run: sudo systemctl reload caddy"
+    else caddy reload --config "$main" --adapter caddyfile 2>/dev/null || warn "caddy is not running; start it with: sudo systemctl enable --now caddy"; fi
+    BEHIND_PROXY=true; SECURE=true   # Caddy serves HTTPS and redirects http to it
+  else
+    caddy validate --config "$main" --adapter caddyfile || true
+    warn "the Caddy config is invalid, so ${DOMAIN} is NOT mapped. The app itself is unaffected."
+  fi
+}
+
+if [ -n "$DOMAIN" ] && [ "$PROXY" != none ]; then
+  kind="$PROXY"; [ "$kind" = auto ] && kind="$(detect_proxy)"
+  case "$kind" in
+    nginx) command -v nginx >/dev/null && map_nginx || warn "nginx was chosen but is not installed, so ${DOMAIN} is not mapped." ;;
+    caddy) command -v caddy >/dev/null && map_caddy || warn "caddy was chosen but is not installed, so ${DOMAIN} is not mapped." ;;
+    other:*) warn "ports 80/443 are served by '${kind#other:}', which this script does not configure. Add ${DOMAIN} there as a reverse proxy to http://127.0.0.1:${PORT} (keep the Host header). Nothing was changed." ;;
+    *) warn "no web server found on ports 80/443 and none is installed, so ${DOMAIN} is not mapped. Install nginx or caddy, or proxy to http://127.0.0.1:${PORT} yourself." ;;
+  esac
 fi
 
 log "npm start (port ${PORT}, log: ${LOG_FILE})"
@@ -162,7 +255,7 @@ log "npm start (port ${PORT}, log: ${LOG_FILE})"
 START_SCRIPT="${DEST_DIR}/.start.sh"
 {
   printf '#!/usr/bin/env bash\necho $$ > %q\ncd %q\n' "$PID_FILE" "$DEST_DIR"
-  # behind Caddy: trust X-Forwarded-For for rate limiting and use the Secure session cookie (the site is HTTPS-only)
+  # behind a proxy: trust X-Forwarded-For for rate limiting; over HTTPS: Secure session cookie (it would break plain-HTTP logins)
   [ "$BEHIND_PROXY" = true ] && printf 'export TRUST_PROXY=true\n'
   [ "$SECURE" = true ] && printf 'export COOKIE_SECURE=true\n'
   printf 'exec npm start\n'
@@ -190,4 +283,4 @@ if [ "$ok" -ne 1 ]; then
   die "deploy of commit ${COMMIT} failed to start. Your data is untouched (backup in ${BACKUP_ROOT})."
 fi
 log "Deployed commit ${COMMIT} to ${DEST_DIR}; running at http://127.0.0.1:${PORT} (pid $(cat "$PID_FILE"))"
-[ "$BEHIND_PROXY" = true ] && log "Public address: https://${DOMAIN} (Caddy fetches the certificate on the first visit; see: sudo journalctl -u caddy -n 30)"
+[ "$BEHIND_PROXY" = true ] && log "Public address: $([ "$SECURE" = true ] && echo https || echo http)://${DOMAIN}"
