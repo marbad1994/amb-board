@@ -64,10 +64,10 @@ Master-prompt sections. Evidence column is filled only for tested items.
 
 ## 5. Blockers / decisions needing the product owner
 
-1. Approve staying on SQLite for the first release vs. moving to Postgres now (D1).
-2. Provide an LLM provider key and choice for Phase 4 (existing app uses xAI Grok).
+1. ~~SQLite vs Postgres~~ Resolved: keep stack (D1 approved).
+2. LLM providers chosen: DeepSeek + xAI Grok (D11). Still need DeepSeek API key.
 3. Email delivery provider (verification, password recovery, invitations) and billing provider/credentials.
-4. Brief section 14 screenshots, if exact reproduction is required.
+4. Mockup toured in a browser 2026-10-30; gaps: project-level To Do/In Progress/Done board with progress and status pills, top-bar search, Quick Add Task (Phase 2).
 5. Language strategy (EN/RO labels) is still open in the brief.
 
 ## 6. Delivery honesty note

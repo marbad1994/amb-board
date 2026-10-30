@@ -1794,3 +1794,19 @@ input[type='password'] {
   flex: 1;
   min-height: 0;
 }
+
+/* Matches the approved mockup: lighter page background, larger headings */
+:root {
+  --color-bg: #f4f7fb;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.panel,
+.stat-card,
+.area-card {
+  border-radius: 14px;
+}

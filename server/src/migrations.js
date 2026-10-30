@@ -171,9 +171,18 @@ export const migrations = [
   { id: '002_foundation', up: (db) => db.exec(foundation) },
 ];
 
-export function migrate(db) {
+function appliedIds(db) {
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
-  const applied = new Set(db.prepare('SELECT id FROM schema_migrations').all().map((r) => r.id));
+  return new Set(db.prepare('SELECT id FROM schema_migrations').all().map((r) => r.id));
+}
+
+export function pendingMigrations(db) {
+  const applied = appliedIds(db);
+  return migrations.filter((m) => !applied.has(m.id));
+}
+
+export function migrate(db) {
+  const applied = appliedIds(db);
   for (const m of migrations) {
     if (applied.has(m.id)) continue;
     db.exec('BEGIN');

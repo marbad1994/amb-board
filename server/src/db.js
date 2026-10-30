@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { migrate } from './migrations.js';
+import { migrate, pendingMigrations } from './migrations.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -14,8 +14,22 @@ function resolveDbPath() {
   return join(dataDir, 'board.sqlite');
 }
 
-export const db = new DatabaseSync(resolveDbPath());
+const dbPath = resolveDbPath();
+export const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+
+// Existing user data must survive upgrades: before applying schema changes to a database that already
+// holds data, write a consistent full copy next to it (board.sqlite.bak-<timestamp>). VACUUM INTO is
+// WAL-safe. A failed backup aborts startup rather than risking the data.
+function backupIfNeeded() {
+  if (dbPath === ':memory:') return;
+  const hasData = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get();
+  if (!hasData || pendingMigrations(db).length === 0) return;
+  const target = `${dbPath}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);
+  console.log(`database backed up to ${target} before migrating`);
+}
+backupIfNeeded();
 migrate(db);
 
 export function parseLabels(row) {
