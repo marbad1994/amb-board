@@ -30,8 +30,8 @@ function transport() {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-export async function sendMail({ to, subject, text, html }) {
-  await transport().sendMail({ from: cfg().from, to, subject: String(subject).replace(/[\r\n]+/g, ' ').slice(0, 200), text, html });
+export async function sendMail({ to, subject, text, html, replyTo }) {
+  await transport().sendMail({ from: cfg().from, to, subject: String(subject).replace(/[\r\n]+/g, ' ').slice(0, 200), text, html, ...(replyTo ? { replyTo } : {}) });
 }
 
 const link = (l) => (l && cfg().appUrl ? `${cfg().appUrl}${l.startsWith('/') ? l : `/${l}`}` : '');

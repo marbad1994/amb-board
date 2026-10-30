@@ -8,7 +8,8 @@ import { copyEntityInner, checkCopyTarget } from '../routes/transfer.js';
 import { columnRoom, fullMessage } from '../boards.js';
 import { COLUMN_STATUSES } from '../boards.js';
 import { spawnNextOccurrence } from '../routes/cards.js';
-import { nextRunAt } from '../automations/spec.js';
+import { nextRunAt, validateTrigger, validateSteps, describeTrigger, MAX_STEPS } from '../automations/spec.js';
+import { BUILTIN_TEMPLATES } from '../automations/template.js';
 import { forget } from './mcpServers.js';
 import { assertSafeUrl } from './mcpClient.js';
 import { encryptSecret } from '../secrets.js';
@@ -38,7 +39,11 @@ export const MORE_DOCS = {
   void_transaction: '{"transaction_id":""} marks a transaction as void (it stops counting)',
   create_column: '{"project_id":"","name":"","status":"todo|doing|blocked|done or empty","card_limit":5}',
   update_column: '{"project_id":"","column":"column name","name":"","status":"todo|doing|blocked|done or null","card_limit":"number or null"}',
-  update_automation: '{"automation_id":"","enabled":true}',
+  update_automation: '{"automation_id":"","enabled":true,"name":"","trigger":{...as in create_automation},"steps":[...as in create_automation]} (only fields to change; steps and trigger replace the old ones completely, so send the whole list; get the current ones from list_automations)',
+  delete_automation: '{"automation_id":""} deletes the flow and its run history; cannot be undone, prefer update_automation enabled:false unless asked to delete',
+  create_email_template: '{"name":"","subject":"may use {{placeholders | filters}}","body":"Markdown-lite with {{result.news | pretty}} etc."} a reusable email for send_email steps (use its id as "template")',
+  update_email_template: '{"template_id":"","name":"","subject":"","body":""} (only fields to change)',
+  delete_email_template: '{"template_id":""} refused while a flow uses it',
   run_automation: '{"automation_id":"your scheduled automation"} runs it now',
   connect_mcp_server: '{"name":"short name","url":"https://... the server\'s MCP address"} sets up a connection for the assistant. Do NOT ask for or include any token in chat: the user types it into the approval card. Servers that need a browser login (OAuth) are not supported, only access tokens or open servers',
   disconnect_mcp_server: '{"name":"name of a connected server"}',
@@ -46,7 +51,7 @@ export const MORE_DOCS = {
 };
 export const MORE_TYPES = Object.keys(MORE_DOCS);
 export const MORE_ASYNC = new Set(['run_automation', 'connect_mcp_server']);
-export const MORE_DESTRUCTIVE = new Set(['delete_project', 'delete_task', 'delete_event', 'delete_note']);
+export const MORE_DESTRUCTIVE = new Set(['delete_project', 'delete_task', 'delete_event', 'delete_note', 'delete_automation', 'delete_email_template']);
 export const MORE_PERSONAL = new Set(['connect_mcp_server', 'disconnect_mcp_server']);
 
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
@@ -210,16 +215,54 @@ export function validateMore(type, a, ws, user) {
     if (type === 'update_column' && !bits.length) return { error: 'nothing to change' };
     return { payload: out, target: { entity: 'column', id: col?.id ?? null }, description: type === 'create_column' ? `Add column "${out.name}" to project "${p.name}"${bits.length > 1 ? ` (${bits.slice(1).join(', ')})` : ''}` : `Change column "${col.name}" in "${p.name}": ${bits.join(', ')}` };
   }
-  if (type === 'update_automation' || type === 'run_automation') {
+  if (type === 'update_automation' || type === 'run_automation' || type === 'delete_automation') {
     const au = myAutomation(a.automation_id, ws); if (!au) return { error: 'unknown automation' };
+    const manage = au.user_id === user.id || ['owner', 'admin'].includes(role);
+    if (type === 'delete_automation') {
+      if (!manage) return { error: 'only the flow owner or an admin can delete it' };
+      return { payload: { automation_id: au.id }, target: { entity: 'automation', id: au.id }, description: `DELETE automation "${au.name}" (${describeTrigger(JSON.parse(au.trigger))}) and its run history. This cannot be undone` };
+    }
     if (type === 'update_automation') {
-      if (au.user_id !== user.id && !['owner', 'admin'].includes(role)) return { error: 'only the flow owner or an admin can change it' };
-      if (typeof a.enabled !== 'boolean') return { error: 'enabled must be true or false' };
-      return { payload: { automation_id: au.id, enabled: a.enabled }, target: { entity: 'automation', id: au.id }, description: `${a.enabled ? 'Turn on' : 'Turn off'} automation "${au.name}"` };
+      if (!manage) return { error: 'only the flow owner or an admin can change it' };
+      const out = { automation_id: au.id }; const bits = [];
+      if (has(a, 'enabled')) { if (typeof a.enabled !== 'boolean') return { error: 'enabled must be true or false' }; out.enabled = a.enabled; bits.push(a.enabled ? 'turn on' : 'turn off'); }
+      if (has(a, 'name')) { const n = str(a.name, 80); if (!n) return { error: 'name cannot be empty' }; out.name = n; bits.push(`rename to "${n}"`); }
+      let trigger = JSON.parse(au.trigger);
+      if (has(a, 'trigger')) { const t = validateTrigger(a.trigger); if (t.error) return { error: t.error }; trigger = t.trigger; out.trigger = t.trigger; bits.push(`new schedule: ${describeTrigger(t.trigger)}`); }
+      if (has(a, 'steps')) {
+        const st = validateSteps(a.steps, ws, trigger, user.id); if (st.error) return { error: st.error };
+        out.steps = st.steps; bits.push(`replace the steps (${st.steps.map((x) => x.type.replace(/_/g, ' ')).join(', ')})`);
+        for (const x of st.steps) if (x.type === 'send_email') bits.push(`email ${x.args.to.map((r) => (r === 'me' ? 'you' : r)).join(', ')}`);
+      } else if (has(a, 'trigger')) { const st = validateSteps(JSON.parse(au.steps), ws, trigger, user.id); if (st.error) return { error: `the existing steps do not fit the new trigger: ${st.error}` }; }
+      if (!bits.length) return { error: 'nothing to change' };
+      return { payload: out, target: { entity: 'automation', id: au.id }, description: `Change automation "${au.name}": ${bits.join('; ')}` };
     }
     if (au.user_id !== user.id) return { error: 'only the flow owner can run it' };
     if (JSON.parse(au.trigger).type !== 'schedule') return { error: 'event flows run when their event happens' };
     return { payload: { automation_id: au.id }, target: { entity: 'automation', id: au.id }, description: `Run automation "${au.name}" now (${JSON.parse(au.steps).length} step${JSON.parse(au.steps).length === 1 ? '' : 's'}, as you)` };
+  }
+  if (type === 'create_email_template' || type === 'update_email_template' || type === 'delete_email_template') {
+    const clip1 = (v, n) => String(v ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, n);
+    if (type === 'create_email_template') {
+      const name = str(a.name, 60); const subject = clip1(a.subject, 200); const body = String(a.body ?? '').replace(/\r/g, '').trim().slice(0, 20000);
+      if (!name || !subject || !body) return { error: 'name, subject and body are required' };
+      if (db.prepare('SELECT COUNT(*) AS n FROM email_templates WHERE workspace_id = ?').get(ws).n >= 30) return { error: 'at most 30 templates' };
+      if (BUILTIN_TEMPLATES[name] || db.prepare('SELECT 1 FROM email_templates WHERE workspace_id = ? AND lower(name) = lower(?)').get(ws, name)) return { error: 'a template with that name already exists' };
+      return { payload: { name, subject, body }, target: { entity: 'email_template', id: null }, description: `Create email template "${name}" (subject: ${subject.slice(0, 80)})` };
+    }
+    const t = db.prepare('SELECT * FROM email_templates WHERE id = ? AND workspace_id = ?').get(str(a.template_id, 40), ws); if (!t) return { error: 'unknown email template' };
+    if (t.user_id !== user.id && !['owner', 'admin'].includes(role)) return { error: 'only the author or an admin can change it' };
+    if (type === 'delete_email_template') {
+      const used = db.prepare('SELECT name, steps FROM automations WHERE workspace_id = ?').all(ws).filter((x) => JSON.parse(x.steps).some((s) => s.type === 'send_email' && s.args.template === t.id)).map((x) => x.name);
+      if (used.length) return { error: `the template is used by: ${used.join(', ')}` };
+      return { payload: { template_id: t.id }, target: { entity: 'email_template', id: t.id }, description: `DELETE email template "${t.name}". This cannot be undone` };
+    }
+    const out = { template_id: t.id }; const bits = [];
+    if (has(a, 'name')) { const n = str(a.name, 60); if (!n) return { error: 'name cannot be empty' }; out.name = n; bits.push('name'); }
+    if (has(a, 'subject')) { const sj = clip1(a.subject, 200); if (!sj) return { error: 'subject cannot be empty' }; out.subject = sj; bits.push('subject'); }
+    if (has(a, 'body')) { const b = String(a.body ?? '').replace(/\r/g, '').trim().slice(0, 20000); if (!b) return { error: 'body cannot be empty' }; out.body = b; bits.push('body'); }
+    if (!bits.length) return { error: 'nothing to change' };
+    return { payload: out, target: { entity: 'email_template', id: t.id }, description: `Update email template "${t.name}": ${bits.join(', ')}` };
   }
   if (type === 'connect_mcp_server') {
     const name = str(a.name, 40); if (!name) return { error: 'name required' };
@@ -334,9 +377,16 @@ export function applyMore(type, p, ws, actor, ts) {
     }
     case 'update_automation': {
       const au = myAutomation(p.automation_id, ws);
-      db.prepare('UPDATE automations SET enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?').run(p.enabled ? 1 : 0, p.enabled ? nextRunAt(JSON.parse(au.trigger)) : null, ts, au.id);
+      const trigger = p.trigger ?? JSON.parse(au.trigger); const steps = p.steps ?? JSON.parse(au.steps);
+      const enabled = 'enabled' in p ? p.enabled : !!au.enabled;
+      db.prepare('UPDATE automations SET name = ?, trigger = ?, steps = ?, enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?')
+        .run(p.name ?? au.name, JSON.stringify(trigger), JSON.stringify(steps), enabled ? 1 : 0, enabled ? nextRunAt(trigger) : null, ts, au.id);
       return { entity: 'automation', id: au.id };
     }
+    case 'delete_automation': db.prepare('DELETE FROM automations WHERE id = ?').run(p.automation_id); return { entity: 'automation', id: p.automation_id, deleted: true };
+    case 'create_email_template': { const id = nanoid(); db.prepare('INSERT INTO email_templates (id, workspace_id, user_id, name, subject, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, ws, actor.id, p.name, p.subject, p.body, ts, ts); return { entity: 'email_template', id }; }
+    case 'update_email_template': { const t = db.prepare('SELECT * FROM email_templates WHERE id = ?').get(p.template_id); db.prepare('UPDATE email_templates SET name = ?, subject = ?, body = ?, updated_at = ? WHERE id = ?').run(p.name ?? t.name, p.subject ?? t.subject, p.body ?? t.body, ts, t.id); return { entity: 'email_template', id: t.id }; }
+    case 'delete_email_template': db.prepare('DELETE FROM email_templates WHERE id = ?').run(p.template_id); return { entity: 'email_template', id: p.template_id, deleted: true };
     case 'disconnect_mcp_server': {
       const s = db.prepare('SELECT id FROM mcp_servers WHERE workspace_id = ? AND user_id = ? AND lower(name) = lower(?)').get(ws, actor.id, p.name);
       if (s) { db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(s.id); forget(s.id); }

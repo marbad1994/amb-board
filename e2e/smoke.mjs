@@ -72,7 +72,7 @@ await new Promise((r) => fakeAi.listen(0, '127.0.0.1', r));
 const dir = mkdtempSync(join(tmpdir(), 'amb-e2e-'));
 const server = spawn(process.execPath, ['--experimental-sqlite', join(root, 'server/src/index.js')], {
   env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'e2e.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up'),
-    DEEPSEEK_API_KEY: 'e2e-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${fakeAi.address().port}`, X_GROK_API_KEY: '' },
+    SMTP_USER: 'admin@example.test', SMTP_PASS: 'e2e-not-used', DEEPSEEK_API_KEY: 'e2e-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${fakeAi.address().port}`, X_GROK_API_KEY: '' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve, reject) => {
@@ -672,6 +672,29 @@ try {
     await page.getByText(/3 columns/).waitFor();
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     await page.locator('.project-card', { hasText: 'Move plan project' }).first().waitFor();
+  });
+
+  await step('automations: an email template with placeholders, previewed with sample data, then used by a "Send an email" step', async () => {
+    await page.getByRole('link', { name: 'Automations' }).click();
+    await page.getByRole('button', { name: 'New template' }).click();
+    await page.getByLabel('Name', { exact: true }).fill('E2E note');
+    await page.getByLabel('Subject', { exact: true }).fill('Hello {{owner.name}}');
+    await page.getByLabel('Message', { exact: true }).fill('# News\n\n{{result.news | pretty | truncate:300}}');
+    await page.getByRole('button', { name: 'Preview' }).click();
+    await page.getByText(/Subject: Hello /).waitFor();
+    await page.frameLocator('iframe[title="Template preview"]').getByText('News').first().waitFor();
+    await page.getByRole('button', { name: 'Save template' }).click();
+    await page.getByRole('list', { name: 'Email templates list' }).getByText('E2E note').waitFor();
+    await page.getByRole('button', { name: 'New automation' }).click();
+    await page.getByLabel('Automation name').fill('Mail me the news');
+    await page.getByLabel('Step 1 action').selectOption({ label: 'Send an email' });
+    await page.locator('.flow-step').first().getByLabel('Template').selectOption({ label: 'E2E note' });
+    await page.getByRole('button', { name: 'Preview with sample data' }).click();
+    await page.frameLocator('iframe[title="Email preview"]').getByText('News').first().waitFor();
+    await page.getByRole('button', { name: 'Save automation' }).click();
+    const card = page.getByRole('article', { name: 'Mail me the news' });
+    await card.getByText('1. Send an email').waitFor();
+    await shot(page, '24-email-flow');
   });
 
   await step('settings: let the assistant auto-apply routine changes; connect a tool (private addresses refused)', async () => {

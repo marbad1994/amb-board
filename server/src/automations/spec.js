@@ -4,9 +4,13 @@ import { db } from '../db.js';
 import { wallToUtc, isValidTimeZone } from '../calendar/recurrence.js';
 import { addDays } from '../finance/money.js';
 import { PRIORITIES, parseDate } from '../validate.js';
+import { render, BUILTIN_TEMPLATES } from './template.js';
+import { mailConfigured } from '../notifications/mailer.js';
 
 export const MAX_STEPS = 10;
 export const MAX_AUTOMATIONS = 25;
+export const MAX_RECIPIENTS = 5;
+export const EMAIL_RE = /^[^\s@<>",;()\\]{1,64}@[^\s@<>",;()\\]{1,190}\.[a-z]{2,}$/i;
 export const EVENT_TRIGGERS = { task_done: 'A task is completed', task_created: 'A task is created', transaction_added: 'A transaction is recorded' };
 export const FREQUENCIES = ['daily', 'weekdays', 'weekly', 'monthly', 'once'];
 export const STEP_DOCS = {
@@ -19,10 +23,11 @@ export const STEP_DOCS = {
   notify: '{"title":"may use {{placeholders}}","body":"","link":"/tasks"}',
   use_tool: '{"tool":"web_search|read_web_page|<a built-in skill such as list_tasks, analyze_spending, project_health, month_summary>|external","args":{"query":"..."},"server":"(external only) name of a connected server","external_tool":"(external only) tool name","allow_write":false,"save_as":"short_name"} runs the tool; later steps can use its text as {{result.short_name}}. A connected tool that is not read-only needs allow_write true',
   ai_text: '{"instruction":"what to write, e.g. Summarise the news in 3 bullet points","input":"{{result.news}}","save_as":"short_name"} lets the AI write text from the input; use it as {{result.short_name}} (counts against the daily AI limit)',
+  send_email: '{"to":["me","name@example.com"],"template":"optional template id or built-in key: daily_digest|news_summary|alert|weekly_review","subject":"may use {{placeholders | filters}}","body":"Markdown-lite text with {{placeholders}}: # heading, - list, **bold**, [text](https://link)"} sends from the AMB Board address; "me" is the flow owner; up to 5 recipients; replies go to the flow owner; limits per day apply. Needs email set up on the server',
   generate_report: '{"kind":"overview|monthly_finance|workload|project_status","project_id":""}',
 };
 export const STEP_TYPES = Object.keys(STEP_DOCS);
-export const PLACEHOLDERS = ['result.NAME (from a tool or AI step)', 'date', 'weekday', 'trigger.title', 'trigger.project', 'trigger.priority', 'trigger.description', 'trigger.amount', 'trigger.currency'];
+export const PLACEHOLDERS = ['result.NAME (from a tool or AI step)', 'owner.name', 'owner.email', 'workspace.name', 'date', 'weekday', 'trigger.title', 'trigger.project', 'trigger.priority', 'trigger.description', 'trigger.amount', 'trigger.currency'];
 
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -105,6 +110,17 @@ export function validateSteps(steps, ws, trigger, userId = null) {
       const link = str(a.link, 200);
       if (link && !link.startsWith('/')) return { error: `${at}: link must be an app path such as /tasks` };
       out.push({ type, args: { title: str(a.title, 200), body: str(a.body, 500), link } });
+    } else if (type === 'send_email') {
+      if (!mailConfigured()) return { error: `${at}: email delivery is not set up on this server yet (the administrator adds the SMTP settings)` };
+      const to = [...new Set((Array.isArray(a.to) ? a.to : [a.to]).map((x) => String(x ?? '').trim().toLowerCase()).filter(Boolean))];
+      if (!to.length || to.length > MAX_RECIPIENTS) return { error: `${at}: give 1 to ${MAX_RECIPIENTS} recipients` };
+      for (const x of to) if (x !== 'me' && !EMAIL_RE.test(x)) return { error: `${at}: "${x.slice(0, 60)}" is not a valid email address (use "me" for yourself)` };
+      const template = str(a.template, 40);
+      if (template && !BUILTIN_TEMPLATES[template] && !db.prepare('SELECT 1 FROM email_templates WHERE id = ? AND workspace_id = ?').get(template, ws)) return { error: `${at}: unknown email template` };
+      const subject = String(a.subject ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+      const body = String(a.body ?? '').replace(/\r/g, '').trim().slice(0, 20000);
+      if (!template && (!subject || !body)) return { error: `${at}: a subject and a body (or a template) are required` };
+      out.push({ type, args: { to, template, subject, body } });
     } else if (type === 'use_tool') {
       const tool = str(a.tool, 60);
       const saveAs = str(a.save_as, 20).toLowerCase();
@@ -166,9 +182,7 @@ export function describeTrigger(t) {
   return `${when} at ${t.time} (${t.timezone})`;
 }
 
-export function fill(text, ctx) {
-  return String(text ?? '').replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/g, (_, k) => String(ctx[k] ?? ''));
-}
+export function fill(text, ctx) { return render(text, ctx); }
 
 import { nanoid } from 'nanoid';
 import { nowIso } from '../db.js';

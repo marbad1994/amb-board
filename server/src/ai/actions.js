@@ -18,7 +18,7 @@ import { validateTrigger, validateSteps, describeTrigger, insertAutomation, auto
 export const ACTION_TYPES = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_event', 'create_project', 'create_transaction',
   'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit', 'create_automation', 'setup_plan', 'call_external_tool', ...MORE_TYPES];
 // Types that only make sense for the signed-in person's own assistant: never offered to MCP clients, never inside a plan, never auto-approved.
-export const PERSONAL_ONLY = new Set(['call_external_tool', 'setup_plan', 'create_automation', 'run_automation', 'copy_to_workspace', ...MORE_DESTRUCTIVE, ...MORE_PERSONAL]);
+export const PERSONAL_ONLY = new Set(['call_external_tool', 'setup_plan', 'create_automation', 'run_automation', 'copy_to_workspace', 'update_automation', 'create_email_template', 'update_email_template', ...MORE_DESTRUCTIVE, ...MORE_PERSONAL]);
 // Routine, easily-undone changes a person may let the assistant apply without asking. Never money, projects, flows or external tools.
 export const AUTO_APPROVABLE = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_note', 'create_event', 'create_habit', 'add_milestone', 'move_task', 'complete_subtask', 'complete_milestone', 'log_habit', 'create_idea'];
 const PLAN_MAX_STEPS = 20;
