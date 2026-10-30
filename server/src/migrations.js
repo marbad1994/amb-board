@@ -551,6 +551,23 @@ const depthTables = `
   ALTER TABLE ai_summaries_new RENAME TO ai_summaries;
 `;
 
+const budgetDrafts = `
+  -- A draft is what the AI/CSV pipeline proposes. Nothing in it touches real data until it is applied.
+  CREATE TABLE ai_budget_drafts (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    payload TEXT NOT NULL,                 -- JSON: lines, parsed rows with their suggested category, notes
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied')),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    applied_at TEXT
+  );
+  CREATE INDEX idx_budget_drafts_user ON ai_budget_drafts(workspace_id, user_id);
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -573,6 +590,7 @@ export const migrations = [
   { id: '006_assistant', up: (db) => db.exec(assistantTables) },
   { id: '007_life', up: (db) => db.exec(lifeTables) },
   { id: '008_depth', up: (db) => db.exec(depthTables) },
+  { id: '009_budget_drafts', up: (db) => db.exec(budgetDrafts) },
 ];
 
 function appliedIds(db) {

@@ -33,6 +33,15 @@ const fakeAi = createServer((req, res) => {
       res.setHeader('content-type', 'application/json');
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }], usage: {} }));
     }
+    if (msgs[0].content.includes('merchant/description texts')) {
+      const items = JSON.parse(msgs[1].content.match(/<data>(.*)<\/data>/s)[1]).descriptions;
+      res.setHeader('content-type', 'application/json');
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ assignments: items.map((d) => ({ id: d.id, category: d.text.includes('netflix') ? 'Streaming' : 'Groceries', parent: d.text.includes('netflix') ? 'Subscriptions' : '' })) }) } }], usage: {} }));
+    }
+    if (msgs[0].content.includes('monthly personal budget')) {
+      res.setHeader('content-type', 'application/json');
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ categories: [{ name: 'Rent', monthly_limit: 2500 }, { name: 'Utilities', monthly_limit: 300 }], notes: 'Assumed a couple.' }) } }], usage: {} }));
+    }
     if (msgs[0].content.includes('"accomplishments"')) {
       res.setHeader('content-type', 'application/json');
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ headline: 'Weekly review from fake provider', accomplishments: ['Chose flooring'], suggestions: ['Rest'] }) } }], usage: {} }));
@@ -247,7 +256,7 @@ try {
     await page.getByLabel('Type').selectOption('income');
     await page.getByLabel('Amount', { exact: true }).fill('3000');
     await page.getByLabel('Description').first().fill('Salary');
-    await page.getByLabel('Category').selectOption({ label: 'Salary' });
+    await page.getByLabel('Category', { exact: true }).selectOption({ label: 'Salary' });
     await page.getByRole('button', { name: 'Add', exact: true }).first().click();
     await eur.getByText('€3,000.00').first().waitFor();
     assert.match(await eur.innerText(), /Net cash flow\s*€500\.00/);
@@ -383,12 +392,56 @@ try {
   await step('finance depth: category budget, emergency fund, debt payments', async () => {
     await page.getByRole('link', { name: 'Finance & Budget' }).click();
     await page.getByRole('button', { name: 'Monthly budget' }).click();
-    await page.getByLabel('Budget category').selectOption({ label: 'Food' });
-    await page.getByLabel('Budget amount').fill('500');
     await page.getByLabel('Budget currency').fill('EUR');
-    await page.getByRole('button', { name: 'Set budget' }).click();
-    await page.getByText('Food (EUR)').waitFor();
-    await page.getByText(/€500\.00 left/).waitFor();
+    await page.getByLabel('Limit for Food').fill('500');
+    await page.getByRole('button', { name: 'Save budget' }).click();
+    await page.getByText('Budget saved.').waitFor();
+    await page.getByRole('img', { name: /Budget versus spent per category in EUR: Food/ }).waitFor();
+    // category manager: add a sub-category and give it a limit through the builder
+    await page.getByLabel('New category name').fill('Coffee');
+    await page.getByLabel('Parent category').selectOption({ label: 'Inside Food' });
+    await page.getByRole('button', { name: 'Add category' }).click();
+    await page.getByLabel('Limit for Coffee').waitFor();
+    await page.getByRole('button', { name: 'Copy from previous month' }).click();
+    await page.getByText(/No EUR budget found for/).waitFor();
+    // Create with AI: prompt only. Figures the user typed are labelled as theirs, the rest as AI estimates
+    await page.getByRole('button', { name: 'Create with AI' }).click();
+    await page.getByLabel('Describe what you need').fill('Budget for a couple. Rent is 2500 EUR, utilities about 300 EUR.');
+    await page.getByRole('button', { name: 'Generate draft' }).click();
+    await page.getByRole('table', { name: 'Proposed budget lines' }).waitFor();
+    await page.getByText('A figure you stated').first().waitFor();
+    assert.equal(await page.getByLabel('Limit for Rent').inputValue(), '2500.00');
+    await page.getByLabel('Limit for Rent').fill('2600');
+    await page.getByLabel('Use Utilities').uncheck();
+    await shot(page, '17-ai-budget-review');
+    await page.getByRole('button', { name: /Create budget \(1 categories\)/ }).click();
+    await page.getByText('Budget created for').waitFor();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('[aria-label="Limit for Rent"]')?.value === '2600.00', null, { timeout: 15000 }); // the reviewed figure (not the AI draft) was saved
+    assert.equal(await page.getByLabel('Limit for Utilities').count(), 0, 'unticked line was not created at all');
+    // Create with AI: CSV statement, with transaction import
+    const d = (n) => { const x = new Date(); x.setUTCDate(1); x.setUTCMonth(x.getUTCMonth() - n); return x.toISOString().slice(0, 8); };
+    const csv = ['Date,Description,Amount', `${d(1)}05,KAUFLAND 12345678,-300.00`, `${d(1)}12,Netflix.com,-15.00`, `${d(2)}06,KAUFLAND 87654321,-340.00`, `${d(2)}28,ACME PAYROLL,2500.00`].join('\n');
+    await page.getByRole('button', { name: 'Create with AI' }).click();
+    await page.getByLabel('Or add a bank statement (CSV)').setInputFiles({ name: 'statement.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+    await page.getByRole('button', { name: 'Generate draft' }).click();
+    await page.getByText(/4 of 4 rows read/).waitFor();
+    await page.getByText(/negative amounts are expenses/).waitFor();
+    assert.equal(await page.getByLabel('Limit for Groceries').inputValue(), '320.00', 'average of 300 and 340 over two months');
+    await page.getByLabel(/Also import the 4 transactions/).check();
+    await page.getByRole('button', { name: /Create budget/ }).click();
+    await page.getByText('Budget created for').waitFor();
+    await page.getByText('Transactions imported').waitFor();
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.getByLabel('Limit for Groceries').waitFor();
+    await page.getByRole('button', { name: 'Overview' }).click();
+    await page.getByRole('img', { name: /Spending by category in EUR/ }).first().waitFor();
+    await page.getByRole('img', { name: /Income and expenses per month in EUR/ }).first().waitFor();
+    const label = await page.getByRole('img', { name: /Income and expenses per month in EUR/ }).first().getAttribute('aria-label');
+    assert.match(label, /expenses €315\.00/, 'last month: Kaufland 300 + Netflix 15 from the imported statement');
+    assert.match(label, /income €2,500\.00, expenses €340\.00/, 'two months ago: payroll and Kaufland');
+    await shot(page, '18-finance-charts');
+    await page.getByRole('link', { name: 'Finance & Budget' }).click();
     await page.getByRole('button', { name: 'Savings' }).click();
     await page.getByLabel('Savings goal name').fill('Emergency fund');
     await page.getByLabel('Savings target').fill('3000');

@@ -17,6 +17,7 @@ import notesRouter from './routes/notes.js';
 import documentsRouter from './routes/documents.js';
 import myDayRouter from './routes/myday.js';
 import financeExtraRouter from './routes/financeExtra.js';
+import financeAiRouter from './routes/financeAi.js';
 import notificationsRouter from './routes/notifications.js';
 import tasksRouter, { searchRouter } from './routes/tasks.js';
 import projectsRouter from './routes/projects.js';
@@ -62,6 +63,7 @@ export function createApp() {
   app.use('/api/search', searchRouter);
   app.use('/api/finance', financeRouter);
   app.use('/api/finance', financeExtraRouter);
+  app.use('/api/finance', financeAiRouter);
   app.use('/api/calendar', calendarRouter);
   app.use('/api/goals', goalsRouter);
   app.use('/api/habits', habitsRouter);

@@ -135,6 +135,13 @@ export const api = {
     return res.blob();
   },
 
+  // budget builder, charts, AI budget
+  bulkBudget: (data) => request('/finance/budget/bulk', json('PUT', data)),
+  financeTrend: (months = 6) => request(`/finance/trend?months=${months}`),
+  createCategory: (name, parentId) => request('/finance/categories', json('POST', { name, parentId: parentId || null })),
+  aiBudgetDraft: (formData) => request('/finance/ai-budget/draft', { method: 'POST', body: formData }),
+  applyAiBudget: (id, data) => request(`/finance/ai-budget/drafts/${id}/apply`, json('POST', data)),
+
   // notifications, budgets, savings, debts, reviews
   notifications: () => request('/notifications'),
   refreshNotifications: () => request('/notifications/refresh', { method: 'POST' }),

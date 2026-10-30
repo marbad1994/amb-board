@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { fmt, toMinor, lastCurrency, rememberCurrency } from '../lib/money.js';
 import { canManage } from '../context/AuthContext.jsx';
+import { Sparkles } from 'lucide-react';
+import { BudgetBars } from './Charts.jsx';
+import AiBudgetWizard from './AiBudgetWizard.jsx';
 
 const today = () => new Date().toISOString().slice(0, 10);
-const STATUS = { ok: 'On track', warning: 'Near limit', over: 'Over budget' };
 
 function useLoader(fn) {
   const [data, setData] = useState(null);
@@ -16,54 +18,117 @@ function useLoader(fn) {
 
 export function BudgetTab({ role, writable }) {
   const [month, setMonth] = useState(today().slice(0, 7));
+  const [currency, setCurrency] = useState(lastCurrency());
   const fetcher = useCallback(() => api.monthBudget(month), [month]);
   const { data, error, setError, load } = useLoader(fetcher);
   const [cats, setCats] = useState([]);
-  const [f, setF] = useState({ categoryId: '', amount: '', currency: lastCurrency() });
+  const [vals, setVals] = useState({});
+  const [saved, setSaved] = useState('');
+  const [newCat, setNewCat] = useState({ name: '', parentId: '' });
+  const [wizard, setWizard] = useState(false);
   const manage = canManage(role);
-  useEffect(() => { api.listCategories().then(setCats).catch(() => {}); }, []);
 
-  const save = async (e) => {
-    e.preventDefault();
-    const minor = toMinor(f.amount);
-    if (minor === null) return setError('Enter an amount such as 400 or 400.50');
-    try { rememberCurrency(f.currency); await api.setMonthBudget({ month, categoryId: f.categoryId, currency: f.currency, amount_minor: minor }); setF({ ...f, amount: '' }); await load(); } catch (err) { setError(err.message); }
+  const loadCats = useCallback(() => api.listCategories().then(setCats).catch(() => {}), []);
+  useEffect(() => { loadCats(); }, [loadCats]);
+
+  // fill the builder from the saved budget for this month and currency
+  useEffect(() => {
+    if (!data) return;
+    const v = {};
+    for (const r of data.rows) if (r.currency === currency) v[r.category_id] = (r.budget_minor / 100).toFixed(2);
+    setVals(v);
+  }, [data, currency]);
+
+  const ordered = [...cats.filter((c) => !c.parent_id)].flatMap((p) => [p, ...cats.filter((c) => c.parent_id === p.id).map((c) => ({ ...c, child: true }))]);
+  const lines = ordered.map((c) => ({ categoryId: c.id, amount_minor: vals[c.id] ? toMinor(vals[c.id]) || 0 : 0 }));
+  const badInput = ordered.some((c) => vals[c.id] && toMinor(vals[c.id]) === null);
+  const total = lines.reduce((a, l) => a + l.amount_minor, 0);
+
+  const save = async () => {
+    setError(''); setSaved('');
+    try { rememberCurrency(currency); await api.bulkBudget({ month, currency, lines }); await load(); setSaved('Budget saved.'); } catch (err) { setError(err.message); }
   };
+
+  const copyPrevious = async () => {
+    const [y, m] = month.split('-').map(Number);
+    const t = y * 12 + (m - 1) - 1;
+    const prev = `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+    try {
+      const p = await api.monthBudget(prev);
+      const v = {};
+      for (const r of p.rows) if (r.currency === currency) v[r.category_id] = (r.budget_minor / 100).toFixed(2);
+      if (Object.keys(v).length === 0) return setError(`No ${currency} budget found for ${prev}.`);
+      setVals(v); setSaved(`Copied from ${prev}. Press Save budget to keep it.`); setError('');
+    } catch (err) { setError(err.message); }
+  };
+
+  const addCategory = async (e) => {
+    e.preventDefault();
+    try { await api.createCategory(newCat.name.trim(), newCat.parentId); setNewCat({ name: '', parentId: '' }); await loadCats(); } catch (err) { setError(err.message); }
+  };
+
+  const rows = data?.rows.filter((r) => r.currency === currency) || [];
 
   return (
     <>
-      <div className="filter-row"><label>Month <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></label></div>
+      <div className="filter-row">
+        <label>Month <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></label>
+        <label>Currency <input type="text" aria-label="Budget currency" maxLength={3} style={{ maxWidth: 80 }} value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} /></label>
+        {writable && <button type="button" className="btn btn-primary" onClick={() => setWizard(true)}><Sparkles size={16} aria-hidden="true" /> Create with AI</button>}
+      </div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      {manage ? (
-        <form className="panel inline-form inline-form--wide" style={{ marginBottom: 16 }} onSubmit={save} aria-label="Set category budget">
-          <select aria-label="Budget category" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })} required><option value="">Category</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-          <input type="text" inputMode="decimal" aria-label="Budget amount" placeholder="Monthly limit" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
-          <input type="text" aria-label="Budget currency" maxLength={3} style={{ maxWidth: 80 }} value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value.toUpperCase() })} />
-          <button type="submit" className="btn btn-primary" disabled={!f.categoryId || !f.amount}>Set budget</button>
-        </form>
-      ) : <p className="hint">Only owners and admins can set category budgets.</p>}
-      {data && data.rows.length === 0 && <div className="empty-state">No category budgets for {month}.</div>}
-      {data && data.rows.length > 0 && (
-        <section className="panel" aria-label="Budget versus actual">
-          <ul className="task-list">
-            {data.rows.map((r) => (
-              <li key={`${r.category_id}-${r.currency}`}>
-                <div className="task-list__main">
-                  <span>{r.category} ({r.currency})</span>
-                  <div className="progress" role="progressbar" aria-valuenow={Math.min(100, r.used_pct ?? 0)} aria-valuemin={0} aria-valuemax={100} aria-label={`${r.category} spent`}><div style={{ width: `${Math.min(100, r.used_pct ?? 0)}%`, background: r.status === 'over' ? '#d92d20' : r.status === 'warning' ? '#e0a526' : undefined }} /></div>
-                  <small>{fmt(r.actual_minor, r.currency)} of {fmt(r.budget_minor, r.currency)} · {fmt(r.remaining_minor, r.currency)} left</small>
-                </div>
-                <span className={`budget-status budget-status--${r.status === 'over' ? 'over' : r.status}`}>{STATUS[r.status]} ({r.used_pct}%)</span>
-                {manage && <button type="button" className="btn btn-ghost" onClick={() => api.removeMonthBudget(month, r.category_id, r.currency).then(load).catch((e) => setError(e.message))}>Remove</button>}
-              </li>
-            ))}
-          </ul>
-          {data.unbudgeted.map((u) => (
-            <p key={u.currency} className="hint">Spent without a budget ({u.currency}): {fmt(u.total_minor, u.currency)} ({u.categories.map((c) => `${c.name} ${fmt(c.total_minor, u.currency)}`).join(', ')}).</p>
+      {saved && <p className="form-ok" role="status">{saved}</p>}
+
+      {rows.length > 0 && (
+        <section className="panel" style={{ marginBottom: 16 }} aria-label="Budget versus actual">
+          <div className="panel__title"><h2>Budget vs spent, {month}</h2></div>
+          <BudgetBars rows={data.rows} currency={currency} />
+          {data.unbudgeted.filter((u) => u.currency === currency).map((u) => (
+            <p key={u.currency} className="hint">Spent without a budget: {fmt(u.total_minor, u.currency)} ({u.categories.map((c) => `${c.name} ${fmt(c.total_minor, u.currency)}`).join(', ')}).</p>
           ))}
+          {data.unbudgeted.filter((u) => u.currency !== currency).length > 0 && <p className="hint">Spending in other currencies is not shown here and never converted.</p>}
         </section>
       )}
+
+      <section className="panel" aria-label="Budget builder">
+        <div className="panel__title"><h2>Budget builder</h2><span className="muted">Total {fmt(total, currency)}</span></div>
+        {!manage && <p className="hint">Only owners and admins can change budgets.</p>}
+        <div className="table-wrap">
+          <table className="table" aria-label="Monthly limits by category">
+            <thead><tr><th>Category</th><th>Monthly limit ({currency})</th><th>Spent</th></tr></thead>
+            <tbody>
+              {ordered.map((c) => {
+                const r = rows.find((x) => x.category_id === c.id);
+                return (
+                  <tr key={c.id}>
+                    <td style={{ paddingLeft: c.child ? 28 : 8 }}>{c.child ? '- ' : ''}{c.name}</td>
+                    <td><input type="text" inputMode="decimal" aria-label={`Limit for ${c.name}`} placeholder="none" disabled={!manage} value={vals[c.id] ?? ''} onChange={(e) => { setVals({ ...vals, [c.id]: e.target.value }); setSaved(''); }} /></td>
+                    <td>{r ? `${fmt(r.actual_minor, currency)} (${r.used_pct}%)` : ''}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {manage && (
+          <div className="inline-form inline-form--wide" style={{ marginTop: 12 }}>
+            <button type="button" className="btn btn-primary" disabled={badInput} onClick={save}>Save budget</button>
+            <button type="button" className="btn" onClick={copyPrevious}>Copy from previous month</button>
+            <button type="button" className="btn btn-ghost" onClick={() => { setVals({}); setSaved('Cleared. Press Save budget to keep it.'); }}>Clear all</button>
+          </div>
+        )}
+        {manage && (
+          <form className="inline-form inline-form--wide" style={{ marginTop: 16 }} onSubmit={addCategory} aria-label="Add category">
+            <input type="text" aria-label="New category name" placeholder="New category" maxLength={60} value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} />
+            <select aria-label="Parent category" value={newCat.parentId} onChange={(e) => setNewCat({ ...newCat, parentId: e.target.value })}>
+              <option value="">Top level</option>{cats.filter((c) => !c.parent_id).map((c) => <option key={c.id} value={c.id}>Inside {c.name}</option>)}
+            </select>
+            <button type="submit" className="btn" disabled={!newCat.name.trim()}>Add category</button>
+          </form>
+        )}
+      </section>
       {!writable && <p className="hint">Read only.</p>}
+      {wizard && <AiBudgetWizard month={month} role={role} onClose={() => setWizard(false)} onDone={() => { setWizard(false); loadCats(); load(); }} />}
     </>
   );
 }

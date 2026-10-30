@@ -3,6 +3,7 @@ import { Download, Trash2 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import { BudgetTab, SavingsTab, DebtsTab } from '../components/FinanceDepth.jsx';
+import { DonutChart, TrendBars } from '../components/Charts.jsx';
 import { fmt, toMinor, lastCurrency, rememberCurrency } from '../lib/money.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -17,6 +18,7 @@ export default function FinancePage() {
   const [cats, setCats] = useState([]);
   const [projects, setProjects] = useState([]);
   const [recurring, setRecurring] = useState([]);
+  const [trend, setTrend] = useState(null);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('overview');
   const [form, setForm] = useState({ type: 'expense', status: 'posted', amount: '', currency: lastCurrency(), date: today(), description: '', categoryId: '', projectId: '' });
@@ -30,6 +32,8 @@ export default function FinancePage() {
   }, [month]);
 
   useEffect(() => { load(); }, [load]);
+  // refresh whenever the Overview tab is (re)opened, e.g. after the AI wizard imported a statement
+  useEffect(() => { if (tab === 'overview') { api.financeTrend(6).then(setTrend).catch(() => {}); load(); } }, [tab, load]);
   useEffect(() => {
     api.listCategories().then(setCats).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
@@ -101,9 +105,10 @@ export default function FinancePage() {
             <div className="stat-card"><div className="stat-card__head"><span>Net cash flow</span></div><div className="stat-card__num">{fmt(c.net_cashflow_minor, c.currency)}</div><div className="stat-card__sub">Income minus expenses, not a balance</div></div>
             <div className="stat-card"><div className="stat-card__head"><span>Planned</span></div><div className="stat-card__num">{fmt(c.planned_expenses_minor, c.currency)}</div><div className="stat-card__sub">Not yet paid</div></div>
           </div>
-          {c.categories.length > 0 && (
-            <ul className="plain-list">{c.categories.map((k) => <li key={k.name}><span>{k.name}</span><b>{fmt(k.total_minor, c.currency)}</b></li>)}</ul>
-          )}
+          <div className="chart-row">
+            {c.categories.length > 0 && <div><h3 className="sub-h">Spending by category</h3><DonutChart data={c.categories.map((k) => ({ label: k.name, value: k.total_minor }))} currency={c.currency} title={`Spending by category in ${c.currency}`} /></div>}
+            {trend?.series.find((x) => x.currency === c.currency) && <div><h3 className="sub-h">Last 6 months</h3><TrendBars points={trend.series.find((x) => x.currency === c.currency).points} currency={c.currency} /></div>}
+          </div>
         </section>
       ))}
 

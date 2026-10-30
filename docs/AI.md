@@ -15,6 +15,15 @@
 - Conversations and proposals are private to the user who created them, even inside a shared workspace. Viewers cannot chat (it spends AI budget) and cannot approve.
 - Every turn is metered like other AI calls (up to 4 provider calls per message) against `AI_DAILY_LIMIT`.
 
+## Create budget with AI (prompt and/or bank CSV)
+`POST /api/finance/ai-budget/draft` (multipart: `csv`, `prompt`, `month`, `currency`, `signMode`) then `POST /api/finance/ai-budget/drafts/:id/apply`.
+- **CSV path:** parsed by code (`finance/csv.js`: delimiter detection, quotes, English/Romanian headers, 1.234,56 vs 1,234.56, DD.MM.YYYY, debit/credit columns or signed amounts). The model receives ONLY de-duplicated merchant texts (dates, amounts and 4+ digit runs removed, top 150 by spend) plus existing category names, and returns an id-to-category mapping. It is never given and never outputs a number. Limits = monthly average of the file per category, rounded up, computed in code. Unknown ids are ignored, names are sanitised, at most 25 new categories (overflow goes to Other).
+- **Prompt path:** the model proposes categories and limits; each limit is labelled "A figure you stated" if the number appears in the user's text, otherwise "AI estimate". Invalid or out-of-range numbers are dropped.
+- **Both:** the CSV drives the numbers; the prompt only guides category naming.
+- **Nothing is created by drafting.** A draft is stored privately (24 h). The user reviews and edits every line, then applies it; apply is owner/admin only (like setting a budget by hand), re-validates all values, creates missing categories (with parents), sets the month's category limits, and optionally imports the file's transactions (idempotent: re-importing the same file creates no duplicates; identical rows within one file stay distinct).
+- **Without a working AI provider** a CSV draft still works (categories matched by name, rest in Other) and says so; a prompt-only draft returns 503.
+- Data sent to the provider: the description and merchant texts only; this is stated in the dialog before sending.
+
 ## Reviews
 `GET|POST /api/ai/review/weekly|monthly[?date=YYYY-MM-DD]` builds deterministic facts (`ai/reviews.js`: completed and incomplete tasks, project progress, posted finance per currency, the requesting user's habits, appointments, upcoming deadlines; monthly adds completed projects, goals, category budget performance, previous-month comparison, savings and debts) and asks the model only to phrase them. Cached per user and period; flagged stale when facts change; in-progress periods say so. Journal and notes are excluded.
 
