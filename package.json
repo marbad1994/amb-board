@@ -11,7 +11,8 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "test": "npm test -w server",
-    "e2e": "node e2e/smoke.mjs"
+    "e2e": "node e2e/smoke.mjs",
+    "e2e:extension": "node e2e/extension.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

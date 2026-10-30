@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "AMB Board assistant",
+  "version": "1.0.0",
+  "description": "Lets your AMB Board assistant read and fill fields in the ONE tab you choose to share. It never fills passwords or payment details and never submits anything without your confirmation.",
+  "permissions": ["activeTab", "scripting", "storage", "alarms"],
+  "action": { "default_title": "AMB Board assistant", "default_popup": "popup.html" },
+  "background": { "service_worker": "background.js" }
+}

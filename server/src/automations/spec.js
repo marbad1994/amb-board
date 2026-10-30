@@ -63,7 +63,7 @@ export const registerToolNames = (fn) => { toolNames = fn; };
 let externalLookup = () => null;   // (ws, userId, server) -> { name, cached tools or null }
 export const registerExternalLookup = (fn) => { externalLookup = fn; };
 const NAME_RE = /^[a-z][a-z0-9_]{0,19}$/;
-const NOT_IN_FLOWS = new Set(['call_external_tool', 'external_tools', 'generate_report']);   // external tools have their own form; reports their own step
+const NOT_IN_FLOWS = new Set(['call_external_tool', 'external_tools', 'generate_report', 'browser_status', 'browser_snapshot', 'browser_fill', 'browser_click']);   // external tools have their own form; reports their own step
 
 export function validateSteps(steps, ws, trigger, userId = null) {
   if (!Array.isArray(steps) || steps.length === 0) return { error: 'at least one step is required' };

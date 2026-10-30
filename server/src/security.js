@@ -87,6 +87,8 @@ export function securityHeaders(req, res, next) {
 // CSRF defence in depth on top of SameSite=Lax: reject state-changing requests whose Origin
 // does not match the Host the request was sent to.
 export function originCheck(req, res, next) {
+  // the browser extension talks to /api/browser-ext with a bearer token only (no cookies), from a chrome-extension:// origin
+  if (req.originalUrl.startsWith('/api/browser-ext/')) return next();
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const origin = req.headers.origin;
   if (!origin) return next(); // non-browser clients (curl, tests) send no Origin

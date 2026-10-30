@@ -685,6 +685,13 @@ try {
     await page.getByLabel('Server address').fill('https://127.0.0.1/mcp');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
     await page.getByText(/private network/).waitFor();
+    // browser assistant: pair a browser, token shown once, revoke
+    await page.getByLabel('Name of this browser').fill('E2E laptop');
+    await page.getByRole('button', { name: 'Create pairing token' }).click();
+    await page.getByText(/Pairing token for "E2E laptop" \(shown once\): amb_br_/).waitFor();
+    await page.getByRole('list', { name: 'Paired browsers' }).getByText('E2E laptop').waitFor();
+    await page.getByRole('button', { name: 'Remove E2E laptop' }).click();
+    await page.getByRole('list', { name: 'Paired browsers' }).waitFor({ state: 'detached' });
     await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor();
   });

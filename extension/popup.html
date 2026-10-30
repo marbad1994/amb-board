@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>AMB Board assistant</title>
+<style>
+  body{width:320px;margin:0;padding:14px;font:13px/1.45 system-ui,sans-serif;color:#1c2330}
+  h1{font-size:15px;margin:0 0 8px} label{display:block;margin:8px 0 2px;font-weight:600} input{width:100%;box-sizing:border-box;padding:7px 8px;border:1px solid #c9ced8;border-radius:6px;font:inherit}
+  button{margin-top:10px;padding:8px 12px;border:0;border-radius:6px;background:#0b7a70;color:#fff;font:inherit;font-weight:600;cursor:pointer;width:100%} button.sec{background:#e9edf3;color:#1c2330}
+  .hint{color:#5b6577;font-size:12px;margin:6px 0 0} .err{color:#b42318;margin-top:8px} .on{color:#0b7a70;font-weight:700}
+</style></head>
+<body>
+<h1>AMB Board assistant</h1>
+<div id="setup" hidden>
+  <label for="server">AMB Board address</label><input id="server" placeholder="https://amb.makketing.com">
+  <label for="token">Pairing token</label><input id="token" type="password" autocomplete="off" placeholder="amb_br_...">
+  <button id="connect">Connect</button>
+  <p class="hint">Create the token in AMB Board under Workspace &amp; account, Browser assistant.</p>
+</div>
+<div id="main" hidden>
+  <p id="status"></p>
+  <button id="share">Share this tab with the assistant</button>
+  <button id="stop" class="sec" hidden>Stop sharing</button>
+  <button id="disconnect" class="sec">Disconnect this browser</button>
+  <p class="hint">The assistant can only see and fill the tab you share, and only until you stop, close it or leave the site. It never fills passwords or payment fields, and asks you on the page before clicking. What it reads on the page is sent to your AI provider.</p>
+</div>
+<p id="err" class="err" hidden></p>
+<script src="popup.js"></script>
+</body></html>

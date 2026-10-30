@@ -12,6 +12,7 @@ import { describeTrigger, registerToolNames } from '../automations/spec.js';
 import { userServers, findServer, toolsOf } from './mcpServers.js';
 import { callTool } from './mcpClient.js';
 import { webSearch, readWebPage } from './web.js';
+import { browserStatus, runBrowser } from './browser.js';
 
 // Read-only tools the model may call. Each runs with the CALLER's workspace and is scoped by workspace_id.
 // The model never sees SQL, never chooses a workspace, and cannot call anything not listed here.
@@ -35,6 +36,15 @@ export const TOOLS = {
     } },
   list_workspaces: { kind: 'read', doc: 'list_workspaces {} -> every workspace the user belongs to (name, kind personal/shared, their role, which one is current, whether they can copy into it)',
     run: (ws, a, user) => { const d = workspaceDigest(ws, user?.id); return { current: d.current_workspace, workspaces: d.my_workspaces }; } },
+  // ---- the user's own browser (Chrome extension; only a tab the user shared) ----
+  browser_status: { kind: 'browser', doc: 'browser_status {} -> whether the user has shared a browser tab with you, and which site and page it is',
+    run: (ws, a, user) => browserStatus(ws, user?.id) },
+  browser_snapshot: { kind: 'browser', async: true, doc: 'browser_snapshot {} -> the shared tab: page title, site, visible text and every form field and button with an id, label, type, required flag, options and current value (password and payment fields are hidden). Call it before browser_fill and again after the page changes',
+    run: (ws, a, user) => runBrowser('snapshot', a, ws, user) },
+  browser_fill: { kind: 'browser', async: true, doc: 'browser_fill {fields:[{id, value}]} -> types the values into fields of the shared tab (max 20; ids from browser_snapshot; true/false for checkboxes; an option value or label for selects). It never fills password or payment fields and never submits. The user sees every field highlighted and can undo',
+    run: (ws, a, user) => runBrowser('fill', a, ws, user) },
+  browser_click: { kind: 'browser', async: true, doc: 'browser_click {id} -> asks the user, on the page, to allow a click on one button or link of the shared tab (for example Next or Submit). Nothing is clicked unless the user presses Allow',
+    run: (ws, a, user) => runBrowser('click', a, ws, user) },
   // ---- the web ----
   web_search: { kind: 'read', async: true, doc: 'web_search {query} -> up to 8 results (title, url, snippet) from the web. The query is sent to an outside search service: never include private data (names of people, amounts, addresses, notes). Use it for facts, documentation, and to find the address of an MCP server',
     run: (ws, a, user) => webSearch(a.query, user?.id) },
