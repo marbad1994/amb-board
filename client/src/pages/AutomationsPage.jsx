@@ -10,12 +10,13 @@ const FREQ = [['daily', 'Every day'], ['weekdays', 'Every weekday (Mon to Fri)']
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const LABEL = { create_task: 'Create a task', update_task: 'Change the triggering task', add_comment: 'Comment on the triggering task', create_transaction: 'Record a transaction',
   create_note: 'Write a note', create_event: 'Add a calendar event', notify: 'Send me a notification', generate_report: 'Generate a report',
-  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI' };
+  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI', send_email: 'Send an email' };
 const REPORTS = [['overview', 'Overview'], ['monthly_finance', 'Monthly finance'], ['workload', 'Workload'], ['project_status', 'Project status']];
 
 const DEFAULT_ARGS = {
   create_task: { project_id: '', title: '', due_in_days: '', priority: 'medium' }, update_task: { status: '', priority: '', due_in_days: '' }, add_comment: { text: '' },
   create_transaction: { type: 'expense', amount: '', currency: 'EUR', description: '', category: '', status: 'planned' }, create_note: { title: '', body: '' },
+  send_email: { to: ['me'], toText: 'me', template: '', subject: '', body: '' },
   use_tool: { tool: 'web_search', args: { query: '' }, save_as: '' }, ai_text: { instruction: '', input: '', save_as: '' },
   create_event: { title: '', in_days: 1, time: '09:00', timezone: TZ, reminder_minutes: 30 }, notify: { title: '', body: '', link: '/tasks' }, generate_report: { kind: 'overview', project_id: '' },
 };
@@ -59,7 +60,41 @@ function ToolFields({ a, set, tools }) {
   );
 }
 
-function StepFields({ step, set, projects, categories, trigger, tools }) {
+function EmailFields({ a, set, templates, before, meta, trigger }) {
+  const [preview, setPreview] = useState(null);
+  const [err, setErr] = useState('');
+  const chips = ['date', 'weekday', 'owner.name', ...before.map((n) => `result.${n} | pretty`), ...(trigger?.type === 'event' ? ['trigger.title', 'trigger.project'] : [])];
+  const add = (p) => set({ ...a, body: `${a.body || ''}${a.body && !a.body.endsWith('\n') ? ' ' : ''}{{${p}}}` });
+  const show = async () => {
+    setErr('');
+    try { setPreview(await api.emailPreview({ template: a.template || undefined, subject: a.subject || undefined, body: a.body || undefined })); } catch (e) { setErr(e.message); }
+  };
+  return (
+    <div className="flow-row">
+      {meta && !meta.email_configured && <p className="form-error" style={{ gridColumn: '1 / -1' }}>Email is not set up on this server yet, so this step cannot be saved. The administrator adds the SMTP settings.</p>}
+      <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">To (comma separated; "me" is you; up to 5)</span>
+        <input value={a.toText ?? (a.to || []).join(', ')} onChange={(e) => set({ ...a, toText: e.target.value })} placeholder="me, name@example.com" /></label>
+      <label className="field"><span className="field__label">Template</span>
+        <select value={a.template || ''} onChange={(e) => set({ ...a, template: e.target.value })}>
+          <option value="">No template (write it here)</option>
+          {(templates?.builtin || []).length > 0 && <optgroup label="Ready-made">{templates.builtin.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}</optgroup>}
+          {(templates?.custom || []).length > 0 && <optgroup label="Your templates">{templates.custom.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+        </select></label>
+      <label className="field"><span className="field__label">Subject{a.template ? ' (empty = from the template)' : ''}</span><input value={a.subject || ''} onChange={(e) => set({ ...a, subject: e.target.value })} maxLength={200} placeholder="e.g. News summary {{date}}" /></label>
+      <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Message{a.template ? ' (empty = from the template)' : ''}</span>
+        <textarea rows={6} value={a.body || ''} onChange={(e) => set({ ...a, body: e.target.value })} placeholder={'# Heading\n\nText with {{result.news | pretty}}\n\n- list item\n\n[link](https://...)'} /></label>
+      <div style={{ gridColumn: '1 / -1' }} aria-label="Insert a placeholder">
+        <small className="muted">Insert: </small>{chips.map((c) => <button key={c} type="button" className="btn btn-ghost" style={{ padding: '2px 8px', minHeight: 0 }} onClick={() => add(c)}>{`{{${c}}}`}</button>)}
+        <p className="hint">Filters change a value: {Object.entries(meta?.filters || {}).slice(0, 5).map(([k, v]) => `${k} (${v})`).join('; ')}. Formatting: # heading, - list, **bold**, [text](https://link).</p>
+      </div>
+      <div style={{ gridColumn: '1 / -1' }}><button type="button" className="btn" onClick={show}>Preview with sample data</button></div>
+      {err && <p className="form-error" style={{ gridColumn: '1 / -1' }}>{err}</p>}
+      {preview && <div style={{ gridColumn: '1 / -1' }}><p><b>Subject:</b> {preview.subject}</p><iframe title="Email preview" sandbox="" srcDoc={preview.html} style={{ width: '100%', height: 280, border: '1px solid var(--color-border)', borderRadius: 10, background: '#fff' }} /></div>}
+    </div>
+  );
+}
+
+function StepFields({ step, set, projects, categories, trigger, tools, templates, before, meta }) {
   const a = step.args; const up = (k) => (e) => set({ ...a, [k]: e.target.value });
   const projectSelect = (k) => <select value={a[k]} onChange={up(k)}><option value="">Choose a project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>;
   const days = (k, label) => <Field label={label}><input type="number" min="0" max="3650" value={a[k] ?? ''} onChange={up(k)} placeholder="no date" /></Field>;
@@ -84,6 +119,7 @@ function StepFields({ step, set, projects, categories, trigger, tools }) {
       <Field label="Remind (minutes before)"><input type="number" min="0" value={a.reminder_minutes ?? ''} onChange={up('reminder_minutes')} /></Field></div>);
     case 'notify': return (<div className="flow-row"><Field label="Title"><input value={a.title} onChange={up('title')} maxLength={200} placeholder="e.g. Plan your week" /></Field><Field label="Message"><input value={a.body} onChange={up('body')} maxLength={500} /></Field>
       <Field label="Opens"><select value={a.link} onChange={up('link')}>{[['/tasks', 'Tasks'], ['/my-day', 'My Day'], ['/finance', 'Finance'], ['/calendar', 'Calendar'], ['/reports', 'Reports'], ['/automations', 'Automations']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field></div>);
+    case 'send_email': return <EmailFields a={a} set={set} templates={templates} before={before || []} meta={meta} trigger={trigger} />;
     case 'use_tool': return <ToolFields a={a} set={(patch) => set({ ...a, ...patch })} tools={tools} />;
     case 'ai_text': return (<div className="flow-row">
       <Field label="What should the AI write?" wide><input value={a.instruction} onChange={up('instruction')} maxLength={1000} placeholder="e.g. Summarise the news below in 3 bullet points" /></Field>
@@ -96,7 +132,7 @@ function StepFields({ step, set, projects, categories, trigger, tools }) {
   }
 }
 
-function Builder({ initial, projects, categories, meta, tools, onSave, onCancel }) {
+function Builder({ initial, projects, categories, meta, tools, templates, onSave, onCancel }) {
   const [f, setF] = useState(initial || blank());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -123,6 +159,7 @@ function Builder({ initial, projects, categories, meta, tools, onSave, onCancel 
         const args = clean(s.args);
         if (s.type === 'use_tool' && args.argsText !== undefined) { try { args.args = args.argsText.trim() ? JSON.parse(args.argsText) : {}; } catch { throw new Error(`Step ${i + 1}: the arguments are not valid JSON`); } }
         delete args.argsText;
+        if (s.type === 'send_email') { args.to = String(args.toText ?? (args.to || []).join(',')).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean); delete args.toText; }
         return { type: s.type, args };
       });
       await onSave({ name: f.name, trigger, steps });
@@ -177,7 +214,7 @@ function Builder({ initial, projects, categories, meta, tools, onSave, onCancel 
               <button type="button" className="btn btn-icon btn-ghost" disabled={i === f.steps.length - 1} onClick={() => move(i, 1)} aria-label={`Move step ${i + 1} down`}><ArrowDown size={16} /></button>
               <button type="button" className="btn btn-icon btn-ghost" disabled={f.steps.length === 1} onClick={() => setF((x) => ({ ...x, steps: x.steps.filter((_, j) => j !== i) }))} aria-label={`Remove step ${i + 1}`}><X size={16} /></button>
             </div>
-            <StepFields step={s} set={(args) => setStep(i, args)} projects={projects} categories={categories} trigger={t} tools={tools} />
+            <StepFields step={s} set={(args) => setStep(i, args)} projects={projects} categories={categories} trigger={t} tools={tools} templates={templates} meta={meta} before={f.steps.slice(0, i).map((x) => x.args?.save_as).filter(Boolean)} />
           </div>
         ))}
         {f.steps.length < 10 && <button type="button" className="btn" onClick={() => setF((x) => ({ ...x, steps: [...x.steps, { type: 'notify', args: { ...DEFAULT_ARGS.notify } }] }))}><Plus size={16} aria-hidden="true" /> Add a step</button>}
@@ -195,6 +232,45 @@ function Builder({ initial, projects, categories, meta, tools, onSave, onCancel 
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null);
 
+function EmailTemplates({ templates, reload, writable, meta }) {
+  const [form, setForm] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState('');
+  const save = async (e) => {
+    e.preventDefault(); setError('');
+    try { if (form.id) await api.updateEmailTemplate(form.id, form); else await api.createEmailTemplate(form); setForm(null); setPreview(null); reload(); } catch (err) { setError(err.message); }
+  };
+  const show = async () => { setError(''); try { setPreview(await api.emailPreview({ subject: form.subject, body: form.body })); } catch (err) { setError(err.message); } };
+  return (
+    <section className="panel" aria-labelledby="et-h" style={{ marginTop: 18 }}>
+      <div className="panel__title"><h2 id="et-h">Email templates</h2>{writable && !form && <button type="button" className="btn" onClick={() => setForm({ name: '', subject: '', body: '' })}><Plus size={16} aria-hidden="true" /> New template</button>}</div>
+      <p className="hint">A template is a subject and message you can reuse in "Send an email" steps. Use placeholders such as {'{{result.news | pretty | truncate:600}}'}, {'{{date}}'} or {'{{owner.name}}'}; results come from earlier tool or AI steps of the flow.</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {form ? (
+        <form className="flow-row" onSubmit={save} aria-label="Email template">
+          <label className="field"><span className="field__label">Name</span><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={60} required /></label>
+          <label className="field"><span className="field__label">Subject</span><input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} maxLength={200} required /></label>
+          <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Message</span><textarea rows={8} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} required /></label>
+          <p className="hint" style={{ gridColumn: '1 / -1' }}>Filters: {Object.entries(meta?.filters || {}).map(([k, v]) => `${k} (${v})`).join('; ')}</p>
+          <div className="inline-form" style={{ gridColumn: '1 / -1' }}><button type="submit" className="btn btn-primary">Save template</button><button type="button" className="btn" onClick={show}>Preview</button><button type="button" className="btn" onClick={() => { setForm(null); setPreview(null); }}>Cancel</button></div>
+          {preview && <div style={{ gridColumn: '1 / -1' }}><p><b>Subject:</b> {preview.subject}</p><iframe title="Template preview" sandbox="" srcDoc={preview.html} style={{ width: '100%', height: 300, border: '1px solid var(--color-border)', borderRadius: 10, background: '#fff' }} /></div>}
+        </form>
+      ) : (
+        <ul className="plain-list" aria-label="Email templates list">
+          {(templates?.builtin || []).map((t) => (
+            <li key={t.key}><span><b>{t.name}</b> <small className="muted">ready-made · {t.subject}</small></span>{writable && <button type="button" className="btn" onClick={() => setForm({ name: `${t.name} (copy)`, subject: t.subject, body: t.body })}>Copy and edit</button>}</li>
+          ))}
+          {(templates?.custom || []).map((t) => (
+            <li key={t.id}><span><b>{t.name}</b> <small className="muted">{t.subject}</small></span>
+              {writable && <><button type="button" className="btn" onClick={() => setForm({ id: t.id, name: t.name, subject: t.subject, body: t.body })}>Edit</button>
+                <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete template ${t.name}`} onClick={async () => { if (!window.confirm(`Delete the template "${t.name}"?`)) return; try { await api.deleteEmailTemplate(t.id); reload(); } catch (err) { setError(err.message); } }}><Trash2 size={16} color="var(--color-danger)" /></button></>}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function AutomationsPage() {
   const { active, user } = useAuth();
   const writable = canWrite(active?.role);
@@ -203,6 +279,7 @@ export default function AutomationsPage() {
   const [projects, setProjects] = useState([]);
   const [categories, setCategories] = useState([]);
   const [tools, setTools] = useState(null);
+  const [templates, setTemplates] = useState(null);
   const [editing, setEditing] = useState(null);   // null | 'new' | automation
   const [error, setError] = useState('');
   const [result, setResult] = useState({});
@@ -214,6 +291,7 @@ export default function AutomationsPage() {
     api.listProjects().then(setProjects).catch(() => {});
     api.listCategories().then(setCategories).catch(() => {});
     api.automationTools().then(setTools).catch(() => {});
+    api.emailTemplates().then(setTemplates).catch(() => {});
   }, [load]);
 
   const save = async (body) => {
@@ -240,7 +318,7 @@ export default function AutomationsPage() {
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
 
-      {editing && <Builder initial={editing === 'new' ? null : { name: editing.name, trigger: editing.trigger, steps: editing.steps }} projects={projects} categories={categories} meta={meta} tools={tools} onSave={save} onCancel={() => setEditing(null)} />}
+      {editing && <Builder initial={editing === 'new' ? null : { name: editing.name, trigger: editing.trigger, steps: editing.steps }} projects={projects} categories={categories} meta={meta} tools={tools} templates={templates} onSave={save} onCancel={() => setEditing(null)} />}
 
       {!editing && items === null && !error && <p>Loading...</p>}
       {!editing && items && items.length === 0 && (
@@ -276,6 +354,7 @@ export default function AutomationsPage() {
           })}
         </div>
       )}
+      {!editing && <EmailTemplates templates={templates} meta={meta} writable={writable} reload={() => api.emailTemplates().then(setTemplates).catch(() => {})} />}
     </div>
   );
 }

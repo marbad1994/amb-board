@@ -10,9 +10,12 @@ import { runSkill } from '../ai/tools.js';
 import { findServer, toolsOf } from '../ai/mcpServers.js';
 import { callTool } from '../ai/mcpClient.js';
 import { complete } from '../ai/gateway.js';
+import { sendMail, mailConfigured } from '../notifications/mailer.js';
+import { render as renderText, emailDocument, BUILTIN_TEMPLATES } from './template.js';
 
 const MISSED_AFTER_MS = 24 * 3600_000;   // a schedule missed by more than a day (server was down) is skipped, not replayed
-const EVENT_RUNS_PER_DAY = 50;           // runaway guard per flow
+const EVENT_RUNS_PER_DAY = 50;
+const EMAIL_PER_FLOW_DAY = 20; const EMAIL_PER_USER_DAY = 100;           // runaway guard per flow
 
 const present = (a) => ({ ...a, enabled: !!a.enabled, trigger: JSON.parse(a.trigger), steps: JSON.parse(a.steps), summary: describeTrigger(JSON.parse(a.trigger)) });
 export const readAutomation = (ws, id) => { const a = db.prepare('SELECT * FROM automations WHERE id = ? AND workspace_id = ?').get(String(id), ws); return a ? present(a) : null; };
@@ -48,17 +51,35 @@ async function execute(auto, slot, trigCtx, now = new Date()) {
     db.prepare('UPDATE automations SET last_run_at = ?, last_status = ?, updated_at = updated_at WHERE id = ?').run(nowIso(), status, auto.id);
     return { status, log, run_id: runId };
   };
-  const user = db.prepare('SELECT id, name FROM users WHERE id = ?').get(auto.user_id);
+  const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(auto.user_id);
   const role = user ? membershipRole(auto.user_id, auto.workspace_id) : null;
   if (!user || !can(role, 'content:write')) { status = 'skipped'; log.push({ step: 0, ok: false, message: 'The flow owner no longer has write access to this workspace.' }); return finish(); }
   const today = now.toISOString().slice(0, 10);
-  const ctx = { date: today, weekday: new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }), ...trigCtx };
+  const ctx = { 'owner.name': user.name, 'owner.email': user.email, 'workspace.name': db.prepare('SELECT name FROM workspaces WHERE id = ?').get(auto.workspace_id)?.name ?? '', date: today, weekday: new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }), ...trigCtx };
   for (const [i, step] of auto.steps.entries()) {
     try {
       if (step.type === 'notify') {
         db.prepare('INSERT OR IGNORE INTO notifications (id, workspace_id, user_id, kind, title, body, link, dedupe_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .run(nanoid(), auto.workspace_id, user.id, 'automation', fill(step.args.title, ctx).slice(0, 200), fill(step.args.body, ctx).slice(0, 500), step.args.link || '/automations', `auto:${auto.id}:${slot}:${i}`, nowIso());
         log.push({ step: i + 1, type: step.type, ok: true, message: 'Notification sent' });
+      } else if (step.type === 'send_email') {
+        if (!mailConfigured()) throw new Error('email delivery is not set up on this server');
+        const tpl = step.args.template ? (BUILTIN_TEMPLATES[step.args.template] || db.prepare('SELECT subject, body FROM email_templates WHERE id = ? AND workspace_id = ?').get(step.args.template, auto.workspace_id)) : null;
+        if (step.args.template && !tpl) throw new Error('the email template no longer exists');
+        const to = [...new Set(step.args.to.map((x) => (x === 'me' ? user.email.toLowerCase() : x)))];
+        // limits per flow and per person per day, so a loop or a bad edit cannot become a mail flood
+        const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+        const perFlow = db.prepare('SELECT COALESCE(SUM(recipients), 0) AS n FROM email_sends WHERE automation_id = ? AND created_at >= ?').get(auto.id, since).n;
+        const perUser = db.prepare('SELECT COALESCE(SUM(recipients), 0) AS n FROM email_sends WHERE user_id = ? AND created_at >= ?').get(user.id, since).n;
+        if (perFlow + to.length > EMAIL_PER_FLOW_DAY) throw new Error(`this automation reached its daily email limit (${EMAIL_PER_FLOW_DAY})`);
+        if (perUser + to.length > EMAIL_PER_USER_DAY) throw new Error(`you reached your daily automation email limit (${EMAIL_PER_USER_DAY})`);
+        const subject = renderText(step.args.subject || tpl?.subject || '', ctx).replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+        const text = renderText(step.args.body || tpl?.body || '', ctx).trim();
+        if (!subject || !text) throw new Error('the email would be empty');
+        const footer = `Sent by the AMB Board automation "${auto.name}" for ${user.name}. Reply to this email to reach ${user.name}.`;
+        for (const addr of to) await sendMail({ to: addr, subject, text: `${text}\n\n--\n${footer}`, html: emailDocument({ bodyText: text, footer }), replyTo: user.email });
+        db.prepare('INSERT INTO email_sends (id, user_id, workspace_id, automation_id, recipients, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(nanoid(), user.id, auto.workspace_id, auto.id, to.length, nowIso());
+        log.push({ step: i + 1, type: step.type, ok: true, message: `Email "${subject.slice(0, 60)}" sent to ${to.length === 1 && to[0] === user.email.toLowerCase() ? 'you' : `${to.length} recipient${to.length === 1 ? '' : 's'}`}` });
       } else if (step.type === 'use_tool') {
         // every text field (and nested value) of the arguments may use placeholders, including earlier results
         const deep = (v) => (typeof v === 'string' ? fill(v, ctx) : Array.isArray(v) ? v.map(deep) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x)])) : v);

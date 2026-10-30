@@ -31,7 +31,8 @@ export function workspaceDigest(ws, userId, big = false) {
     expense_categories: db.prepare('SELECT name FROM transaction_categories WHERE workspace_id = ? AND archived_at IS NULL ORDER BY name LIMIT 40').all(ws).map((c) => c.name),
     shared_notes: db.prepare("SELECT id, title FROM notes WHERE workspace_id = ? AND kind = 'note' AND privacy = 'workspace' ORDER BY updated_at DESC LIMIT ?").all(ws, big ? 20 : 5),
     next_events: db.prepare('SELECT id, title, start_local, timezone FROM calendar_events WHERE workspace_id = ? AND substr(start_local, 1, 10) >= ? ORDER BY start_local LIMIT 6').all(ws, today),
-    automations: db.prepare('SELECT id, name, enabled, trigger FROM automations WHERE workspace_id = ? ORDER BY created_at LIMIT 15').all(ws)
-      .map((a) => ({ id: a.id, name: a.name, enabled: !!a.enabled, when: describeTrigger(JSON.parse(a.trigger)) })),
+    automations: db.prepare('SELECT id, name, enabled, trigger, steps, last_status FROM automations WHERE workspace_id = ? ORDER BY created_at LIMIT 15').all(ws)
+      .map((a) => ({ id: a.id, name: a.name, enabled: !!a.enabled, when: describeTrigger(JSON.parse(a.trigger)), steps: JSON.parse(a.steps).map((s) => s.type), last_status: a.last_status })),
+    email_templates: db.prepare('SELECT id, name FROM email_templates WHERE workspace_id = ? ORDER BY name LIMIT 20').all(ws),
   };
 }

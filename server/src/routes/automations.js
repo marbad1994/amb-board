@@ -4,13 +4,16 @@ import { audit } from '../access.js';
 import { validateTrigger, validateSteps, nextRunAt, insertAutomation, automationCount, MAX_AUTOMATIONS, STEP_DOCS, EVENT_TRIGGERS, PLACEHOLDERS } from '../automations/spec.js';
 import { findServer, toolsOf, userServers } from '../ai/mcpServers.js';
 import { TOOLS } from '../ai/tools.js';
+import { BUILTIN_TEMPLATES, render as renderText, emailDocument, placeholdersIn, FILTER_DOCS } from '../automations/template.js';
+import { nanoid } from 'nanoid';
+import { mailConfigured } from '../notifications/mailer.js';
 import { listAutomations, readAutomation, listRuns, runNow } from '../automations/engine.js';
 
 const router = Router();
 const name80 = (v) => String(v ?? '').trim().slice(0, 80);
 
 // What the builder UI needs to render: step kinds, trigger kinds and the placeholders a text field may use.
-router.get('/meta', (req, res) => res.json({ steps: Object.keys(STEP_DOCS), events: EVENT_TRIGGERS, placeholders: PLACEHOLDERS, max_automations: MAX_AUTOMATIONS }));
+router.get('/meta', (req, res) => res.json({ steps: Object.keys(STEP_DOCS), events: EVENT_TRIGGERS, placeholders: PLACEHOLDERS, max_automations: MAX_AUTOMATIONS, email_configured: mailConfigured(), filters: FILTER_DOCS }));
 
 router.get('/', (req, res) => res.json(listAutomations(req.ws.id).map((a) => ({ ...a, runs: listRuns(a.id, 3) }))));
 
@@ -20,6 +23,53 @@ async function warmExternal(req, steps = req.body.steps) {
     if (s?.type === 'use_tool' && s.args?.tool === 'external') { const srv = findServer(req.ws.id, req.user.id, s.args.server); if (srv) await toolsOf(srv).catch(() => {}); }
   }
 }
+
+// ---- email templates (reusable subject + body with {{placeholders | filters}}) ----
+const MAX_TEMPLATES = 30;
+const tplInput = (b) => ({ name: String(b.name ?? '').trim().slice(0, 60), subject: String(b.subject ?? '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200), body: String(b.body ?? '').replace(/\r/g, '').trim().slice(0, 20000) });
+router.get('/templates', (req, res) => res.json({
+  builtin: Object.entries(BUILTIN_TEMPLATES).map(([key, t]) => ({ key, ...t })),
+  custom: db.prepare('SELECT id, name, subject, body, user_id, updated_at FROM email_templates WHERE workspace_id = ? ORDER BY name').all(req.ws.id),
+  filters: FILTER_DOCS,
+}));
+router.post('/templates', (req, res) => {
+  const t = tplInput(req.body);
+  if (!t.name || !t.subject || !t.body) return res.status(400).json({ error: 'name, subject and body are required' });
+  if (db.prepare('SELECT COUNT(*) AS n FROM email_templates WHERE workspace_id = ?').get(req.ws.id).n >= MAX_TEMPLATES) return res.status(409).json({ error: `at most ${MAX_TEMPLATES} templates` });
+  const id = nanoid(); const ts = nowIso();
+  db.prepare('INSERT INTO email_templates (id, workspace_id, user_id, name, subject, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.ws.id, req.user.id, t.name, t.subject, t.body, ts, ts);
+  audit(req, 'email_template.create', 'email_template', id, { name: t.name });
+  res.status(201).json(db.prepare('SELECT id, name, subject, body, user_id, updated_at FROM email_templates WHERE id = ?').get(id));
+});
+const ownTemplate = (req) => db.prepare('SELECT * FROM email_templates WHERE id = ? AND workspace_id = ?').get(req.params.id, req.ws.id);
+router.patch('/templates/:id', (req, res) => {
+  const cur = ownTemplate(req); if (!cur) return res.status(404).json({ error: 'not found' });
+  if (cur.user_id !== req.user.id && !['owner', 'admin'].includes(req.ws.role)) return res.status(403).json({ error: 'only the author or an admin can change it' });
+  const t = tplInput({ name: req.body.name ?? cur.name, subject: req.body.subject ?? cur.subject, body: req.body.body ?? cur.body });
+  if (!t.name || !t.subject || !t.body) return res.status(400).json({ error: 'name, subject and body cannot be empty' });
+  db.prepare('UPDATE email_templates SET name = ?, subject = ?, body = ?, updated_at = ? WHERE id = ?').run(t.name, t.subject, t.body, nowIso(), cur.id);
+  res.json(db.prepare('SELECT id, name, subject, body, user_id, updated_at FROM email_templates WHERE id = ?').get(cur.id));
+});
+router.delete('/templates/:id', (req, res) => {
+  const cur = ownTemplate(req); if (!cur) return res.status(404).json({ error: 'not found' });
+  if (cur.user_id !== req.user.id && !['owner', 'admin'].includes(req.ws.role)) return res.status(403).json({ error: 'only the author or an admin can delete it' });
+  const used = listAutomations(req.ws.id).filter((a) => a.steps.some((s) => s.type === 'send_email' && s.args.template === cur.id)).map((a) => a.name);
+  if (used.length) return res.status(409).json({ error: `used by: ${used.join(', ')}` });
+  db.prepare('DELETE FROM email_templates WHERE id = ?').run(cur.id);
+  res.status(204).end();
+});
+
+// Renders a subject and body with sample values so the person (or the assistant) can see what the email will look like.
+router.post('/email-preview', (req, res) => {
+  const tpl = req.body.template ? (BUILTIN_TEMPLATES[req.body.template] || db.prepare('SELECT subject, body FROM email_templates WHERE id = ? AND workspace_id = ?').get(String(req.body.template), req.ws.id)) : null;
+  const subject = String(req.body.subject || tpl?.subject || '').slice(0, 200); const body = String(req.body.body || tpl?.body || '').slice(0, 20000);
+  const today = new Date().toISOString().slice(0, 10);
+  const ctx = { date: today, weekday: new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }), 'owner.name': req.user.name, 'owner.email': req.user.email,
+    'workspace.name': db.prepare('SELECT name FROM workspaces WHERE id = ?').get(req.ws.id)?.name ?? '' };
+  for (const p of [...placeholdersIn(subject), ...placeholdersIn(body)]) if (!(p in ctx)) ctx[p] = req.body.sample?.[p] ?? `[sample ${p}]\nsecond line of sample text`;
+  const text = renderText(body, ctx);
+  res.json({ subject: renderText(subject, ctx).replace(/[\r\n]+/g, ' ').slice(0, 200), text, html: emailDocument({ bodyText: text, footer: `Sent by the AMB Board automation "(preview)" for ${req.user.name}. Reply to this email to reach ${req.user.name}.` }), placeholders: [...new Set([...placeholdersIn(subject), ...placeholdersIn(body)])] });
+});
 
 // What the builder offers for "use a tool": built-in skills and the tools of the person's connected servers (fetched on demand).
 router.get('/tools', async (req, res) => {

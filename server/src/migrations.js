@@ -633,6 +633,7 @@ export const migrations = [
   { id: '013_column_settings', up: (db) => db.exec(columnSettings) },
   { id: '014_assistant_connections', up: (db) => db.exec(assistantConnections) },
   { id: '015_browser_assistant', up: (db) => db.exec(browserTables) },
+  { id: '016_email_flows', up: (db) => db.exec(emailFlows) },
 ];
 
 const automationsTables = `
@@ -695,6 +696,19 @@ CREATE TABLE browser_commands (
   kind TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', result TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, done_at TEXT
 );
 CREATE INDEX idx_browser_commands_pending ON browser_commands (pairing_id, status, created_at);
+`;
+
+const emailFlows = `
+CREATE TABLE email_templates (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_email_templates_ws ON email_templates (workspace_id);
+CREATE TABLE email_sends (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, workspace_id TEXT NOT NULL, automation_id TEXT, recipients INTEGER NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX idx_email_sends_user ON email_sends (user_id, created_at);
+CREATE INDEX idx_email_sends_auto ON email_sends (automation_id, created_at);
 `;
 
 function appliedIds(db) {
