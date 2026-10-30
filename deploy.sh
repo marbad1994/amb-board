@@ -13,6 +13,8 @@
 #   nginx : writes a server block; for HTTPS give ACME_EMAIL (certbot --nginx) or SSL_CERT and SSL_KEY (e.g. a wildcard cert).
 #   caddy : writes a site file and imports it; Caddy gets the certificate itself.
 #   other (apache, traefik ...): prints the address to proxy to; nothing is changed.
+# If something else (e.g. a Docker proxy) owns port 443, nginx serves the site on port 80 only. When HTTPS is handled in front of
+# nginx (Cloudflare, the container on 443) deploy with HTTPS=true so the session cookie is Secure.
 # The domain's DNS record must point at this server.
 #
 # Never overwritten or deleted in the destination: server/.env, server/data (your database),
@@ -31,6 +33,7 @@ HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
 DOMAIN="${DOMAIN-amb.makketing.com}"   # "-" not ":-": an explicitly empty DOMAIN disables the mapping
 ACME_EMAIL="${ACME_EMAIL:-}"
 SSL_CERT="${SSL_CERT:-}"; SSL_KEY="${SSL_KEY:-}"
+HTTPS="${HTTPS:-}"   # true = visitors use https although this server only sees http (Cloudflare, a proxy container in front)
 PROXY="${PROXY:-auto}"
 CADDY_DIR="${CADDY_DIR:-/etc/caddy}"
 NGINX_DIR="${NGINX_DIR:-/etc/nginx}"
@@ -126,7 +129,8 @@ PORT="${PORT:-$(grep -E '^PORT=' "${DEST_DIR}/server/.env" 2>/dev/null | tail -n
 PORT="${PORT:-3417}"
 
 # ---------------------------------------------------------------- map the domain to the app (through the web server already on 80/443)
-SECURE=false; BEHIND_PROXY=false
+SECURE=false; BEHIND_PROXY=false; TLS_ELSEWHERE=""
+[ "$HTTPS" = true ] && SECURE=true
 
 # who listens on 80/443 right now? (nginx, caddy, apache2/httpd, traefik, ...)
 detect_proxy() {
@@ -137,8 +141,16 @@ detect_proxy() {
   esac
 }
 
+# name of the program holding port 443, empty if none
+owner_443() { ss -ltnpH 2>/dev/null | awk '$4 ~ /:443$/' | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"//'; }
+
 map_nginx() {
-  local dir="${NGINX_DIR}/conf.d" conf listen_tls=""
+  local dir="${NGINX_DIR}/conf.d" conf listen_tls="" o443
+  o443="$(owner_443)"
+  if [ -n "$o443" ] && [ "$o443" != nginx ]; then
+    [ -n "$SSL_CERT$SSL_KEY$ACME_EMAIL" ] && warn "port 443 is held by '${o443}', so nginx cannot terminate HTTPS here; ignoring SSL_CERT/SSL_KEY/ACME_EMAIL and serving ${DOMAIN} on port 80."
+    SSL_CERT=""; SSL_KEY=""; ACME_EMAIL=""; TLS_ELSEWHERE="$o443"
+  fi
   [ -d "${NGINX_DIR}/sites-available" ] && dir="${NGINX_DIR}/sites-available"
   mkdir -p "$dir"; conf="${dir}/amb-board.conf"
   log "Adding ${DOMAIN} -> 127.0.0.1:${PORT} to nginx (${conf})"
@@ -193,7 +205,10 @@ NGINX
         certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ACME_EMAIL" --redirect && SECURE=true || warn "certbot failed (does the DNS record for ${DOMAIN} point here?); the site stays on plain HTTP"
       else warn "ACME_EMAIL is set but certbot is not installed (sudo pacman -S certbot certbot-nginx)"; fi
     fi
-    [ "$SECURE" = true ] || warn "${DOMAIN} is served over plain HTTP. For HTTPS give ACME_EMAIL=... (certbot) or SSL_CERT/SSL_KEY and deploy again."
+    if [ "$SECURE" != true ]; then
+      if [ -n "$TLS_ELSEWHERE" ]; then warn "${DOMAIN} is served over plain HTTP on port 80. If HTTPS is handled in front of nginx (Cloudflare, or the '${TLS_ELSEWHERE}' container on 443), deploy with HTTPS=true; otherwise route https://${DOMAIN} to this nginx from that container."
+      else warn "${DOMAIN} is served over plain HTTP. For HTTPS give ACME_EMAIL=... (certbot) or SSL_CERT/SSL_KEY, or HTTPS=true if TLS is handled in front, and deploy again."; fi
+    fi
   else
     nginx -t || true
     warn "the generated nginx config is invalid, so ${DOMAIN} is NOT mapped (nginx keeps running with its old config). The app itself is unaffected."
