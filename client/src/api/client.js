@@ -166,6 +166,13 @@ export const api = {
   // assistant platform: suggestions, reports, tokens
   suggestions: (context) => request(`/ai/assistant/suggestions${context ? `?context=${encodeURIComponent(context)}` : ''}`),
   dismissSuggestion: (key, days = 1) => request('/ai/assistant/suggestions/dismiss', json('POST', { key, days })),
+  automationMeta: () => request('/automations/meta'),
+  listAutomations: () => request('/automations'),
+  getAutomation: (id) => request(`/automations/${id}`),
+  createAutomation: (data) => request('/automations', json('POST', data)),
+  updateAutomation: (id, data) => request(`/automations/${id}`, json('PATCH', data)),
+  deleteAutomation: (id) => request(`/automations/${id}`, { method: 'DELETE' }),
+  runAutomation: (id) => request(`/automations/${id}/run`, json('POST', {})),
   listReports: () => request('/reports'),
   createReport: (data) => request('/reports', json('POST', data)),
   getReport: (id) => request(`/reports/${id}`),

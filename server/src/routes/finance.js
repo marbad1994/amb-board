@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { emit } from '../automations/engine.js';
 import { nanoid } from 'nanoid';
 import { db, nowIso, tx } from '../db.js';
 import { projectInWs, requirePermission, audit } from '../access.js';
@@ -170,7 +171,9 @@ router.post('/transactions', (req, res) => {
     .run(id, req.ws.id, v.type, v.status, v.amount_minor, v.currency, v.date, v.description, v.notes, v.category_id, v.project_id,
       v.account_id, v.to_account_id, ref, req.user.id, ts, ts);
   audit(req, 'transaction.create', 'transaction', id, { type: v.type, amount_minor: v.amount_minor, currency: v.currency, project_id: v.project_id });
-  res.status(201).json(db.prepare(`${TX_SELECT} WHERE t.id = ?`).get(id));
+  const createdTx = db.prepare(`${TX_SELECT} WHERE t.id = ?`).get(id);
+  emit(req.ws.id, 'transaction_added', { entity_id: id, title: createdTx.description, type: createdTx.type, currency: createdTx.currency, amount_minor: createdTx.amount_minor, project_id: createdTx.project_id, stamp: '' });
+  res.status(201).json(createdTx);
 });
 
 router.patch('/transactions/:id', (req, res) => {

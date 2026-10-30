@@ -43,3 +43,7 @@
 | D39 | MCP write tools create proposals (approval in the app), never execute; tokens are workspace-bound and re-check membership each call | Human control (spec 3.5) extends to external AI clients | Implemented |
 | D40 | Suggestions are rule-based (no AI call) and only the click on "Ask AI" spends AI budget | Always-on assistant must be free and predictable | Implemented |
 | D41 | deploy.sh: pull as the git user, sync to /opt/amb-board3 (never touching server/.env, server/data, server/uploads), back up data, npm install/build/start in its own process group, health-check | Owner request 2026-10-30 | Implemented; rsync path untested in the sandbox (tar fallback tested) |
+| D42 | Card status and board column stay in step for the default column names (Backlog/In Progress/Done); custom names change nothing | A card in "In Progress" saying "To do" was confusing | Implemented |
+| D43 | The assistant gets a bounded whole-workspace snapshot with ids on every request; journal and others' habits excluded | Awareness without extra tool round trips or privacy leaks | Implemented |
+| D44 | Multi-step setups are one setup_plan proposal, dry-run in a rolled-back transaction and applied atomically | One approval, no half-built setups | Implemented |
+| D45 | Automations are deterministic flows run as their owner; the assistant can only propose them; no AI at run time; flows cannot trigger flows | Predictable, auditable, no runaway loops | Implemented |

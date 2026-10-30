@@ -25,6 +25,16 @@ const fakeAi = createServer((req, res) => {
     const msgs = JSON.parse(b).messages;
     if (msgs[0].content.includes('assistant inside AMB Board')) {
       const user = msgs[1].content;
+      const wantsPlan = /<question>[^<]*plan my move/i.test(user);
+      if (wantsPlan) {
+        // the whole-workspace snapshot must reach the model
+        const sawWorkspace = user.includes('"workspace":{') && user.includes('Apartment Renovation');
+        res.setHeader('content-type', 'application/json');
+        return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'final', answer: sawWorkspace ? 'Here is a setup for the move.' : 'NO WORKSPACE SNAPSHOT', proposals: [{ type: 'setup_plan', args: { title: 'Move plan', steps: [
+          { ref: 'p', type: 'create_project', args: { name: 'Move plan project' } },
+          { type: 'create_task', args: { project_id: '@p', title: 'Sign the lease', priority: 'high' } },
+          { type: 'create_task', args: { project_id: '@p', title: 'Book movers' } }] } }] }) } }], usage: {} }));
+      }
       const wantsReport = /<question>[^<]*report/i.test(user);
       const out = wantsReport
         ? (user.includes('"tool_results":[]') ? { type: 'tool', calls: [{ tool: 'generate_report', args: { kind: 'overview', title: 'E2E overview' } }] } : { type: 'final', answer: 'Report is ready under Reports.', proposals: [] })
@@ -586,6 +596,45 @@ try {
     await page.getByRole('link', { name: 'Project created' }).waitFor();
   });
 
+  await step('assistant sees the whole workspace and proposes a multi-step plan; one approval creates it all', async () => {
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByLabel('Message').fill('Please plan my move');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByText('Here is a setup for the move.').waitFor();
+    await page.getByText('Setup plan: 3 steps, approved together').waitFor();
+    await page.getByText(/2\. Create task "Sign the lease" in project "Move plan project"/).waitFor();
+    await page.getByRole('button', { name: 'Approve' }).first().click();
+    await page.getByText('Applied.').waitFor();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    await page.locator('.project-card', { hasText: 'Move plan project' }).first().waitFor();
+    assert.match(await page.locator('.project-card', { hasText: 'Move plan project' }).first().innerText(), /2 tasks/);
+  });
+
+  await step('automations: build a scheduled flow, run it now, see the log; toggle it off', async () => {
+    await page.getByRole('link', { name: 'Automations' }).click();
+    await page.getByRole('button', { name: 'New automation' }).click();
+    await page.getByLabel('Automation name').fill('Weekly planning');
+    await page.getByLabel('Step 1 action').selectOption({ label: 'Create a task' });
+    await page.locator('.flow-step').first().getByLabel('Project').selectOption({ label: 'Move plan project' });
+    await page.locator('.flow-step').first().getByLabel('Title').fill('Plan the week of {{date}}');
+    await page.getByRole('button', { name: 'Add a step' }).click();
+    await page.getByLabel('Step 2 action').selectOption({ label: 'Send me a notification' });
+    await page.locator('.flow-step').nth(1).getByLabel('Title').fill('Weekly plan is ready');
+    await page.getByText(/Summary:.*create a task, then send me a notification/i).waitFor();
+    await shot(page, '21-automation-builder');
+    await page.getByRole('button', { name: 'Save automation' }).click();
+    const card = page.getByRole('article', { name: 'Weekly planning' });
+    await card.getByText(/Every Monday at 08:00/).waitFor();
+    await card.getByRole('button', { name: 'Run now' }).click();
+    await card.getByText('Last run: ok').waitFor();
+    await card.getByText(/Notification sent/).waitFor();
+    await card.getByRole('checkbox', { name: 'Weekly planning enabled' }).click();
+    await card.getByText('Off', { exact: true }).waitFor();
+    await shot(page, '22-automations');
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    assert.match(await page.locator('.project-card', { hasText: 'Move plan project' }).first().innerText(), /3 tasks/, 'the flow created a task');
+  });
+
   await step('sign out, then sign in again with the same credentials', async () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
@@ -595,8 +644,8 @@ try {
     await page.getByText('invalid email or password').waitFor();
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.getByRole('heading', { name: 'Idea board' }).waitFor(); // session restored on the page we left
-    assert.match(page.url(), /\/ideas$/);
+    await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor(); // session restored on the page we left
+    assert.match(page.url(), /\/projects$/);
   });
 
   await step('a second user cannot see the first user\'s project', async () => {

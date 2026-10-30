@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
+import { emit } from '../automations/engine.js';
+
+const taskEvent = (card, ws, stamp) => {
+  const p = db.prepare('SELECT p.id, p.name FROM projects p JOIN columns c ON c.project_id = p.id WHERE c.id = ?').get(card.column_id);
+  return { entity_id: card.id, title: card.title, priority: card.priority, project_id: p?.id, project_name: p?.name, stamp };
+};
 import { cardInWs, columnInWs } from '../access.js';
 import { PRIORITIES, parseDate, todayUtc } from '../validate.js';
 import { addDays, addMonths } from '../finance/money.js';
@@ -91,7 +97,10 @@ router.post('/columns/:columnId/cards', (req, res) => {
       req.body.priority || 'medium',
       (status || 'todo') === 'done' ? ts : null
     );
-  res.status(201).json(fullCard(id));
+  const created = fullCard(id);
+  emit(req.ws.id, 'task_created', taskEvent(created, req.ws.id, ts));
+  if (created.status === 'done') emit(req.ws.id, 'task_done', taskEvent(created, req.ws.id, ts));
+  res.status(201).json(created);
 });
 
 // A column named like a status keeps card status and column in step (both directions). Custom column names change nothing.
@@ -139,7 +148,9 @@ router.patch('/:id', (req, res) => {
     const target = columnForStatus(card, updated.status);
     if (target) db.prepare('UPDATE cards SET column_id = ?, position = (SELECT COALESCE(MAX(position), -1) + 1 FROM cards WHERE column_id = ?) WHERE id = ?').run(target, target, req.params.id);
   }
-  res.json(fullCard(req.params.id));
+  const after = fullCard(req.params.id);
+  if (updated.status === 'done' && card.status !== 'done') emit(req.ws.id, 'task_done', taskEvent(after, req.ws.id, after.completed_at));
+  res.json(after);
 });
 
 // move a card to another column and/or position: body { columnId, position }
@@ -157,6 +168,7 @@ router.post('/:id/move', (req, res) => {
     const ts = nowIso();
     db.prepare('UPDATE cards SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?').run(newStatus, newStatus === 'done' ? (card.completed_at || ts) : null, ts, req.params.id);
     if (newStatus === 'done') spawnNextOccurrence({ ...card, status: 'done' }, ts);
+    if (newStatus === 'done') emit(req.ws.id, 'task_done', taskEvent({ ...card, status: 'done' }, req.ws.id, ts));
   }
 
   if (Array.isArray(order)) {

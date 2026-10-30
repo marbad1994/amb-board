@@ -7,6 +7,8 @@ import { projectFacts } from './facts.js';
 import { monthBudget } from '../finance/budget.js';
 import { crossReference, analyzeSpending, analyzeWorkload, projectHealth, findGaps } from './analysis.js';
 import { generateReport, PRESETS, SECTION_IDS } from '../reports/build.js';
+import { workspaceDigest } from './digest.js';
+import { describeTrigger } from '../automations/spec.js';
 
 // Read-only tools the model may call. Each runs with the CALLER's workspace and is scoped by workspace_id.
 // The model never sees SQL, never chooses a workspace, and cannot call anything not listed here.
@@ -29,6 +31,17 @@ export const TOOLS = {
       return { report_id: r.id, title: r.title, kind: r.kind, open_in_app: `/reports/${r.id}`, artifact: { type: 'report', id: r.id, title: r.title } };
     } },
   // ---- read skills ----
+  workspace_overview: { kind: 'read', doc: 'workspace_overview {} -> the whole workspace in one call: counts, projects, life areas, goals, your habits, expense categories, shared notes, next events and automations, with ids',
+    run: (ws, a, user) => workspaceDigest(ws, user?.id, true) },
+  list_goals: { kind: 'read', doc: 'list_goals {} -> goals with progress, target date, milestones (title, due date, done)',
+    run: (ws) => cap(db.prepare("SELECT id, title, status, target_date FROM goals WHERE workspace_id = ? AND status <> 'archived' ORDER BY created_at DESC LIMIT 25").all(ws).map((g) => ({ ...g,
+      milestones: db.prepare('SELECT id, title, due_date, done FROM goal_milestones WHERE goal_id = ? ORDER BY position LIMIT 20').all(g.id) }))) },
+  list_habits: { kind: 'read', doc: 'list_habits {} -> YOUR habits (private to you) with how often they were done in the last 14 days',
+    run: (ws, a, user) => db.prepare('SELECT id, title, frequency, target_per_week FROM habits WHERE workspace_id = ? AND user_id = ? AND archived_at IS NULL LIMIT 25').all(ws, user?.id).map((h) => ({ ...h,
+      done_last_14_days: db.prepare('SELECT COUNT(*) AS n FROM habit_entries WHERE habit_id = ? AND date >= date(?, ?)').get(h.id, todayUtc(), '-14 days').n })) },
+  list_automations: { kind: 'read', doc: 'list_automations {} -> scheduled and event-driven flows: name, enabled, when it runs, steps, last result',
+    run: (ws) => db.prepare('SELECT id, name, enabled, trigger, steps, next_run_at, last_run_at, last_status FROM automations WHERE workspace_id = ? ORDER BY created_at LIMIT 25').all(ws)
+      .map((r) => ({ id: r.id, name: r.name, enabled: !!r.enabled, when: describeTrigger(JSON.parse(r.trigger)), steps: JSON.parse(r.steps).map((s) => s.type), next_run_at: r.next_run_at, last_run_at: r.last_run_at, last_status: r.last_status })) },
   list_projects: {
     doc: 'list_projects {status?: "todo"|"in_progress"|"done"} -> active projects with progress, dates, priority',
     run: (ws, args) => {
