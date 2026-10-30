@@ -114,6 +114,55 @@ try {
     await page.getByText('No archived projects.').waitFor();
   });
 
+  await step('project board by status: move a project to In Progress; progress shows', async () => {
+    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByLabel('Show archived').uncheck();
+    await page.getByLabel('Status of Apartment Renovation').selectOption({ label: 'In Progress' });
+    await page.locator('section[aria-label="In Progress"]').getByText('Apartment Renovation').waitFor();
+    assert.equal(await page.locator('section[aria-label="To Do"] .project-card').count(), 0);
+    await page.getByRole('progressbar', { name: 'Apartment Renovation progress' }).waitFor();
+  });
+
+  await step('task due date, priority, subtasks; overdue view; completion drives project progress', async () => {
+    await page.getByRole('link', { name: /Apartment Renovation/ }).click();
+    await page.getByText('Choose flooring').click();
+    await page.getByLabel('Due date').fill('2020-01-15');
+    await page.getByLabel('Priority').selectOption('urgent');
+    await page.getByLabel('New subtask').fill('Measure the room');
+    await page.getByRole('button', { name: 'Add subtask' }).click();
+    await page.getByRole('checkbox', { name: 'Measure the room' }).check();
+    await page.getByText('Subtasks (1/1)').waitFor();
+    await page.getByRole('button', { name: 'Close' }).click();
+    await page.getByText('(overdue)').first().waitFor();
+    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('button', { name: 'Overdue' }).click();
+    await page.getByRole('link', { name: 'Choose flooring' }).waitFor();
+    await page.getByRole('checkbox', { name: 'Complete Choose flooring' }).check();
+    await page.getByText('Nothing here.').waitFor();
+    await page.getByRole('button', { name: 'Completed' }).click();
+    await page.getByRole('link', { name: 'Choose flooring' }).waitFor();
+    await page.getByRole('link', { name: 'Choose flooring' }).click();
+    await page.getByRole('button', { name: /Details/ }).filter({ hasText: '100%' }).waitFor();
+    await page.getByRole('button', { name: 'Close' }).click(); // task link deep-links into the card
+    await shot(page, '04b-board-details');
+    await page.getByRole('button', { name: /Details/ }).click();
+    await page.getByLabel('Target date').fill('2026-12-31');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('heading', { name: 'Project details' }).waitFor({ state: 'detached' });
+  });
+
+  await step('quick add task and global search deep-link to the card', async () => {
+    await page.getByRole('button', { name: 'Quick Add Task' }).click();
+    await page.getByLabel('Task', { exact: true }).fill('Order tiles');
+    await page.getByRole('button', { name: 'Add task', exact: true }).click();
+    await page.getByText('Order tiles').waitFor();
+    await page.getByLabel('Search projects, tasks and ideas').fill('tiles');
+    await page.getByRole('button', { name: /Order tiles/ }).last().click();
+    await page.getByLabel('Title').waitFor();
+    assert.equal(await page.getByLabel('Title').inputValue(), 'Order tiles');
+    await page.getByRole('button', { name: 'Close' }).click();
+  });
+
   await step('keyboard: skip through sidebar with Tab and activate a link with Enter', async () => {
     await page.getByRole('link', { name: 'Dashboard' }).focus();
     await page.keyboard.press('Tab');
@@ -125,6 +174,19 @@ try {
     await page.getByText('No ideas yet').waitFor();
     const over = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
     assert.ok(over <= 0, `page scrolls vertically by ${over}px on an empty page`);
+  });
+
+  await step('idea converts to a project and stays linked', async () => {
+    await page.getByRole('link', { name: 'Idea Board' }).click();
+    await page.getByRole('button', { name: /add/i }).last().click();
+    await page.getByPlaceholder('Type or dictate an idea').fill('Reading tracker for books');
+    await page.waitForTimeout(700); // debounce save
+    page.once('dialog', (d) => d.accept());
+    await page.getByRole('button', { name: 'Convert idea to project' }).click();
+    await page.waitForURL(/\/projects\//);
+    await page.getByRole('heading', { name: 'Reading tracker for books' }).waitFor();
+    await page.getByRole('link', { name: 'Idea Board' }).click();
+    await page.getByRole('link', { name: 'Project created' }).waitFor();
   });
 
   await step('sign out, then sign in again with the same credentials', async () => {

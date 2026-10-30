@@ -7,7 +7,7 @@ import { LifeAreaIcon } from '../lib/lifeAreaIcons.jsx';
 
 const ACTION_LABELS = {
   'project.create': 'created a project', 'project.archive': 'archived a project', 'project.restore': 'restored a project',
-  'project.delete': 'deleted a project', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
+  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
   'lifearea.archive': 'archived a life area', 'lifearea.restore': 'restored a life area', 'workspace.create': 'created this workspace',
   'invitation.create': 'invited someone', 'invitation.accept': 'joined the workspace', 'member.role_change': 'changed a role',
   'member.remove': 'removed a member', 'member.leave': 'left the workspace', 'workspace.rename': 'renamed the workspace',
@@ -24,7 +24,7 @@ export default function DashboardPage() {
 
   const stats = data && [
     { label: 'Active projects', value: data.counts.activeProjects, icon: FolderKanban, sub: `${data.counts.archivedProjects} archived` },
-    { label: 'Tasks on boards', value: data.counts.tasks, icon: ListChecks, sub: 'Cards across active projects' },
+    { label: 'Open tasks', value: data.counts.openTasks, icon: ListChecks, sub: `${data.counts.overdueTasks} overdue · ${data.counts.tasks} total` },
     { label: 'Ideas', value: data.counts.ideas, icon: StickyNote, sub: 'Not yet committed' },
     { label: 'Life areas', value: data.counts.lifeAreas, icon: Layers, sub: 'Active' },
   ];

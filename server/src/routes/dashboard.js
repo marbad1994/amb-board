@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db.js';
+import { todayUtc } from '../validate.js';
 
 const router = Router();
 
@@ -13,6 +14,10 @@ router.get('/', (req, res) => {
       archivedProjects: one('SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND archived_at IS NOT NULL'),
       tasks: one(`SELECT COUNT(*) AS n FROM cards c JOIN columns col ON col.id = c.column_id JOIN projects p ON p.id = col.project_id
         WHERE p.workspace_id = ? AND p.archived_at IS NULL`),
+      openTasks: one(`SELECT COUNT(*) AS n FROM cards c JOIN columns col ON col.id = c.column_id JOIN projects p ON p.id = col.project_id
+        WHERE p.workspace_id = ? AND p.archived_at IS NULL AND c.status <> 'done'`),
+      overdueTasks: db.prepare(`SELECT COUNT(*) AS n FROM cards c JOIN columns col ON col.id = c.column_id JOIN projects p ON p.id = col.project_id
+        WHERE p.workspace_id = ? AND p.archived_at IS NULL AND c.status <> 'done' AND c.due_date < ?`).get(ws, todayUtc()).n,
       ideas: one('SELECT COUNT(*) AS n FROM idea_notes WHERE workspace_id = ?'),
       lifeAreas: one('SELECT COUNT(*) AS n FROM life_areas WHERE workspace_id = ? AND archived_at IS NULL'),
     },

@@ -22,7 +22,9 @@ router.get('/:projectId/columns', (req, res) => {
   const cardsStmt = db.prepare(`
     SELECT cards.*,
       (SELECT COUNT(*) FROM comments WHERE comments.card_id = cards.id) AS commentCount,
-      (SELECT COUNT(*) FROM attachments WHERE attachments.card_id = cards.id) AS attachmentCount
+      (SELECT COUNT(*) FROM attachments WHERE attachments.card_id = cards.id) AS attachmentCount,
+      (SELECT COUNT(*) FROM subtasks WHERE subtasks.card_id = cards.id) AS subtaskCount,
+      (SELECT COUNT(*) FROM subtasks WHERE subtasks.card_id = cards.id AND done = 1) AS subtaskDone
     FROM cards WHERE column_id = ? ORDER BY position ASC
   `);
   const result = columns.map((col) => ({

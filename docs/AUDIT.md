@@ -33,26 +33,29 @@ Master-prompt sections. Evidence column is filled only for tested items.
 | 5 | Subscription, UserPreferences, NotificationPreferences | TODO | |
 | 6 | 12 configurable Life Areas, custom names, subcategories, archive | DONE (Phase 1) | `lifeareas.test.js` |
 | 6 | Life Area summaries (goals/finance/docs) | TODO | needs later modules |
-| 7 | Project CRUD, archive/restore, owner, linked Life Area | PARTIAL | life area link + archive done; dates/budget/priority TODO |
-| 7 | Kanban view | DONE (pre-existing) | manual |
-| 7 | List view, milestones, AI overview | TODO | |
-| 8 | Tasks with subtasks, due dates, recurrence, views | TODO | cards exist; none of the extras |
+| 7 | Project CRUD, archive/restore, linked Life Area, status, priority, start/target dates, derived progress | DONE (Phase 2) | `core.test.js` |
+| 7 | Project owner/collaborators, budget, milestones, labels, comments | TODO | |
+| 7 | Kanban (task board + project status board) and grid view | DONE | E2E |
+| 7 | AI overview | TODO | |
+| 8 | Tasks: subtasks, due dates, priority, completion history; views Open/Overdue/Upcoming/Assigned to me/Completed | DONE (Phase 2) | `core.test.js`, E2E |
+| 8 | Recurrence, reminders, assignment to members (owner is free text), By Life Area/By Project views, dependencies | TODO | |
 | 9 | Project/budget/calendar linking | TODO | |
 | 10 | Finance | TODO | |
 | 11 | Calendar | TODO | |
 | 12 | My Day | TODO | |
 | 13 | AI summaries | TODO | |
 | 14 | AI assistant | TODO | existing AI task helper preserved |
-| 15 | Idea Board + convert to project | PARTIAL | board preserved, now workspace-scoped; conversion TODO |
+| 15 | Idea Board + convert to project (idea kept and linked, one-time) | DONE (Phase 2) | `core.test.js`, E2E |
+| 15 | Idea labels/AI organisation | TODO | |
 | 16 | Habits/Goals/Challenges | TODO | |
 | 17 | Notes/Journal/Documents | TODO | card attachments only |
 | 18 | Priority/urgency/activity-type attributes | TODO | |
-| 19 | UI shell per mockup (navy sidebar, teal accent), responsive | PARTIAL | shell, dashboard, life areas, settings |
+| 19 | UI shell per mockup (navy sidebar, teal accent), responsive, global search, Quick Add Task | PARTIAL | shell, dashboard, life areas, projects board, tasks, settings |
 | 20 | Auth, sessions, rate limiting, RBAC, server-side scoping, CSRF, headers, secure files | PARTIAL | see SECURITY.md; MFA, email verification, password recovery not implemented |
 | 21 | Automations/notifications | TODO | |
 | 22 | Billing/entitlements | TODO | |
 
-| 24 | Tests | PARTIAL | 14 API tests (`npm test`, scenarios 1-3, 17, 18, 20 partial) + 10-step browser E2E (`npm run e2e`); scenarios 4-16, 19, 21-25 not built |
+| 24 | Tests | PARTIAL | 23 API tests (`npm test`) + browser E2E (`npm run e2e`). Covered: scenarios 1-7 (partly), 15, 17, 18. Not covered: 8-14, 16, 19-25 |
 | 25 | Docs | PARTIAL | this file, DECISIONS, SECURITY |
 
 ## 4. Proposed architecture (summary)

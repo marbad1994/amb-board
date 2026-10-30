@@ -161,6 +161,29 @@ const foundation = `
   CREATE INDEX idx_ideas_ws ON idea_notes(workspace_id);
 `;
 
+const coreManagement = `
+  ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('todo','in_progress','done'));
+  ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high','urgent'));
+  ALTER TABLE projects ADD COLUMN start_date TEXT;
+  ALTER TABLE projects ADD COLUMN target_date TEXT;
+  ALTER TABLE cards ADD COLUMN due_date TEXT;
+  ALTER TABLE cards ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high','urgent'));
+  ALTER TABLE cards ADD COLUMN completed_at TEXT;
+  ALTER TABLE idea_notes ADD COLUMN converted_project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
+  UPDATE cards SET completed_at = updated_at WHERE status = 'done';
+  CREATE TABLE subtasks (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    done INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+  );
+  CREATE INDEX idx_subtasks_card ON subtasks(card_id);
+  CREATE INDEX idx_cards_due ON cards(due_date);
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -169,6 +192,7 @@ export const migrations = [
     if (!cols.includes('labels')) db.exec("ALTER TABLE cards ADD COLUMN labels TEXT DEFAULT '[]'");
   } },
   { id: '002_foundation', up: (db) => db.exec(foundation) },
+  { id: '003_core_management', up: (db) => db.exec(coreManagement) },
 ];
 
 function appliedIds(db) {

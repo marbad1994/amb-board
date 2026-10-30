@@ -9,6 +9,7 @@ import authRouter from './routes/auth.js';
 import workspacesRouter, { invitationsRouter } from './routes/workspaces.js';
 import lifeAreasRouter from './routes/lifeAreas.js';
 import dashboardRouter from './routes/dashboard.js';
+import tasksRouter, { searchRouter } from './routes/tasks.js';
 import projectsRouter from './routes/projects.js';
 import columnsRouter from './routes/columns.js';
 import cardsRouter from './routes/cards.js';
@@ -43,6 +44,8 @@ export function createApp() {
   app.use('/api', requireWorkspace, methodPermission);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/life-areas', lifeAreasRouter);
+  app.use('/api/tasks', tasksRouter);
+  app.use('/api/search', searchRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/projects', columnsRouter);
   app.use('/api/cards', cardsRouter);

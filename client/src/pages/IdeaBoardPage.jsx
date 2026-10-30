@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, FolderPlus } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
 import DictationButton from '../components/DictationButton.jsx';
@@ -10,6 +11,7 @@ export default function IdeaBoardPage() {
   const { name } = useIdentity();
   const [notes, setNotes] = useState(null);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
   const saveTimers = useRef({});
 
   useEffect(() => {
@@ -21,6 +23,17 @@ export default function IdeaBoardPage() {
       const color = COLORS[Math.floor(Math.random() * COLORS.length)];
       const note = await api.createIdea({ author: name, text: '', color });
       setNotes((prev) => [note, ...(prev || [])]);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const convert = async (note) => {
+    if (!note.text.trim()) return;
+    if (!window.confirm('Create a project from this idea? The idea stays on the board, linked to the project.')) return;
+    try {
+      const { projectId } = await api.convertIdea(note.id);
+      navigate(`/projects/${projectId}`);
     } catch (err) {
       setError(err.message);
     }
@@ -92,6 +105,12 @@ export default function IdeaBoardPage() {
               </div>
               <div className="postit__footer">
                 <span className="postit__author">{note.author || 'Anonymous'}</span>
+                {note.converted_project_id ? (
+                  <Link className="postit__convert" to={`/projects/${note.converted_project_id}`}>Project created</Link>
+                ) : (
+                  <button type="button" className="postit__convert" onClick={() => convert(note)} disabled={!note.text.trim()}
+                    aria-label="Convert idea to project"><FolderPlus size={14} aria-hidden="true" /> To project</button>
+                )}
                 <div className="color-swatches">
                   {COLORS.map((c) => (
                     <button

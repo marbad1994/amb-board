@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
 import { cardInWs, columnInWs } from '../access.js';
+import { PRIORITIES, parseDate } from '../validate.js';
 
 const router = Router();
 
@@ -35,6 +36,8 @@ function fullCard(id) {
   card.labels = parseLabels(card);
   card.comments = db.prepare('SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC').all(id);
   card.attachments = db.prepare('SELECT * FROM attachments WHERE card_id = ? ORDER BY uploaded_at ASC').all(id);
+  card.subtasks = db.prepare('SELECT id, title, done, position FROM subtasks WHERE card_id = ? ORDER BY position ASC').all(id)
+    .map((s) => ({ ...s, done: !!s.done }));
   return card;
 }
 
@@ -47,13 +50,16 @@ router.get('/:id', (req, res) => {
 router.post('/columns/:columnId/cards', (req, res) => {
   const { title, description, owner, status, labels } = req.body;
   const creator = req.user.name;
+  const dueDate = parseDate(req.body.due_date);
+  if (dueDate === undefined) return res.status(400).json({ error: 'due_date must be a valid YYYY-MM-DD date' });
+  if (req.body.priority !== undefined && !PRIORITIES.includes(req.body.priority)) return res.status(400).json({ error: 'invalid priority' });
   if (!title || !title.trim()) return res.status(400).json({ error: 'title is required' });
   const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM cards WHERE column_id = ?')
     .get(req.params.columnId).m;
   const id = nanoid();
   const ts = nowIso();
-  db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, labels, position, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, labels, position, created_at, updated_at, due_date, priority, completed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
       id,
       req.params.columnId,
@@ -65,7 +71,10 @@ router.post('/columns/:columnId/cards', (req, res) => {
       JSON.stringify(sanitizeLabels(labels)),
       maxPos + 1,
       ts,
-      ts
+      ts,
+      dueDate,
+      req.body.priority || 'medium',
+      (status || 'todo') === 'done' ? ts : null
     );
   res.status(201).json(fullCard(id));
 });
@@ -79,8 +88,23 @@ router.patch('/:id', (req, res) => {
     if (req.body[f] !== undefined) updated[f] = req.body[f];
   }
   const labels = req.body.labels !== undefined ? sanitizeLabels(req.body.labels) : parseLabels(card);
-  db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, updated_at = ? WHERE id = ?`)
-    .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), nowIso(), req.params.id);
+  if (!String(updated.title || '').trim()) return res.status(400).json({ error: 'title cannot be empty' });
+  if (!['todo', 'doing', 'blocked', 'done'].includes(updated.status)) return res.status(400).json({ error: 'invalid status' });
+  let dueDate = card.due_date;
+  if (req.body.due_date !== undefined) {
+    dueDate = parseDate(req.body.due_date);
+    if (dueDate === undefined) return res.status(400).json({ error: 'due_date must be a valid YYYY-MM-DD date' });
+  }
+  let priority = card.priority;
+  if (req.body.priority !== undefined) {
+    if (!PRIORITIES.includes(req.body.priority)) return res.status(400).json({ error: 'invalid priority' });
+    priority = req.body.priority;
+  }
+  // completion history: stamped when the card first becomes done, cleared if reopened
+  const ts = nowIso();
+  const completedAt = updated.status === 'done' ? (card.completed_at || ts) : null;
+  db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, due_date = ?, priority = ?, completed_at = ?, updated_at = ? WHERE id = ?`)
+    .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), dueDate, priority, completedAt, ts, req.params.id);
   res.json(fullCard(req.params.id));
 });
 
@@ -104,6 +128,32 @@ router.post('/:id/move', (req, res) => {
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM cards WHERE id = ?').run(req.params.id);
   res.status(204).end();
+});
+
+// subtasks
+router.post('/:id/subtasks', (req, res) => {
+  const title = String(req.body.title || '').trim().slice(0, 200);
+  if (!title) return res.status(400).json({ error: 'title is required' });
+  const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM subtasks WHERE card_id = ?').get(req.params.id).p;
+  db.prepare('INSERT INTO subtasks (id, card_id, title, done, position, created_at) VALUES (?, ?, ?, 0, ?, ?)')
+    .run(nanoid(), req.params.id, title, pos, nowIso());
+  res.status(201).json(fullCard(req.params.id));
+});
+
+router.patch('/:id/subtasks/:subId', (req, res) => {
+  const sub = db.prepare('SELECT * FROM subtasks WHERE id = ? AND card_id = ?').get(req.params.subId, req.params.id);
+  if (!sub) return res.status(404).json({ error: 'not found' });
+  const title = req.body.title !== undefined ? String(req.body.title).trim().slice(0, 200) : sub.title;
+  if (!title) return res.status(400).json({ error: 'title cannot be empty' });
+  const done = req.body.done !== undefined ? (req.body.done ? 1 : 0) : sub.done;
+  db.prepare('UPDATE subtasks SET title = ?, done = ?, completed_at = ? WHERE id = ?')
+    .run(title, done, done ? (sub.completed_at || nowIso()) : null, sub.id);
+  res.json(fullCard(req.params.id));
+});
+
+router.delete('/:id/subtasks/:subId', (req, res) => {
+  db.prepare('DELETE FROM subtasks WHERE id = ? AND card_id = ?').run(req.params.subId, req.params.id);
+  res.json(fullCard(req.params.id));
 });
 
 // comments

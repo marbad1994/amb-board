@@ -75,6 +75,14 @@ export const api = {
   updateProject: (id, data) => request(`/projects/${id}`, json('PATCH', data)),
   deleteProject: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
 
+  // tasks, search, ideas
+  listTasks: (view = 'open', project) => request(`/tasks?view=${view}${project ? `&project=${project}` : ''}`),
+  search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
+  convertIdea: (id, data = {}) => request(`/ideas/${id}/convert`, json('POST', data)),
+  addSubtask: (cardId, title) => request(`/cards/${cardId}/subtasks`, json('POST', { title })),
+  updateSubtask: (cardId, id, data) => request(`/cards/${cardId}/subtasks/${id}`, json('PATCH', data)),
+  deleteSubtask: (cardId, id) => request(`/cards/${cardId}/subtasks/${id}`, { method: 'DELETE' }),
+
   // columns
   listColumns: (projectId) => request(`/projects/${projectId}/columns`),
   createColumn: (projectId, name) =>

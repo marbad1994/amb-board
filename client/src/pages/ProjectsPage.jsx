@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Folder, Archive, ArchiveRestore } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
+import { PROJECT_STATUSES, priorityLabel, formatDate } from '../lib/labels.js';
 
 const COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6'];
 
@@ -17,6 +18,7 @@ export default function ProjectsPage() {
   const [name, setName] = useState('');
   const [newArea, setNewArea] = useState('');
   const [error, setError] = useState('');
+  const [view, setView] = useState('board');
 
   useEffect(() => {
     api.listLifeAreas().then(setAreas).catch((err) => setError(err.message));
@@ -59,7 +61,52 @@ export default function ProjectsPage() {
     }
   };
 
+  const setStatus = async (project, status) => {
+    try {
+      const updated = await api.updateProject(project.id, { status });
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? updated : p)));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const setFilter = (value) => setParams(value ? { lifeArea: value } : {});
+
+  const renderCard = (project, withStatus) => (
+    <div key={project.id} style={{ position: 'relative' }}>
+      <Link to={`/projects/${project.id}`} className="project-card" style={{ borderLeftColor: project.color }}>
+        <h3>{project.name}</h3>
+        <p>{project.life_area_name || 'No life area'} · {project.card_count} {project.card_count === 1 ? 'task' : 'tasks'} · {project.progress}% complete</p>
+        <div className="progress" role="progressbar" aria-valuenow={project.progress} aria-valuemin={0} aria-valuemax={100} aria-label={`${project.name} progress`}>
+          <div style={{ width: `${project.progress}%` }} />
+        </div>
+        <div className="project-card__meta">
+          <span className={`prio prio--${project.priority}`}>{priorityLabel(project.priority)}</span>
+          {project.target_date && <span>Due {formatDate(project.target_date)}</span>}
+          {project.overdue_count > 0 && <span className="prio prio--urgent">{project.overdue_count} overdue</span>}
+        </div>
+      </Link>
+      {writable && withStatus && !showArchived && (
+        <select className="project-card__status" aria-label={`Status of ${project.name}`} value={project.status}
+          onChange={(e) => setStatus(project, e.target.value)}>
+          {PROJECT_STATUSES.map((st) => <option key={st.value} value={st.value}>{st.label}</option>)}
+        </select>
+      )}
+      {writable && (
+        <div className="project-card__actions">
+          <button type="button" className="btn btn-icon btn-ghost" onClick={() => toggleArchive(project)}
+            title={project.archived_at ? 'Restore project' : 'Archive project'}
+            aria-label={project.archived_at ? `Restore ${project.name}` : `Archive ${project.name}`}>
+            {project.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          </button>
+          <button type="button" className="btn btn-icon btn-ghost" onClick={() => deleteProject(project.id)}
+            title="Delete project" aria-label={`Delete ${project.name}`}>
+            <Trash2 size={16} color="var(--color-danger)" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="page page--wide">
@@ -94,6 +141,10 @@ export default function ProjectsPage() {
         <label className="check">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
         </label>
+        <div className="seg" role="group" aria-label="View">
+          <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>Board</button>
+          <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}>Grid</button>
+        </div>
       </div>
 
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -106,29 +157,23 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {projects && projects.length > 0 && (
+      {projects && projects.length > 0 && view === 'grid' && (
         <div className="project-grid">
-          {projects.map((project) => (
-            <div key={project.id} style={{ position: 'relative' }}>
-              <Link to={`/projects/${project.id}`} className="project-card" style={{ borderLeftColor: project.color }}>
-                <h3>{project.name}</h3>
-                <p>{project.life_area_name || 'No life area'} · {project.card_count} {project.card_count === 1 ? 'task' : 'tasks'}</p>
-              </Link>
-              {writable && (
-                <div className="project-card__actions">
-                  <button type="button" className="btn btn-icon btn-ghost" onClick={() => toggleArchive(project)}
-                    title={project.archived_at ? 'Restore project' : 'Archive project'}
-                    aria-label={project.archived_at ? `Restore ${project.name}` : `Archive ${project.name}`}>
-                    {project.archived_at ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-                  </button>
-                  <button type="button" className="btn btn-icon btn-ghost" onClick={() => deleteProject(project.id)}
-                    title="Delete project" aria-label={`Delete ${project.name}`}>
-                    <Trash2 size={16} color="var(--color-danger)" />
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+          {projects.map((project) => renderCard(project, false))}
+        </div>
+      )}
+
+      {projects && projects.length > 0 && view === 'board' && (
+        <div className="status-board">
+          {PROJECT_STATUSES.map((st) => {
+            const items = projects.filter((p) => p.status === st.value);
+            return (
+              <section key={st.value} className="status-col" aria-label={st.label}>
+                <h2>{st.label}<span>{items.length}</span></h2>
+                {items.map((project) => renderCard(project, true))}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

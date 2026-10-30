@@ -1,7 +1,8 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { MessageSquare, Paperclip, User } from 'lucide-react';
+import { MessageSquare, Paperclip, User, CalendarDays, ListChecks } from 'lucide-react';
 import { labelColor } from '../utils/labelColor.js';
+import { formatDate, priorityLabel } from '../lib/labels.js';
 
 const STATUS_LABEL = {
   todo: 'To do',
@@ -42,6 +43,18 @@ export default function CardItem({ card, onOpen }) {
       )}
       <div className="card__meta">
         <span className={`badge status-${card.status}`}>{STATUS_LABEL[card.status] || card.status}</span>
+        {card.priority && card.priority !== 'medium' && (
+          <span className={`prio prio--${card.priority}`}>{priorityLabel(card.priority)}</span>
+        )}
+        {card.due_date && (
+          <span className={`card__due ${card.status !== 'done' && card.due_date < new Date().toISOString().slice(0, 10) ? 'is-overdue' : ''}`}>
+            <CalendarDays size={12} aria-hidden="true" />{formatDate(card.due_date)}
+            {card.status !== 'done' && card.due_date < new Date().toISOString().slice(0, 10) && ' (overdue)'}
+          </span>
+        )}
+        {card.subtaskCount > 0 && (
+          <span className="card__due"><ListChecks size={12} aria-hidden="true" />{card.subtaskDone}/{card.subtaskCount}</span>
+        )}
         {card.owner && (
           <span className="card__owner">
             <User size={12} />

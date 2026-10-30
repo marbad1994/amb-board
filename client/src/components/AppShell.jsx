@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Layers, FolderKanban, StickyNote, Settings, Sun, ListChecks, Calendar, Landmark,
-  NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check,
+  NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus,
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth, canWrite } from '../context/AuthContext.jsx';
+import SearchBox from './SearchBox.jsx';
+import QuickAddTask from './QuickAddTask.jsx';
 
 const NAV = [
   { label: 'Overview', items: [
@@ -14,7 +16,7 @@ const NAV = [
   ] },
   { label: 'Manage', items: [
     { to: '/projects', icon: FolderKanban, text: 'Projects Board' },
-    { icon: ListChecks, text: 'Tasks' },
+    { to: '/tasks', icon: ListChecks, text: 'Tasks' },
     { to: '/ideas', icon: StickyNote, text: 'Idea Board' },
     { icon: Calendar, text: 'Calendar' },
   ] },
@@ -32,6 +34,7 @@ export default function AppShell({ children }) {
   const { user, workspaces, active, setActiveWorkspace, logout } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
+  const [quickAdd, setQuickAdd] = useState(false);
   const wsRef = useRef(null);
   const location = useLocation();
 
@@ -125,10 +128,17 @@ export default function AppShell({ children }) {
           <button type="button" className="btn btn-icon btn-ghost shell__menu" onClick={() => setNavOpen(true)} aria-label="Open menu">
             <Menu size={20} />
           </button>
-          <span className="shell__top-title">{active?.name}</span>
-          {active && <span className="role-tag">{active.role}</span>}
+          <SearchBox />
+          <div className="shell__top-right">
+            <span className="shell__top-title">{active?.name}</span>
+            {active && <span className="role-tag">{active.role}</span>}
+            {canWrite(active?.role) && (
+              <button type="button" className="btn btn-primary" onClick={() => setQuickAdd(true)}><Plus size={16} aria-hidden="true" /> Quick Add Task</button>
+            )}
+          </div>
         </header>
         <main className="app"><div className="main">{children}</div></main>
+        {quickAdd && <QuickAddTask key="qa" onClose={() => setQuickAdd(false)} />}
       </div>
     </div>
   );

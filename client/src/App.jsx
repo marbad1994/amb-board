@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage.jsx';
 import LifeAreasPage from './pages/LifeAreasPage.jsx';
 import ProjectsPage from './pages/ProjectsPage.jsx';
 import BoardPage from './pages/BoardPage.jsx';
+import TasksPage from './pages/TasksPage.jsx';
 import IdeaBoardPage from './pages/IdeaBoardPage.jsx';
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
 
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/life-areas" element={<LifeAreasPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:projectId" element={<BoardPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
         <Route path="/ideas" element={<IdeaBoardPage />} />
         <Route path="/settings" element={<WorkspaceSettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

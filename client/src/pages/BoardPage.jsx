@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import ProjectDetailsModal from '../components/ProjectDetailsModal.jsx';
+import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import {
   DndContext,
   DragOverlay,
@@ -34,13 +36,32 @@ export default function BoardPage() {
   const [newColumnName, setNewColumnName] = useState('');
   const [activeCardId, setActiveCardId] = useState(null);
   const [activeColumnId, setActiveColumnId] = useState(null);
-  const [openCardId, setOpenCardId] = useState(null);
+  const [searchParams] = useSearchParams();
+  const { active } = useAuth();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [openCardId, setOpenCardId] = useState(searchParams.get('card'));
   const [aiHelperOpen, setAiHelperOpen] = useState(false);
 
   useEffect(() => {
     api.getProject(projectId).then(setProject).catch((err) => setError(err.message));
     api.listColumns(projectId).then(setColumns).catch((err) => setError(err.message));
+    // Quick Add Task (in the shell) announces new data so an already-open board refreshes
+    const reload = () => api.listColumns(projectId).then(setColumns).catch(() => {});
+    window.addEventListener('amb:tasks-changed', reload);
+    return () => window.removeEventListener('amb:tasks-changed', reload);
   }, [projectId]);
+
+  // search results / task links deep-link to a card on the board that is already open
+  const cardParam = searchParams.get('card');
+  useEffect(() => {
+    if (cardParam) setOpenCardId(cardParam);
+  }, [cardParam]);
+
+  // project progress is derived from task status, so refresh it when the card dialog closes
+  const closeCard = () => {
+    setOpenCardId(null);
+    api.getProject(projectId).then(setProject).catch(() => {});
+  };
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
@@ -228,6 +249,11 @@ export default function BoardPage() {
           <ArrowLeft size={18} />
         </button>
         <h2>{project?.name || 'Loading…'}</h2>
+        {project && (
+          <button type="button" className="btn" onClick={() => setDetailsOpen(true)}>
+            Details · {project.progress}%
+          </button>
+        )}
         {columns && columns.length > 0 && (
           <button
             type="button"
@@ -309,10 +335,14 @@ export default function BoardPage() {
         </DndContext>
       )}
 
+      {detailsOpen && project && (
+        <ProjectDetailsModal project={project} writable={canWrite(active?.role)} onClose={() => setDetailsOpen(false)} onSaved={setProject} />
+      )}
+
       {openCardId && (
         <CardModal
           cardId={openCardId}
-          onClose={() => setOpenCardId(null)}
+          onClose={closeCard}
           onChanged={handleCardChanged}
           onDeleted={handleCardDeleted}
         />
