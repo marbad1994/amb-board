@@ -62,7 +62,7 @@ export default function CalendarPage() {
     const time = i.source === 'event' && !i.all_day ? `${i.start_local.slice(11, 16)} ` : '';
     const text = `${time}${i.title}`;
     const cls = `cal-chip cal-chip--${i.kind}${i.done ? ' is-done' : ''}`;
-    const inner = <><span className="cal-chip__kind">{KIND_LABEL[i.kind]}</span> {text}{i.recurring && ' (repeats)'}{i.reminder_minutes != null && ' (reminder)'}</>;
+    const inner = <><span className={`cal-chip__kind${view === 'month' ? ' sr-only' : ''}`}>{KIND_LABEL[i.kind]}</span> {text}{i.recurring && ' (repeats)'}{i.reminder_minutes != null && ' (reminder)'}</>;
     const title = `${KIND_LABEL[i.kind]}: ${text}`;
     if (i.source === 'event') return <button key={i.id} type="button" className={cls} title={title} onClick={() => setModal({ event: i, date: i.date })}>{inner}</button>;
     return <Link key={i.id} className={cls} title={title} to={i.source === 'task' ? `/projects/${i.project_id}?card=${i.card_id}` : i.source === 'goal' ? '/goals' : `/projects/${i.project_id}`}>{inner}</Link>;

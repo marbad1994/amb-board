@@ -31,6 +31,17 @@ function eventWhen(e) {
 }
 const dueLabel = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
+// "5 min ago", "Yesterday, 14:05", "Oct 29": people read when, not timestamps with seconds
+function relTime(iso) {
+  const d = new Date(iso); const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === y.toDateString() ? `Yesterday, ${t}` : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 export default function DashboardPage() {
   const { user, active } = useAuth();
   const [data, setData] = useState(null);
@@ -89,6 +100,17 @@ export default function DashboardPage() {
           )}
 
           <div className="dash-grid">
+            <section className="panel attention dash-wide" aria-labelledby="dash-attention">
+              <div className="panel__title"><h2 id="dash-attention">Needs attention</h2><Link to="/tasks">All tasks</Link></div>
+              {attention === null ? <p className="muted">Loading...</p> : attention.length === 0 ? <p className="muted">Nothing is overdue. Nice work.</p> : (
+                <ul className="activity">
+                  {attention.map((t) => (
+                    <li key={t.id}><Link to={`/projects/${t.project_id}?card=${t.id}`}><b>{t.title}</b></Link>
+                      <small><span className="is-overdue">Overdue since {dueLabel(t.due_date)}</span> · {t.project_name}</small></li>
+                  ))}
+                </ul>
+              )}
+            </section>
             <section className="panel" aria-labelledby="dash-events">
               <div className="panel__title"><h2 id="dash-events">Upcoming events</h2><Link to="/calendar">Calendar</Link></div>
               {data.upcomingEvents.length === 0 ? <p className="muted">Nothing in the next 7 days.</p> : (
@@ -112,8 +134,9 @@ export default function DashboardPage() {
 
             <section className="panel" aria-labelledby="dash-areas">
               <div className="panel__title"><h2 id="dash-areas">Life areas</h2><Link to="/life-areas">Manage</Link></div>
+              {data.lifeAreas.every((a) => !a.project_count) && <p className="muted">No project is assigned to a life area yet. Give a project a life area to see it here.</p>}
               <ul className="area-list">
-                {data.lifeAreas.map((a) => (
+                {[...data.lifeAreas].filter((a) => a.project_count > 0).sort((x, y) => y.project_count - x.project_count).slice(0, 8).map((a) => (
                   <li key={a.id}>
                     <Link to={`/projects?lifeArea=${a.id}`}>
                       <LifeAreaIcon name={a.icon} size={16} /><span>{a.name}</span><b>{a.project_count}</b>
@@ -129,23 +152,12 @@ export default function DashboardPage() {
                 <ul className="activity">
                   {data.activity.map((a, i) => (
                     <li key={i}><b>{a.user_name || 'Someone'}</b> {humanAction(a.action)}
-                      <small>{new Date(a.created_at).toLocaleString()}</small></li>
+                      <small title={new Date(a.created_at).toLocaleString()}>{relTime(a.created_at)}</small></li>
                   ))}
                 </ul>
               )}
             </section>
 
-            <section className="panel attention" aria-labelledby="dash-attention">
-              <div className="panel__title"><h2 id="dash-attention">Needs attention</h2><Link to="/tasks">All tasks</Link></div>
-              {attention === null ? <p className="muted">Loading...</p> : attention.length === 0 ? <p className="muted">Nothing is overdue. Nice work.</p> : (
-                <ul className="activity">
-                  {attention.map((t) => (
-                    <li key={t.id}><Link to={`/projects/${t.project_id}?card=${t.id}`}><b>{t.title}</b></Link>
-                      <small><span className="is-overdue">Overdue since {dueLabel(t.due_date)}</span> · {t.project_name}</small></li>
-                  ))}
-                </ul>
-              )}
-            </section>
           </div>
         </>
       )}

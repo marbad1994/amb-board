@@ -64,8 +64,8 @@ export default function TasksPage() {
           <ul className="task-list">
             {tasks.map((t) => (
               <li key={t.id}>
-                <input type="checkbox" aria-label={`${t.status === 'done' ? 'Reopen' : 'Complete'} ${t.title}`}
-                  checked={t.status === 'done'} disabled={!writable} onChange={() => toggle(t)} />
+                <label className="hit"><input type="checkbox" aria-label={`${t.status === 'done' ? 'Reopen' : 'Complete'} ${t.title}`}
+                  checked={t.status === 'done'} disabled={!writable} onChange={() => toggle(t)} /></label>
                 <div className="task-list__main">
                   <Link to={`/projects/${t.project_id}?card=${t.id}`} className={t.status === 'done' ? 'is-done' : ''}>{t.title}</Link>
                   <small>

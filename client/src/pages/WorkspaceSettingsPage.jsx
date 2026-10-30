@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Trash2, UserPlus } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canManage } from '../context/AuthContext.jsx';
@@ -188,7 +189,7 @@ function AssistantSettings() {
       <div className="panel__title"><h2 id="as-h">Assistant: autonomy and connected tools</h2></div>
       <h3 style={{ fontSize: 14 }}>Apply these changes without asking</h3>
       <p className="hint">Routine, easily undone changes only. Everything else (money, projects, automations, plans, outside tools) always waits for your approval. Applied changes are listed in the activity log.</p>
-      {!auto ? <p className="muted">Loading...</p> : <div className="notify-prefs">{auto.available.map((t) => (
+      {!auto ? <p className="muted">Loading...</p> : <div className="notify-prefs notify-prefs--grid">{auto.available.map((t) => (
         <label key={t} className="check"><input type="checkbox" checked={auto.auto_approve.includes(t)} onChange={(e) => toggle(t, e.target.checked)} /> {AUTO_LABEL[t] || t}</label>
       ))}</div>}
       <h3 style={{ fontSize: 14, marginTop: 18 }}>Connected tools (MCP servers)</h3>
@@ -309,6 +310,10 @@ export default function WorkspaceSettingsPage() {
     try { await fn(); if (success) setMsg(success); } catch (err) { setError(err.message); }
   };
 
+  const [params, setParams] = useSearchParams();
+  const TABS = [['workspace', 'Workspace'], ['notifications', 'Notifications'], ['assistant', 'Assistant'], ['connect', 'Connect other AI tools'], ['security', 'Security']];
+  const tab = TABS.some(([v]) => v === params.get('tab')) ? params.get('tab') : 'workspace';
+
   if (!active) return null;
 
   return (
@@ -320,13 +325,16 @@ export default function WorkspaceSettingsPage() {
           <p className="page-sub">Your role here: <b>{active.role}</b>. {active.kind === 'personal' ? 'Personal workspace.' : 'Shared workspace.'}</p>
         </div>
       </div>
+      <div className="seg seg--tabs" role="group" aria-label="Settings sections">
+        {TABS.map(([v, l]) => <button key={v} type="button" aria-pressed={tab === v} onClick={() => setParams(v === 'workspace' ? {} : { tab: v }, { replace: true })}>{l}</button>)}
+      </div>
       {error && <p className="form-error" role="alert">{error}</p>}
       {msg && <p className="form-ok" role="status">{msg}</p>}
 
       <div className="settings-grid">
-        <MembersSection key={active.id} ws={active} me={user} />
+        {tab === 'workspace' && <MembersSection key={active.id} ws={active} me={user} />}
 
-        {active.role === 'owner' && (
+        {tab === 'workspace' && active.role === 'owner' && (
           <section className="panel" aria-labelledby="rename-h">
             <div className="panel__title"><h2 id="rename-h">Rename workspace</h2></div>
             <form className="inline-form inline-form--wide" onSubmit={(e) => { e.preventDefault(); run(async () => { await api.renameWorkspace(active.id, rename); await refreshWorkspaces(); }, 'Workspace renamed.'); }}>
@@ -336,7 +344,7 @@ export default function WorkspaceSettingsPage() {
           </section>
         )}
 
-        <section className="panel" aria-labelledby="new-ws-h">
+        {tab === 'workspace' && <section className="panel" aria-labelledby="new-ws-h">
           <div className="panel__title"><h2 id="new-ws-h">Shared workspaces</h2></div>
           <form className="inline-form inline-form--wide" onSubmit={(e) => {
             e.preventDefault();
@@ -363,16 +371,14 @@ export default function WorkspaceSettingsPage() {
             <input type="text" aria-label="Invitation code" placeholder="Paste code" value={code} onChange={(e) => setCode(e.target.value)} />
             <button type="submit" className="btn" disabled={!code.trim()}>Join</button>
           </form>
-        </section>
+        </section>}
 
-        <NotificationPrefs />
+        {tab === 'notifications' && <NotificationPrefs />}
 
-        <McpTokens />
-        <AssistantSettings />
-        <SkillsSettings />
-        <BrowserAssistant />
+        {tab === 'connect' && <McpTokens />}
+        {tab === 'assistant' && <><AssistantSettings /><SkillsSettings /><BrowserAssistant /></>}
 
-        <section className="panel" aria-labelledby="sec-h">
+        {tab === 'security' && <section className="panel" aria-labelledby="sec-h">
           <div className="panel__title"><h2 id="sec-h">Security</h2></div>
           <form onSubmit={(e) => {
             e.preventDefault();
@@ -388,7 +394,7 @@ export default function WorkspaceSettingsPage() {
           <h3 className="sub-h">Sessions</h3>
           <button type="button" className="btn btn-danger" onClick={() => window.confirm('Sign out on all devices?') && logoutAll()}>Sign out everywhere</button>
           <p className="muted">Multi-factor authentication, email verification and password recovery are not available yet.</p>
-        </section>
+        </section>}
       </div>
     </div>
   );
