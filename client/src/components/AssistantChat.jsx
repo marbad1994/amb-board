@@ -18,8 +18,6 @@ const dayLabel = (iso) => {
   const day = same(d, now) ? 'Today' : same(d, y) ? 'Yesterday' : d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
   return `${day}, ${hhmm(iso)}`;
 };
-// A long answer reads better as short sequential bubbles, one idea each.
-const bubbles = (text) => String(text || '').split(/\n{2,}/).map((t) => t.trim()).filter(Boolean);
 const seconds = (ms) => (ms < 950 ? `${(Math.max(ms, 100) / 1000).toFixed(1)} s` : `${(ms / 1000).toFixed(1)} s`);
 
 function Proposal({ p, onDecide, onEdit, disabled }) {
@@ -133,7 +131,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
           if (e.type === 'step') setLive((l) => ({ ...l, steps: l.steps.some((s) => s.id === e.id) ? l.steps.map((s) => (s.id === e.id ? { ...s, ...e } : s)) : [...l.steps, e] }));
           else if (e.type === 'delta') { acc += e.text; setLive((l) => ({ ...l, text: acc })); } else if (e.type === 'reset') { acc = ''; setLive((l) => ({ ...l, text: '' })); } else if (e.type === 'done') {
             convRef.current = e.conversationId; onConversation?.(e.conversationId);
-            setSkill(e.skill ?? null); setProgress(e.message.progress ?? null);
+            setSkill(e.skill ?? null); setProgress(e.message.progress ?? null); setLive(null);
             setMessages((m) => [...m, { ...e.message, dropped: e.dropped?.length || 0, droppedList: (e.dropped || []).slice(0, 6) }]);
           } else if (e.type === 'error') { const err = new Error(e.message); err.status = e.status; throw err; }
         },
@@ -175,6 +173,8 @@ export default function AssistantChat({ conversationId, onConversation, context,
   const slash = /^\/[\w-]*$/.test(text) ? library.filter((s) => `/${s.name}`.startsWith(text.toLowerCase())).slice(0, 6) : [];
   useEffect(() => { setPick(0); }, [text]);
   const onKey = (e) => {
+    const opts = !busy && !text && messages.at(-1)?.role === 'assistant' ? messages.at(-1).suggestions || [] : [];
+    if (opts.length && /^[1-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && opts[Number(e.key) - 1]) { e.preventDefault(); send(opts[Number(e.key) - 1]); return; }
     if (slash.length) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setPick((i) => (i + 1) % slash.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setPick((i) => (i + slash.length - 1) % slash.length); return; }
@@ -193,7 +193,6 @@ export default function AssistantChat({ conversationId, onConversation, context,
   let prevDay = '';
   return (
     <div className={`ac ${compact ? 'ac--compact' : ''}`}>
-      <div className="ac-trust"><ShieldCheck size={14} aria-hidden="true" /><span>I read your workspace and suggest changes. Nothing changes until you approve it.</span></div>
       {skill && (
         <div className="ac-skill" role="status">
           <div className="ac-skill__name"><b>/{skill}</b>{progress && <small>Step {progress.step} of {progress.of}</small>}</div>
@@ -206,6 +205,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
           <div className="ac-intro">
             <h3>Ask about your workspace, or have me set things up</h3>
             <p>I know your projects, tasks, money, calendar and automations in AMB Board. Pick something to start, or type your own request.</p>
+            <p className="ac-trust"><ShieldCheck size={14} aria-hidden="true" /><span>I read your workspace and suggest changes. Nothing changes until you approve it.</span></p>
             <div className="ac-can">
               <div><b>I can</b>Read and analyse your data. Propose tasks, events, budgets and flows. Search the web.</div>
               <div><b>I cannot</b>Change anything without your approval. Manage members, passwords or access.</div>
@@ -223,8 +223,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
           const past = [...new Set(trace.filter((t) => t.label).map((t) => t.label))];
           const ms = trace.reduce((a, t) => a + (t.ms || 0), 0);
           const sources = [...new Set(trace.map((t) => t.source).filter(Boolean))];
-          const parts = m.role === 'assistant' ? bubbles(m.content) : [];
-          return (
+                    return (
             <div className="ac-turn" key={m.id}>
               {divider && <div className="ac-day">{divider}</div>}
               {m.role === 'user' ? (
@@ -236,7 +235,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
                 <>
                   <span className="sr-only">Assistant: </span>
                   {past.length > 0 && <div className="ac-work"><Check size={13} strokeWidth={3} aria-hidden="true" /> {past.join(', ')}{ms >= 100 ? ` · ${seconds(ms)}` : ''}</div>}
-                  {parts.map((t, k) => <div className="ac-b" key={k}>{t}</div>)}
+                  {m.content && <div className="ac-b">{m.content}</div>}
                   {sources.length > 0 && <div className="ac-src" aria-label="Based on">{sources.map((s) => <span key={s}>{s}</span>)}</div>}
                   {trace.filter((t) => t.summary).map((t, k) => <TestBlock key={k} summary={t.summary} />)}
                   {m.artifacts?.map((a) => (
@@ -257,8 +256,8 @@ export default function AssistantChat({ conversationId, onConversation, context,
                     </div>
                   )}
                   {m.suggestions?.length > 0 && i === last && !busy && writable && (
-                    <div className="ac-chips" role="group" aria-label="Suggested replies">
-                      {m.suggestions.map((sg) => <button key={sg} type="button" className="ac-chip" onClick={() => send(sg)}>{sg}</button>)}
+                    <div className="ac-opts" role="group" aria-label="Suggested replies">
+                      {m.suggestions.map((sg, k) => <button key={sg} type="button" className="ac-opt" onClick={() => send(sg)}><kbd aria-hidden="true">{k + 1}</kbd><span>{sg}</span></button>)}
                     </div>
                   )}
                   {!String(m.id).startsWith('tmp-') && (
@@ -276,7 +275,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
         {busy && live && (
           <div className="ac-turn">
             {(live.steps.length > 0 || live.text) && <Steps steps={live.steps} writing={!!live.text} />}
-            {live.text ? bubbles(live.text).map((t, k, a) => <div className="ac-b" key={k}>{t}{k === a.length - 1 && <span className="ac-caret" aria-hidden="true" />}</div>)
+            {live.text ? <div className="ac-b">{live.text}<span className="ac-caret" aria-hidden="true" /></div>
               : live.steps.length === 0 && <div className="ac-b ac-b--dots"><span className="ac-dots" role="img" aria-label="The assistant is thinking"><i /><i /><i /></span></div>}
           </div>
         )}

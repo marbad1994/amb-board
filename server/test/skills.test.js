@@ -121,3 +121,28 @@ test('built-in guided entry skills: /add-transaction, /add-task, /add-event carr
   script = [{ type: 'final', answer: 'ok' }];
   assert.equal((await chat(u, 'x'.repeat(11000))).status, 200);
 });
+
+test('a skill started without details opens with a fixed first question (no AI call), one step at a time', async () => {
+  const u = await signUp(srv.base, 'SkH');
+  prompts = [];
+  const r = (await chat(u, '/create-automation')).json;
+  assert.equal(prompts.length, 0, 'instant, no model call');
+  assert.equal(r.skill, 'create-automation');
+  assert.match(r.message.content, /^What should this automation do\?/);
+  assert.equal((r.message.content.match(/\?/g) || []).length, 1);
+  assert.deepEqual(r.message.progress, { step: 1, of: 4 });
+  assert.equal(r.message.suggestions.length, 4);
+  const t = (await chat(u, '/add-task')).json; assert.match(t.message.content, /What is the task\?/); assert.deepEqual(t.message.suggestions, []);
+});
+
+test('while a skill runs only the first question is kept and "something else" options are dropped', async () => {
+  const u = await signUp(srv.base, 'SkI');
+  const { oneQuestion } = await import('../src/ai/assistant.js');
+  assert.equal(oneQuestion('So far: weekly.\n\nWhen should it run?\n\nA few things I can build: x.'), 'So far: weekly.\n\nWhen should it run?');
+  assert.equal(oneQuestion('Which day? And what time?'), 'Which day?');
+  assert.equal(oneQuestion('No question here.'), 'No question here.');
+  script = [{ type: 'final', answer: 'First, when?\n\nAlso, who gets it? And what subject?', suggestions: ['Every Monday', 'Something else - I will describe it', 'Other', 'Every day'] }];
+  const r = (await chat(u, '/create-automation email me things')).json;
+  assert.equal(r.message.content, 'First, when?');
+  assert.deepEqual(r.message.suggestions, ['Every Monday', 'Every day']);
+});

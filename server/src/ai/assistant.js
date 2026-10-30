@@ -14,6 +14,17 @@ const MAX_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 3;
 const MAX_PROPOSALS = 5;
 const PROPOSAL_TTL_MS = 24 * 3600_000;
+// While a guided skill runs, one step and one question at a time: anything after the first question's paragraph is cut.
+export function oneQuestion(text) {
+  const paras = text.split(/\n{2,}/);
+  const at = paras.findIndex((p) => p.includes('?'));
+  if (at < 0) return text;
+  let keep = paras.slice(0, at + 1);
+  const last = keep[at]; const first = last.indexOf('?');
+  if (last.indexOf('?', first + 1) >= 0) keep[at] = last.slice(0, first + 1);
+  return keep.join('\n\n');
+}
+const OTHER_OPTION = /^(something else|something different|other\b|i'?ll describe|i will describe|describe it|none of (these|the above)|type (my own|it))/i;
 const FALLBACK_CHIPS = ['Give me an overview', 'What is overdue?', 'What can you do?'];
 
 const SYSTEM = `You are the assistant inside AMB Board, a life-management app (projects, tasks, calendar, finance, goals, habits, notes). You are always available next to whatever page the user is on, and you help one signed-in user understand, plan and act on their own data.
@@ -117,6 +128,7 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
   } else if (slash) {
     skill = findSkill(workspaceId, user.id, slash.name);
     if (!skill) final = { answer: `There is no skill called /${slash.name}. Try /skills to see the list.`, proposals: [], suggestions: ['/skills'] };
+    else if (!slash.rest && skill.opening) { activeNow = skill.name; final = { answer: skill.opening.answer, suggestions: skill.opening.suggestions, progress: skill.opening.progress, proposals: [] }; }
     else { activeNow = skill.name; userText = slash.rest || `Start the /${skill.name} skill and take me through it.`; }
   } else if (activeName) {
     skill = findSkill(workspaceId, user.id, activeName);
@@ -192,8 +204,9 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
     if (err.dropped) droppedError = err;
   }
 
-  const answer = clip(final.answer.trim(), 4000) || 'No answer.';
-  let suggestions = (Array.isArray(final.suggestions) ? final.suggestions : []).map((x) => String(x?.label ?? x ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean).slice(0, 4);
+  let answer = clip(final.answer.trim(), 4000) || 'No answer.';
+  if (skill && outcome === 'ok') answer = oneQuestion(answer);
+  let suggestions = (Array.isArray(final.suggestions) ? final.suggestions : []).map((x) => String(x?.label ?? x ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)).filter((x) => x && !OTHER_OPTION.test(x)).slice(0, 4);
   if (final.done === true) activeNow = null;
   const pr = final.progress; const progress = activeNow && pr && Number.isInteger(pr.step) && Number.isInteger(pr.of) && pr.of >= 1 && pr.of <= 20 && pr.step >= 1 && pr.step <= pr.of ? { step: pr.step, of: pr.of } : null;
   db.prepare('UPDATE ai_conversations SET active_skill = ? WHERE id = ?').run(activeNow, conv.id);
@@ -210,11 +223,11 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
   // every answer leaves the user something to click: when the model gave no options, derive sensible ones
   let derived = 0;
   if (incomplete) suggestions = [];
-  if (!incomplete && !suggestions.length && !accepted.length) {
+  if (!incomplete && outcome !== 'command' && !suggestions.length && !accepted.length) {
     suggestions = outcome === 'parse_error' || outcome === 'budget_exhausted' ? FALLBACK_CHIPS
       : dropped.length ? ['Try again', 'Tell me what to change']
         : activeNow ? ['Go on', '/stop']
-          : /\?\s*$/.test(answer) ? ['Yes', 'No', 'Something else'] : [];
+          : /\?\s*$/.test(answer) ? ['Yes', 'No'] : [];
     derived = suggestions.length ? 1 : 0;
   }
   const createdAt = new Date(Date.now() + 1).toISOString();

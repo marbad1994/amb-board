@@ -42,7 +42,7 @@ test('running out of steps gives options instead of a canned apology', async () 
 
 test('answers always leave something to click: derived next steps when the model gives none', async () => {
   const u = await signUp(srv.base, 'QaChips');
-  assert.deepEqual((await chat(u, 'hi', [json({ type: 'final', answer: 'Do you want a report?' })])).message.suggestions, ['Yes', 'No', 'Something else']);
+  assert.deepEqual((await chat(u, 'hi', [json({ type: 'final', answer: 'Do you want a report?' })])).message.suggestions, ['Yes', 'No']);
   assert.deepEqual((await chat(u, 'hi', [json({ type: 'final', answer: 'Done.' })])).message.suggestions, [], 'a statement needs no chips');
   const own = await chat(u, 'hi', [json({ type: 'final', answer: 'Do you want a report?', suggestions: ['Weekly', 'Monthly'] })]);
   assert.deepEqual(own.message.suggestions, ['Weekly', 'Monthly'], 'the model suggestions win');
