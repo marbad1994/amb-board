@@ -184,6 +184,37 @@ const coreManagement = `
   CREATE INDEX idx_cards_due ON cards(due_date);
 `;
 
+const aiTables = `
+  CREATE TABLE ai_usage (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,              -- ok | error
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    latency_ms INTEGER,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_ai_usage_ws ON ai_usage(workspace_id, created_at);
+
+  CREATE TABLE ai_summaries (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('project','daily')),
+    subject_id TEXT NOT NULL,          -- project id, or user id for a daily briefing
+    input_hash TEXT NOT NULL,          -- hash of the facts sent; unchanged facts => cached text is reused
+    content TEXT NOT NULL,             -- JSON produced by the model, validated
+    facts TEXT NOT NULL,               -- the deterministic facts it was generated from (traceability)
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    UNIQUE (workspace_id, kind, subject_id)
+  );
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -193,6 +224,7 @@ export const migrations = [
   } },
   { id: '002_foundation', up: (db) => db.exec(foundation) },
   { id: '003_core_management', up: (db) => db.exec(coreManagement) },
+  { id: '004_ai', up: (db) => db.exec(aiTables) },
 ];
 
 function appliedIds(db) {

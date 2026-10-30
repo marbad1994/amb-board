@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../api/client.js';
 import { PROJECT_STATUSES, PRIORITIES } from '../lib/labels.js';
+import AiSummaryCard from './AiSummaryCard.jsx';
 
 export default function ProjectDetailsModal({ project, writable, onClose, onSaved }) {
   const [areas, setAreas] = useState([]);
@@ -52,6 +53,7 @@ export default function ProjectDetailsModal({ project, writable, onClose, onSave
             </div>
             <small className="hint">{project.done_count} of {project.card_count} tasks done{project.overdue_count ? `, ${project.overdue_count} overdue` : ''}. Calculated from task status.</small>
           </div>
+          <AiSummaryCard kind="project" projectId={project.id} writable={writable} title="AI project summary" />
           <fieldset disabled={!writable} className="plain-fieldset">
             <div className="field"><label htmlFor="pd-name">Name</label>
               <input id="pd-name" type="text" required maxLength={120} value={form.name} onChange={set('name')} /></div>

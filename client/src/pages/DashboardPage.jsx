@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { FolderKanban, ListChecks, StickyNote, Layers } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import AiSummaryCard from '../components/AiSummaryCard.jsx';
+import { canWrite } from '../context/AuthContext.jsx';
 import { LifeAreaIcon } from '../lib/lifeAreaIcons.jsx';
 
 const ACTION_LABELS = {
   'project.create': 'created a project', 'project.archive': 'archived a project', 'project.restore': 'restored a project',
-  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
+  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'ai.project_summary': 'generated an AI project summary', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
   'lifearea.archive': 'archived a life area', 'lifearea.restore': 'restored a life area', 'workspace.create': 'created this workspace',
   'invitation.create': 'invited someone', 'invitation.accept': 'joined the workspace', 'member.role_change': 'changed a role',
   'member.remove': 'removed a member', 'member.leave': 'left the workspace', 'workspace.rename': 'renamed the workspace',
@@ -53,6 +55,8 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+
+          <AiSummaryCard kind="daily" writable={canWrite(active?.role)} title="Daily briefing" />
 
           <div className="dash-grid">
             <section className="panel" aria-labelledby="dash-projects">

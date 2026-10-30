@@ -129,7 +129,7 @@ export default function IdeaBoardPage() {
         </div>
       )}
 
-      <button type="button" className="idea-board__fab" onClick={addNote} title="Add idea">
+      <button type="button" className="idea-board__fab" onClick={addNote} title="Add idea" aria-label="Add idea">
         <Plus size={24} />
       </button>
     </div>

@@ -17,6 +17,7 @@ import { cardAttachments, attachmentDownload } from './routes/attachments.js';
 import ideasRouter from './routes/ideas.js';
 import translateRouter from './routes/translate.js';
 import aiRouter from './routes/ai.js';
+import aiInsightsRouter from './routes/aiInsights.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const clientDist = join(__dirname, '..', '..', 'client', 'dist');
@@ -53,6 +54,7 @@ export function createApp() {
   app.use('/api/attachments', attachmentDownload);
   app.use('/api/ideas', ideasRouter);
   app.use('/api/translate', translateRouter);
+  app.use('/api/ai', aiInsightsRouter);
   app.use('/api/ai', aiRouter);
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));

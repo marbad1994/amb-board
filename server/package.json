@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch --experimental-sqlite src/index.js",
     "start": "node --experimental-sqlite src/index.js",
-    "test": "node --experimental-sqlite --test --test-concurrency=1 test/*.test.js"
+    "test": "node --experimental-sqlite --test --test-concurrency=1 test/*.test.js",
+    "ai:check": "node --experimental-sqlite scripts/ai-check.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

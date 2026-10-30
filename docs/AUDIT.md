@@ -43,8 +43,8 @@ Master-prompt sections. Evidence column is filled only for tested items.
 | 10 | Finance | TODO | |
 | 11 | Calendar | TODO | |
 | 12 | My Day | TODO | |
-| 13 | AI summaries | TODO | |
-| 14 | AI assistant | TODO | existing AI task helper preserved |
+| 13 | AI summaries: project + daily briefing (grounded, cached, traceable facts) | PARTIAL | mocked tests only; live providers unverified (`docs/AI.md`). Weekly/monthly/financial TODO |
+| 14 | AI assistant (chat, tools, action proposals, approvals) | TODO | AI gateway built; legacy AI task helper preserved |
 | 15 | Idea Board + convert to project (idea kept and linked, one-time) | DONE (Phase 2) | `core.test.js`, E2E |
 | 15 | Idea labels/AI organisation | TODO | |
 | 16 | Habits/Goals/Challenges | TODO | |
@@ -55,7 +55,7 @@ Master-prompt sections. Evidence column is filled only for tested items.
 | 21 | Automations/notifications | TODO | |
 | 22 | Billing/entitlements | TODO | |
 
-| 24 | Tests | PARTIAL | 23 API tests (`npm test`) + browser E2E (`npm run e2e`). Covered: scenarios 1-7 (partly), 15, 17, 18. Not covered: 8-14, 16, 19-25 |
+| 24 | Tests | PARTIAL | 32 API tests (`npm test`; 9 use a mocked AI provider) + browser E2E (`npm run e2e`). Covered: scenarios 1-7 (partly), 15, 17, 18. Not covered: 8-14, 16, 19-25 |
 | 25 | Docs | PARTIAL | this file, DECISIONS, SECURITY |
 
 ## 4. Proposed architecture (summary)

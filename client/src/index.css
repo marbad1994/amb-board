@@ -1868,3 +1868,18 @@ input[type='password'] {
 .task-list__main small { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--color-text-muted); font-size: 11px; }
 
 .postit__convert { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 12px; font-weight: 700; color: #1c1f26; background: #ffffffaa; border: 1px solid #00000022; border-radius: 6px; text-decoration: none; }
+
+/* ---------- AI summaries ---------- */
+.ai-card { margin: 16px 0; padding: 16px; border-radius: 14px; color: #e8f3fa; background: linear-gradient(120deg, #142c48, #163b4e); }
+.ai-card__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-card__head h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; color: #fff; }
+.ai-card .btn { background: #ffffff18; color: #fff; border-color: #ffffff35; min-height: 36px; }
+.ai-card .muted, .ai-card .hint { color: #b4c6d8; }
+.ai-card__lead { font-size: 14px; line-height: 1.6; margin: 12px 0 8px; }
+.ai-card h4 { margin: 12px 0 4px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #66e5d4; }
+.ai-card ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.ai-card details { margin-top: 8px; font-size: 12px; }
+.ai-card summary { cursor: pointer; color: #66e5d4; }
+.ai-card .notice { background: #ffffff14; color: #fff; }
+.ai-card .form-error { color: #ffb4a9; }
+.dash-grid { align-items: start; }

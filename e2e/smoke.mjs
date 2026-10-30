@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -16,9 +17,25 @@ const base = `http://127.0.0.1:${PORT}`;
 const shots = process.env.E2E_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
+// Fake OpenAI-compatible provider so the AI UI can be exercised offline and deterministically (MOCKED).
+const fakeAi = createServer((req, res) => {
+  let b = '';
+  req.on('data', (c) => (b += c));
+  req.on('end', () => {
+    const daily = JSON.parse(b).messages[0].content.includes('"headline"');
+    const out = daily
+      ? { headline: 'Briefing from fake provider', priorities: ['Finish flooring'], upcoming: [], attention: [], suggested_focus: 'Start early.' }
+      : { overview: 'Overview from fake provider', completed: ['Chose flooring'], remaining: [], risks: [], suggestions: ['Order tiles'] };
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }], usage: {} }));
+  });
+});
+await new Promise((r) => fakeAi.listen(0, '127.0.0.1', r));
+
 const dir = mkdtempSync(join(tmpdir(), 'amb-e2e-'));
 const server = spawn(process.execPath, ['--experimental-sqlite', join(root, 'server/src/index.js')], {
-  env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'e2e.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up') },
+  env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'e2e.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up'),
+    DEEPSEEK_API_KEY: 'e2e-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${fakeAi.address().port}`, X_GROK_API_KEY: '' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve, reject) => {
@@ -157,9 +174,10 @@ try {
     await page.getByRole('button', { name: 'Add task', exact: true }).click();
     await page.getByText('Order tiles').waitFor();
     await page.getByLabel('Search projects, tasks and ideas').fill('tiles');
-    await page.getByRole('button', { name: /Order tiles/ }).last().click();
+    await page.getByRole('region', { name: 'Search results' }).getByRole('button', { name: /Order tiles/ }).click();
     await page.getByLabel('Title').waitFor();
     assert.equal(await page.getByLabel('Title').inputValue(), 'Order tiles');
+    assert.equal(await page.getByLabel('Search projects, tasks and ideas').inputValue(), '', 'search box clears after choosing a result');
     await page.getByRole('button', { name: 'Close' }).click();
   });
 
@@ -176,9 +194,26 @@ try {
     assert.ok(over <= 0, `page scrolls vertically by ${over}px on an empty page`);
   });
 
+  await step('AI project summary and daily briefing (mocked provider) show facts and labelling', async () => {
+    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: /Apartment Renovation/ }).click();
+    await page.getByRole('button', { name: /Details/ }).click();
+    await page.getByText('Nothing generated yet.').waitFor();
+    await page.getByRole('button', { name: 'Generate' }).click();
+    await page.getByText('Overview from fake provider').waitFor();
+    await page.getByText(/AI-generated on/).waitFor();
+    await page.getByText('Facts used').click();
+    await page.getByText(/tasks done \(\d+%\)/).waitFor();
+    await page.getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('link', { name: 'Dashboard' }).click();
+    await page.getByRole('button', { name: 'Generate' }).click();
+    await page.getByText('Briefing from fake provider').waitFor();
+    await shot(page, '07-briefing');
+  });
+
   await step('idea converts to a project and stays linked', async () => {
     await page.getByRole('link', { name: 'Idea Board' }).click();
-    await page.getByRole('button', { name: /add/i }).last().click();
+    await page.getByRole('button', { name: 'Add idea' }).click();
     await page.getByPlaceholder('Type or dictate an idea').fill('Reading tracker for books');
     await page.waitForTimeout(700); // debounce save
     page.once('dialog', (d) => d.accept());
@@ -243,6 +278,7 @@ try {
 } finally {
   await browser.close();
   server.kill();
+  fakeAi.close();
   rmSync(dir, { recursive: true, force: true });
   for (const r of results) console.log(r.join('  '));
   console.log(failed ? 'E2E FAILED' : `E2E OK (${results.length} steps)`);

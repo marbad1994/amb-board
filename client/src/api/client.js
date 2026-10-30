@@ -75,6 +75,13 @@ export const api = {
   updateProject: (id, data) => request(`/projects/${id}`, json('PATCH', data)),
   deleteProject: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
 
+  // AI insights
+  aiStatus: () => request('/ai/status'),
+  getProjectSummary: (id) => request(`/ai/projects/${id}/summary`),
+  generateProjectSummary: (id, refresh = false) => request(`/ai/projects/${id}/summary`, json('POST', { refresh })),
+  getBriefing: () => request('/ai/briefing'),
+  generateBriefing: (refresh = false) => request('/ai/briefing', json('POST', { refresh })),
+
   // tasks, search, ideas
   listTasks: (view = 'open', project) => request(`/tasks?view=${view}${project ? `&project=${project}` : ''}`),
   search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
