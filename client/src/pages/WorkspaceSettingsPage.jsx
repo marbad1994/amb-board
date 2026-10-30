@@ -102,6 +102,22 @@ function MembersSection({ ws, me }) {
   );
 }
 
+function NotificationPrefs() {
+  const [prefs, setPrefs] = useState(null);
+  useEffect(() => { api.notificationPrefs().then(setPrefs).catch(() => {}); }, []);
+  const set = (k, v) => { setPrefs((p) => ({ ...p, [k]: v })); api.setNotificationPrefs({ [k]: v }).then(setPrefs).catch(() => {}); };
+  const rows = [['event_reminders', 'Event reminders'], ['task_due', 'Tasks due today or overdue'], ['budget_alerts', 'Budget alerts']];
+  return (
+    <section className="panel" aria-labelledby="np-h">
+      <div className="panel__title"><h2 id="np-h">Notifications</h2></div>
+      {!prefs ? <p className="muted">Loading…</p> : rows.map(([k, l]) => (
+        <label key={k} className="check"><input type="checkbox" checked={prefs[k]} onChange={(e) => set(k, e.target.checked)} /> {l}</label>
+      ))}
+      <p className="hint">In-app only for now. Email and push delivery are not set up.</p>
+    </section>
+  );
+}
+
 export default function WorkspaceSettingsPage() {
   const { user, active, refreshWorkspaces, setActiveWorkspace, logoutAll } = useAuth();
   const [newName, setNewName] = useState('');
@@ -171,6 +187,8 @@ export default function WorkspaceSettingsPage() {
             <button type="submit" className="btn" disabled={!code.trim()}>Join</button>
           </form>
         </section>
+
+        <NotificationPrefs />
 
         <section className="panel" aria-labelledby="sec-h">
           <div className="panel__title"><h2 id="sec-h">Security</h2></div>

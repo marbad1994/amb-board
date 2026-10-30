@@ -16,6 +16,8 @@ import habitsRouter from './routes/habits.js';
 import notesRouter from './routes/notes.js';
 import documentsRouter from './routes/documents.js';
 import myDayRouter from './routes/myday.js';
+import financeExtraRouter from './routes/financeExtra.js';
+import notificationsRouter from './routes/notifications.js';
 import tasksRouter, { searchRouter } from './routes/tasks.js';
 import projectsRouter from './routes/projects.js';
 import columnsRouter from './routes/columns.js';
@@ -49,6 +51,9 @@ export function createApp() {
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/invitations', invitationsRouter);
 
+  // Notifications: workspace-scoped, but every member (viewers too) manages their own.
+  app.use('/api/notifications', requireWorkspace, notificationsRouter);
+
   // Everything below is scoped to one workspace and permission-checked by HTTP method.
   app.use('/api', requireWorkspace, methodPermission);
   app.use('/api/dashboard', dashboardRouter);
@@ -56,6 +61,7 @@ export function createApp() {
   app.use('/api/tasks', tasksRouter);
   app.use('/api/search', searchRouter);
   app.use('/api/finance', financeRouter);
+  app.use('/api/finance', financeExtraRouter);
   app.use('/api/calendar', calendarRouter);
   app.use('/api/goals', goalsRouter);
   app.use('/api/habits', habitsRouter);

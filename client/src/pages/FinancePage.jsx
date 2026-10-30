@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Download, Trash2 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
+import { BudgetTab, SavingsTab, DebtsTab } from '../components/FinanceDepth.jsx';
 import { fmt, toMinor, lastCurrency, rememberCurrency } from '../lib/money.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -17,6 +18,7 @@ export default function FinancePage() {
   const [projects, setProjects] = useState([]);
   const [recurring, setRecurring] = useState([]);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState('overview');
   const [form, setForm] = useState({ type: 'expense', status: 'posted', amount: '', currency: lastCurrency(), date: today(), description: '', categoryId: '', projectId: '' });
   const [rec, setRec] = useState({ description: '', amount: '', currency: lastCurrency(), frequency: 'monthly', start_date: today() });
 
@@ -75,13 +77,20 @@ export default function FinancePage() {
           <h1>Finance &amp; Budget</h1>
           <p className="page-sub">Totals are shown per currency and never converted or added across currencies. Project budgets are set on each project.</p>
         </div>
-        <div className="inline-form">
+        {tab === 'overview' && <div className="inline-form">
           <input type="month" aria-label="Month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
           <button type="button" className="btn" onClick={exportCsv}><Download size={16} aria-hidden="true" /> Export CSV</button>
-        </div>
+        </div>}
       </div>
+      <div className="seg seg--tabs" role="group" aria-label="Finance sections">
+        {[['overview', 'Overview'], ['budget', 'Monthly budget'], ['savings', 'Savings'], ['debts', 'Debts']].map(([v, l]) => <button key={v} type="button" aria-pressed={tab === v} onClick={() => setTab(v)}>{l}</button>)}
+      </div>
+      {tab === 'budget' && <BudgetTab role={active?.role} writable={writable} />}
+      {tab === 'savings' && <SavingsTab writable={writable} />}
+      {tab === 'debts' && <DebtsTab writable={writable} />}
       {error && <p className="form-error" role="alert">{error}</p>}
 
+      {tab === 'overview' && <>
       {summary && summary.currencies.length === 0 && <div className="empty-state">No transactions in {month}.</div>}
       {summary?.currencies.map((c) => (
         <section key={c.currency} className="panel" style={{ marginBottom: 16 }} aria-label={`${c.currency} summary`}>
@@ -161,6 +170,7 @@ export default function FinancePage() {
           )}
         </section>
       </div>
+      </>}
     </div>
   );
 }

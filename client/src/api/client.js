@@ -135,6 +135,27 @@ export const api = {
     return res.blob();
   },
 
+  // notifications, budgets, savings, debts, reviews
+  notifications: () => request('/notifications'),
+  refreshNotifications: () => request('/notifications/refresh', { method: 'POST' }),
+  readNotification: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
+  readAllNotifications: () => request('/notifications/read-all', { method: 'POST' }),
+  notificationPrefs: () => request('/notifications/preferences'),
+  setNotificationPrefs: (data) => request('/notifications/preferences', json('PUT', data)),
+  monthBudget: (month) => request(`/finance/budget?month=${month}`),
+  setMonthBudget: (data) => request('/finance/budget', json('PUT', data)),
+  removeMonthBudget: (month, categoryId, currency) => request(`/finance/budget?month=${month}&categoryId=${categoryId}&currency=${currency}`, { method: 'DELETE' }),
+  listSavings: () => request('/finance/savings'),
+  createSavings: (data) => request('/finance/savings', json('POST', data)),
+  addSavingsEntry: (id, data) => request(`/finance/savings/${id}/entries`, json('POST', data)),
+  archiveSavings: (id) => request(`/finance/savings/${id}`, json('PATCH', { archived: true })),
+  listDebts: () => request('/finance/debts'),
+  createDebt: (data) => request('/finance/debts', json('POST', data)),
+  addDebtPayment: (id, data) => request(`/finance/debts/${id}/payments`, json('POST', data)),
+  archiveDebt: (id) => request(`/finance/debts/${id}`, json('PATCH', { archived: true })),
+  getReview: (period) => request(`/ai/review/${period}`),
+  generateReview: (period, refresh = false) => request(`/ai/review/${period}`, json('POST', { refresh })),
+
   // AI assistant
   listConversations: () => request('/ai/assistant/conversations'),
   getConversation: (id) => request(`/ai/assistant/conversations/${id}`),

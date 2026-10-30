@@ -7,6 +7,7 @@ import {
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import SearchBox from './SearchBox.jsx';
 import QuickAddTask from './QuickAddTask.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 const NAV = [
   { label: 'Overview', items: [
@@ -60,6 +61,7 @@ export default function AppShell({ children }) {
   return (
     <div className={`shell ${navOpen ? 'shell--nav-open' : ''}`}>
       <aside className="sidebar" aria-label="Primary">
+        <div className="sidebar__scroll">
         <div className="sidebar__brand">
           <div className="sidebar__logo" aria-hidden="true">A</div>
           <div>
@@ -109,6 +111,7 @@ export default function AppShell({ children }) {
             </div>
           ))}
         </nav>
+        </div>
 
         <div className="sidebar__foot">
           <div className="sidebar__user">
@@ -134,6 +137,7 @@ export default function AppShell({ children }) {
           <div className="shell__top-right">
             <span className="shell__top-title">{active?.name}</span>
             {active && <span className="role-tag">{active.role}</span>}
+            <NotificationBell key={active?.id} />
             {canWrite(active?.role) && (
               <button type="button" className="btn btn-primary" onClick={() => setQuickAdd(true)}><Plus size={16} aria-hidden="true" /> Quick Add Task</button>
             )}
