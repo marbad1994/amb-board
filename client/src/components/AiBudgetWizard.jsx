@@ -4,7 +4,7 @@ import { api } from '../api/client.js';
 import { canManage } from '../context/AuthContext.jsx';
 import { fmt, toMinor, lastCurrency, rememberCurrency } from '../lib/money.js';
 
-const BASIS = { csv_average: 'From your statement (average, rounded up)', user_prompt: 'A figure you stated', ai_estimate: 'AI estimate: please check' };
+const BASIS = { sheet: 'Amount from your budget sheet', csv_average: 'From your statement (average, rounded up)', user_prompt: 'A figure you stated', ai_estimate: 'AI estimate: please check' };
 const toMajor = (minor) => (minor / 100).toFixed(2);
 
 export default function AiBudgetWizard({ month: initialMonth, role, onClose, onDone }) {
@@ -71,7 +71,7 @@ export default function AiBudgetWizard({ month: initialMonth, role, onClose, onD
               <div className="field">
                 <label htmlFor="ab-file">Or add a bank statement (CSV)</label>
                 <input id="ab-file" ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                <small className="hint">Export it from your bank as CSV (up to 2 MB). Your file is read by the app: amounts and dates are calculated by code, not by the AI.</small>
+                <small className="hint">Export your bank statement or your budget sheet as CSV (up to 2 MB). Your file is read by the app: amounts and dates are calculated by code, not by the AI.</small>
               </div>
               <div className="two-col">
                 <div className="field"><label htmlFor="ab-month">Month to budget</label><input id="ab-month" type="month" required value={form.month} onChange={set('month')} /></div>
@@ -82,7 +82,7 @@ export default function AiBudgetWizard({ month: initialMonth, role, onClose, onD
                   <select id="ab-sign" value={form.signMode} onChange={set('signMode')}>
                     <option value="auto">Work it out automatically</option><option value="negative_is_expense">Expenses are negative numbers</option><option value="positive_is_expense">Expenses are positive numbers</option></select></div>
               )}
-              <p className="notice">Privacy: only your description and the merchant names from the file (with card numbers, dates and amounts removed) are sent to the AI provider. Nothing is saved until you review and approve the draft.</p>
+              <p className="notice">Privacy: only your description and the merchant names from the file (with card numbers, dates and amounts removed) are sent to the AI provider. A budget spreadsheet (labels and amounts, no dates, any language) also works: only the row labels are sent, never the amounts. Nothing is saved until you review and approve the draft.</p>
               <button type="submit" className="btn btn-primary btn-block" disabled={busy || (!form.prompt.trim() && !file)}>
                 {busy ? <><Loader2 size={16} className="spin" aria-hidden="true" /> Working...</> : 'Generate draft'}
               </button>
@@ -93,6 +93,10 @@ export default function AiBudgetWizard({ month: initialMonth, role, onClose, onD
             <>
               <p className="muted">Draft for <b>{draft.month}</b> in <b>{draft.currency}</b>. Nothing has been saved yet. Edit anything, untick what you do not want, then create the budget.</p>
               {draft.notes.map((n, i) => <p key={i} className="hint">{n}</p>)}
+              {draft.sheet && (
+                <p className="notice">Read as a budget sheet: {draft.sheet.lines_read} labelled amounts found. Total of the expense lines: {fmt(draft.sheet.expenses_total_minor, draft.currency)}.
+                  {draft.income && ` Income found: ${fmt(draft.income.avg_monthly_minor, draft.currency)}.`}</p>
+              )}
               {draft.csv && (
                 <p className="notice">{draft.csv.rows_used} of {draft.csv.rows_total} rows read ({draft.csv.rows_skipped} skipped), {draft.csv.from} to {draft.csv.to}. Expenses were taken from: {draft.csv.sign_assumption}.
                   {draft.income && ` Average income in the file: ${fmt(draft.income.avg_monthly_minor, draft.currency)} per month.`}

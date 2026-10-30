@@ -6,8 +6,8 @@ export const MAX_ROWS = 5000;
 // RFC 4180-ish parser: quotes, escaped quotes, CRLF, embedded newlines. Delimiter is detected from the header line.
 export function parseCsv(text) {
   const src = String(text).replace(/^\uFEFF/, '');
-  const firstLine = src.split(/\r?\n/, 1)[0] || '';
-  const delimiter = [',', ';', '\t', '|'].map((d) => [d, firstLine.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+  const head = src.split(/\r?\n/, 6).join('\n');   // a few lines, so a short title row does not decide the delimiter
+  const delimiter = [',', ';', '\t', '|'].map((d) => [d, head.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
   const rows = [];
   let row = []; let cell = ''; let q = false;
   for (let i = 0; i < src.length; i += 1) {
