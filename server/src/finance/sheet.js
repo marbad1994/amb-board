@@ -46,3 +46,31 @@ export function heuristicKind(item) {
   if (INCOME_RE.test(l) || INCOME_RE.test(s)) return 'income';
   return 'expense';
 }
+
+// A budget TABLE: a header row with a category column and a planned/budget column (and usually a type column), as in
+// "Tip | Categorie | Buget planificat | Realizat | Diferenta | Note". Everything is read by code; no AI is needed.
+const kindOfType = (t) => (/venit|income|salar/.test(t) ? 'income' : 'expense');
+
+export function readTable(rows) {
+  let h = -1; let cat = -1; let plan = -1; let type = -1; let actual = -1;
+  for (let i = 0; i < Math.min(rows.length, 30) && h < 0; i += 1) {
+    const f = rows[i].map((c) => fold(c).replace(/[^a-z ]/g, '').trim());
+    const c = f.findIndex((x) => /^(categori|category|denumire|descriere|linie|name)/.test(x));
+    const p = f.findIndex((x, j) => j !== c && /(planificat|planned|budget|buget|plan$|limita|limit)/.test(x));
+    if (c >= 0 && p >= 0) { h = i; cat = c; plan = p; type = f.findIndex((x) => /^(tip|type|grupa|group|grup)/.test(x)); actual = f.findIndex((x) => /(realizat|actual|real|cheltuit|spent)/.test(x)); }
+  }
+  if (h < 0) return null;
+  const items = []; let seen = false; let skippedZero = 0; let actualTotal = 0;
+  for (const r of rows.slice(h + 1)) {
+    const label = String(r[cat] ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!label) { if (seen) break; continue; }       // a blank row ends the table (summary blocks follow)
+    seen = true;
+    const planned = parseAmount(r[plan]);
+    const typeText = type >= 0 ? String(r[type] ?? '').replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const act = actual >= 0 ? parseAmount(r[actual]) : null;
+    if (act) actualTotal += Math.abs(act);
+    if (planned === null || planned === 0) { skippedZero += 1; continue; }
+    items.push({ label, parent: typeText, kind: kindOfType(fold(typeText)), amount_minor: Math.abs(planned) });
+  }
+  return { items, skippedZero, actualTotal, hasActual: actual >= 0 };
+}

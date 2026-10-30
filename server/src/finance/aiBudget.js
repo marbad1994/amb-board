@@ -4,7 +4,7 @@ import { db, nowIso, tx } from '../db.js';
 import { complete, parseJson, AiFailureError, AiUnavailableError, AiLimitError } from '../ai/gateway.js';
 import { parseCsv, extractRows, merchantKey, MAX_ROWS } from './csv.js';
 import { CURRENCY_RE } from './money.js';
-import { readSheet, heuristicKind } from './sheet.js';
+import { readSheet, readTable, heuristicKind } from './sheet.js';
 
 const MAX_UNIQUE_SENT = 150;
 const MAX_LINES = 40;
@@ -86,6 +86,11 @@ export async function buildDraft({ workspaceId, user, prompt, csvText, month, cu
     const ex = extractRows(raw, currency, signMode);
     if (ex.error) {
       // not a bank statement: try reading it as a budget spreadsheet (labels + amounts, no dates)
+      const table = readTable(raw);
+      if (table && table.items.length) {
+        tableDraft({ draft, table, notes, rowsTotal: raw.length });
+        return storeDraft({ workspaceId, user, month, currency, draft, notes });
+      }
       const sheet = readSheet(raw);
       if (sheet.items.length >= 2) {
         await sheetDraft({ ctx, draft, sheet, cats, prompt, notes, currency, rowsTotal: raw.length });
@@ -172,6 +177,24 @@ export async function buildDraft({ workspaceId, user, prompt, csvText, month, cu
   }
 
   return storeDraft({ workspaceId, user, month, currency, draft, notes });
+}
+
+function tableDraft({ draft, table, notes, rowsTotal }) {
+  const byCat = new Map(); let incomeMinor = 0;
+  for (const it of table.items) {
+    if (it.kind === 'income') { incomeMinor += it.amount_minor; continue; }
+    const category = cleanName(it.label); if (!category) continue;
+    const e = byCat.get(category.toLowerCase()) || { category, parent: cleanName(it.parent), total: 0 };
+    e.total += it.amount_minor; byCat.set(category.toLowerCase(), e);
+  }
+  draft.lines = [...byCat.values()].slice(0, MAX_LINES).map((e) => ({ category: e.category, parent: e.parent || null, limit_minor: e.total, basis: 'sheet', history: null }));
+  if (draft.lines.length === 0) throw Object.assign(new Error('No expense lines with a planned amount were found in this sheet.'), { status: 400 });
+  draft.ai = false;
+  draft.income = incomeMinor ? { avg_monthly_minor: incomeMinor, months: 1 } : null;
+  draft.sheet = { rows_total: rowsTotal, lines_read: table.items.length, expenses_total_minor: draft.lines.reduce((a, l) => a + l.limit_minor, 0), table: true };
+  notes.push('Read straight from your budget table: each category\'s planned amount is the monthly limit and its type (for example Cheltuiala fixa) became the parent category. No AI was needed and nothing was estimated.');
+  if (table.skippedZero) notes.push(`${table.skippedZero} rows with a planned amount of 0 were left out.`);
+  if (table.hasActual && table.actualTotal) notes.push('The "actual" column is not imported (it has no dates); add real transactions in Finance.');
 }
 
 async function sheetDraft({ ctx, draft, sheet, cats, prompt, notes, currency, rowsTotal }) {
