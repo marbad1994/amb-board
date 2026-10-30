@@ -14,7 +14,7 @@ function resolveDbPath() {
   return join(dataDir, 'board.sqlite');
 }
 
-const dbPath = resolveDbPath();
+export const dbPath = resolveDbPath();
 export const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 

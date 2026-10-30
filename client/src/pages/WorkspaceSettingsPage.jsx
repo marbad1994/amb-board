@@ -134,6 +134,50 @@ function McpTokens() {
   );
 }
 
+const AUTO_LABEL = { create_task: 'Create tasks', update_task: 'Change tasks', reschedule_task: 'Reschedule tasks', add_subtask: 'Add subtasks', add_comment: 'Add comments',
+  create_note: 'Write notes', create_event: 'Add calendar events', create_habit: 'Create habits', add_milestone: 'Add goal milestones' };
+
+function AssistantSettings() {
+  const [auto, setAuto] = useState(null);
+  const [conns, setConns] = useState(null);
+  const [form, setForm] = useState({ name: '', url: '', token: '' });
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => api.listConnections().then(setConns).catch(() => setConns([]));
+  useEffect(() => { api.assistantSettings().then(setAuto).catch(() => {}); load(); }, []);
+  const toggle = (t, on) => { const next = on ? [...auto.auto_approve, t] : auto.auto_approve.filter((x) => x !== t); setAuto({ ...auto, auto_approve: next }); api.setAssistantSettings({ auto_approve: next }).then(setAuto).catch((e) => setMsg(e.message)); };
+  const add = async (e) => {
+    e.preventDefault(); setBusy(true); setMsg('');
+    try { const r = await api.addConnection(form); setMsg(r.warning || `Connected "${r.name}": ${r.tools} tools found.`); setForm({ name: '', url: '', token: '' }); load(); } catch (err) { setMsg(err.message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="panel" aria-labelledby="as-h" style={{ gridColumn: '1 / -1' }}>
+      <div className="panel__title"><h2 id="as-h">Assistant: autonomy and connected tools</h2></div>
+      <h3 style={{ fontSize: 14 }}>Apply these changes without asking</h3>
+      <p className="hint">Routine, easily undone changes only. Everything else (money, projects, automations, plans, outside tools) always waits for your approval. Applied changes are listed in the activity log.</p>
+      {!auto ? <p className="muted">Loading...</p> : <div className="notify-prefs">{auto.available.map((t) => (
+        <label key={t} className="check"><input type="checkbox" checked={auto.auto_approve.includes(t)} onChange={(e) => toggle(t, e.target.checked)} /> {AUTO_LABEL[t] || t}</label>
+      ))}</div>}
+      <h3 style={{ fontSize: 14, marginTop: 18 }}>Connected tools (MCP servers)</h3>
+      <p className="hint">Let the assistant use other tools, for example a notes app or a calendar, through their MCP address (https only). Read-only tools run directly; anything that changes data outside AMB Board asks you first. Connections are private to you and the token is stored encrypted.</p>
+      {conns && conns.length > 0 && (
+        <ul className="plain-list" aria-label="Connected servers">{conns.map((c) => (
+          <li key={c.id}><span><b>{c.name}</b> <small className="muted">{c.url}</small>{c.last_error && <small className="form-error"> {c.last_error}</small>}</span>
+            <button type="button" className="btn" onClick={async () => { try { const r = await api.testConnection(c.id); setMsg(`${c.name}: ${r.tools.length} tools (${r.tools.filter((t) => t.read_only).length} read-only).`); } catch (e) { setMsg(`${c.name}: ${e.message}`); } load(); }}>Test</button>
+            <button type="button" className="btn btn-icon btn-ghost" aria-label={`Disconnect ${c.name}`} onClick={async () => { await api.deleteConnection(c.id); load(); }}><Trash2 size={16} color="var(--color-danger)" /></button></li>
+        ))}</ul>
+      )}
+      <form className="flow-row" onSubmit={add} aria-label="Connect a tool">
+        <label className="field"><span className="field__label">Name</span><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={40} placeholder="e.g. Notes" required /></label>
+        <label className="field"><span className="field__label">Server address</span><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." required /></label>
+        <label className="field"><span className="field__label">Access token (optional)</span><input type="password" autoComplete="off" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} /></label>
+        <div style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-primary" disabled={busy}>Connect</button></div>
+      </form>
+      {msg && <p className="hint" role="status">{msg}</p>}
+    </section>
+  );
+}
+
 function NotificationPrefs() {
   const [prefs, setPrefs] = useState(null);
   useEffect(() => { api.notificationPrefs().then(setPrefs).catch(() => {}); }, []);
@@ -231,6 +275,7 @@ export default function WorkspaceSettingsPage() {
         <NotificationPrefs />
 
         <McpTokens />
+        <AssistantSettings />
 
         <section className="panel" aria-labelledby="sec-h">
           <div className="panel__title"><h2 id="sec-h">Security</h2></div>

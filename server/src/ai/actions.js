@@ -7,13 +7,19 @@ import { readTransaction } from '../routes/finance.js';
 import { sanitizeLabels, spawnNextOccurrence } from '../routes/cards.js';
 import { goalInWs } from '../routes/goals.js';
 import { todayUtc } from '../validate.js';
+import { findServer, cachedTools } from './mcpServers.js';
+import { callTool } from './mcpClient.js';
 import { validateTrigger, validateSteps, describeTrigger, insertAutomation, automationCount, MAX_AUTOMATIONS, STEP_DOCS } from '../automations/spec.js';
 
 // The ONLY change types the assistant may propose. Anything else (budgets, deletes, members, roles,
 // permissions, external messages...) is dropped at proposal time and could not be executed anyway:
 // there is no executor for it.
 export const ACTION_TYPES = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_event', 'create_project', 'create_transaction',
-  'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit', 'create_automation', 'setup_plan'];
+  'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit', 'create_automation', 'setup_plan', 'call_external_tool'];
+// Types that only make sense for the signed-in person's own assistant: never offered to MCP clients, never inside a plan, never auto-approved.
+export const PERSONAL_ONLY = new Set(['call_external_tool', 'setup_plan', 'create_automation']);
+// Routine, easily-undone changes a person may let the assistant apply without asking. Never money, projects, flows or external tools.
+export const AUTO_APPROVABLE = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_note', 'create_event', 'create_habit', 'add_milestone'];
 const PLAN_MAX_STEPS = 20;
 class DryRun extends Error {}
 
@@ -33,6 +39,7 @@ export const PROPOSAL_DOCS = {
   create_note: '{"title":"","body":""} (shared with the workspace; journal entries are never writable)',
   create_habit: '{"title":"","frequency":"daily|weekly","target_per_week":3}',
   create_automation: `{"name":"","trigger":{"type":"schedule","frequency":"daily|weekdays|weekly|monthly|once","time":"HH:mm","timezone":"IANA zone","weekday":1,"day":1,"date":"YYYY-MM-DD"} OR {"type":"event","event":"task_done|task_created|transaction_added","conditions":{"project_id":"","priority":"","type":"","currency":"","min_amount_minor":0}},"steps":[{"type":"<step type>","args":{}}]} step types: ${Object.entries(STEP_DOCS).map(([k, v]) => `${k} ${v}`).join(' | ')}; placeholders {{date}} {{trigger.title}} etc. A scheduled or triggered flow, run as the user; always needs approval`,
+  call_external_tool: '{"server":"name of a connected server","tool":"tool name from external_tools","args":{...}} (a tool that may change things outside AMB Board; the user approves it first. Read-only tools are called directly with the call_external_tool skill)',
   setup_plan: '{"title":"short name of the whole setup","steps":[{"ref":"p1 (optional label)","type":"<any proposal type except setup_plan>","args":{...}}]} up to 20 steps approved together; later steps may use "@p1" wherever an id of an earlier created project/goal/task is needed (e.g. {"type":"create_task","args":{"project_id":"@p1","title":"..."}})',
 };
 const catByName = (ws, name) => db.prepare('SELECT id, name FROM transaction_categories WHERE workspace_id = ? AND archived_at IS NULL AND lower(name) = lower(?)').get(ws, String(name ?? '').trim());
@@ -47,6 +54,21 @@ const str = (v, n) => String(v ?? '').trim().slice(0, n);
 // Returns { error } or { payload, target, description } where description is built here from validated values.
 export function validateProposal(type, args, ws, user = null) {
   const a = args && typeof args === 'object' ? args : {};
+  if (type === 'call_external_tool') {
+    if (!user) return { error: 'needs a signed-in user' };
+    const server = findServer(ws, user.id, a.server);
+    if (!server) return { error: 'unknown server: connect it first under Workspace & account' };
+    const tools = cachedTools(server.id);
+    if (!tools) return { error: 'list the server tools first with the external_tools skill' };
+    const tool = tools.find((t) => t.name === String(a.tool ?? ''));
+    if (!tool) return { error: 'unknown tool on that server' };
+    const callArgs = a.args && typeof a.args === 'object' && !Array.isArray(a.args) ? a.args : {};
+    const shown = JSON.stringify(callArgs); if (shown.length > 4000) return { error: 'arguments too large' };
+    const missing = tool.required.filter((k) => !(k in callArgs));
+    if (missing.length) return { error: `missing arguments: ${missing.join(', ')}` };
+    return { payload: { server: server.name, tool: tool.name, args: callArgs }, target: { entity: 'external_tool', id: server.id },
+      description: `Call "${tool.name}" on your connected server "${server.name}" with ${shown.length > 200 ? `${shown.slice(0, 200)}...` : shown}. This may change things outside AMB Board.` };
+  }
   if (type === 'create_automation') {
     const name = str(a.name, 80);
     if (!name) return { error: 'name required' };
@@ -67,7 +89,7 @@ export function validateProposal(type, args, ws, user = null) {
     const clean = [];
     for (const [i, s] of steps.entries()) {
       const t = String(s?.type ?? '');
-      if (!ACTION_TYPES.includes(t) || t === 'setup_plan') return { error: `step ${i + 1}: action type not allowed in a plan` };
+      if (!ACTION_TYPES.includes(t) || t === 'setup_plan' || t === 'call_external_tool') return { error: `step ${i + 1}: action type not allowed in a plan` };
       const ref = s.ref == null ? '' : str(s.ref, 20);
       if (ref && !/^[a-z][a-z0-9_]*$/i.test(ref)) return { error: `step ${i + 1}: invalid ref` };
       clean.push({ type: t, ref, args: s.args && typeof s.args === 'object' ? s.args : {} });
@@ -312,4 +334,16 @@ export function executeProposal(proposal, actor) {
   const check = validateProposal(proposal.type, payload, ws, actor);
   if (check.error) throw new Error(`no longer valid: ${check.error}`);
   return tx(() => applyValidated(proposal.type, check.payload, ws, actor, nowIso()));
+}
+
+// Approval path for proposals that must wait on the network (outside any database transaction).
+export async function executeProposalAsync(proposal, actor) {
+  if (proposal.type !== 'call_external_tool') return executeProposal(proposal, actor);
+  const ws = proposal.workspace_id; const payload = JSON.parse(proposal.payload);
+  const check = validateProposal('call_external_tool', payload, ws, actor);
+  if (check.error) throw new Error(`no longer valid: ${check.error}`);
+  const server = findServer(ws, actor.id, payload.server);
+  const out = await callTool(server, check.payload.tool, check.payload.args);
+  if (out.is_error) throw new Error(`the tool reported an error: ${out.text.slice(0, 200)}`);
+  return { entity: 'external_tool', id: server.id, text: out.text.slice(0, 1500) };
 }

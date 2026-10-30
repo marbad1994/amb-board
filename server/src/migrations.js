@@ -631,6 +631,7 @@ export const migrations = [
   { id: '011_automations', up: (db) => db.exec(automationsTables) },
   { id: '012_email_notifications', up: (db) => db.exec(emailNotifications) },
   { id: '013_column_settings', up: (db) => db.exec(columnSettings) },
+  { id: '014_assistant_connections', up: (db) => db.exec(assistantConnections) },
 ];
 
 const automationsTables = `
@@ -667,6 +668,18 @@ ALTER TABLE columns ADD COLUMN card_limit INTEGER CHECK (card_limit IS NULL OR (
 UPDATE columns SET status = 'todo' WHERE lower(trim(name)) IN ('backlog', 'to do', 'todo');
 UPDATE columns SET status = 'doing' WHERE lower(trim(name)) IN ('in progress', 'doing');
 UPDATE columns SET status = 'done' WHERE lower(trim(name)) = 'done';
+`;
+
+const assistantConnections = `
+CREATE TABLE mcp_servers (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, url TEXT NOT NULL, auth_enc TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, last_ok_at TEXT, last_error TEXT
+);
+CREATE INDEX idx_mcp_servers_user ON mcp_servers (workspace_id, user_id);
+CREATE TABLE ai_user_settings (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  auto_approve TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (user_id, workspace_id)
+);
 `;
 
 function appliedIds(db) {

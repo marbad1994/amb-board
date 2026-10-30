@@ -674,6 +674,21 @@ try {
     await page.locator('.project-card', { hasText: 'Move plan project' }).first().waitFor();
   });
 
+  await step('settings: let the assistant auto-apply routine changes; connect a tool (private addresses refused)', async () => {
+    await page.getByRole('link', { name: 'Workspace', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Create tasks' }).check();
+    await page.getByRole('checkbox', { name: 'Create tasks' }).waitFor();
+    await page.reload();
+    assert.equal(await page.getByRole('checkbox', { name: 'Create tasks' }).isChecked(), true, 'the choice is saved');
+    await page.getByRole('checkbox', { name: 'Create tasks' }).uncheck();
+    await page.getByLabel('Name', { exact: true }).fill('Notes');
+    await page.getByLabel('Server address').fill('https://127.0.0.1/mcp');
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.getByText(/private network/).waitFor();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor();
+  });
+
   await step('sign out, then sign in again with the same credentials', async () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await page.getByRole('heading', { name: 'Welcome back' }).waitFor();

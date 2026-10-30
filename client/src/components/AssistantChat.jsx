@@ -19,7 +19,7 @@ function Proposal({ p, onDecide, onEdit, disabled }) {
       <div className="proposal__body">
         <span className="proposal__label">{p.type === 'setup_plan' ? `Setup plan: ${p.payload?.steps?.length || 0} steps, approved together` : p.type === 'create_automation' ? 'Suggested automation' : 'Suggested change'}</span>
         <p className="proposal__text">{p.description}</p>
-        {p.status !== 'pending' && <p className="hint">{{ approved: 'Applied.', rejected: 'Not applied.', failed: `Not applied: ${p.result?.error || 'it no longer matches your data'}`, expired: 'Expired, nothing changed.' }[p.status]}</p>}
+        {p.status !== 'pending' && <p className="hint">{{ approved: p.result?.auto ? 'Applied automatically (you allowed this type in Workspace & account).' : 'Applied.', rejected: 'Not applied.', failed: `Not applied: ${p.result?.error || 'it no longer matches your data'}`, expired: 'Expired, nothing changed.' }[p.status]}</p>}
         {error && <p className="form-error" role="alert">{error}</p>}
       </div>
       {p.status === 'pending' && (

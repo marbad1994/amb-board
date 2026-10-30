@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { db, nowIso } from '../db.js';
 import { can, membershipRole } from '../access.js';
 import { TOOLS, runSkill } from '../ai/tools.js';
-import { ACTION_TYPES, PROPOSAL_DOCS, validateProposal } from '../ai/actions.js';
+import { ACTION_TYPES, PERSONAL_ONLY, PROPOSAL_DOCS, validateProposal } from '../ai/actions.js';
 import { createLimiter } from '../security.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -44,10 +44,11 @@ const mcp = Router();
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 const ok = (id, result) => ({ jsonrpc: '2.0', id, result });
 
-const readTools = () => Object.entries(TOOLS).map(([name, t]) => ({
+const NOT_FOR_CLIENTS = new Set(['external_tools', 'call_external_tool']);   // a person's own connected servers are not shared with token holders
+const readTools = () => Object.entries(TOOLS).filter(([name]) => !NOT_FOR_CLIENTS.has(name)).map(([name, t]) => ({
   name, description: `[${t.kind || 'read'}] ${t.doc}`, inputSchema: { type: 'object', additionalProperties: true },
 }));
-const proposeTools = () => ACTION_TYPES.map((type) => ({
+const proposeTools = () => ACTION_TYPES.filter((t) => !PERSONAL_ONLY.has(t)).map((type) => ({
   name: `propose_${type}`, description: `[write: creates a PENDING proposal that the user must approve in AMB Board] arguments: ${PROPOSAL_DOCS[type]}`,
   inputSchema: { type: 'object', additionalProperties: true },
 }));
@@ -84,7 +85,7 @@ mcp.post('/', auth, async (req, res) => {
       const text = (obj, isError = false) => res.json(ok(id, { content: [{ type: 'text', text: JSON.stringify(obj) }], isError }));
       if (name.startsWith('propose_')) {
         const type = name.slice('propose_'.length);
-        if (!ACTION_TYPES.includes(type)) return text({ error: 'unknown tool' }, true);
+        if (!ACTION_TYPES.includes(type) || PERSONAL_ONLY.has(type)) return text({ error: 'unknown tool' }, true);
         if (!can(role, 'content:write')) return text({ error: 'insufficient permissions: viewers cannot propose changes' }, true);
         const v = validateProposal(type, args, ws, user);
         if (v.error) return text({ error: v.error }, true);
