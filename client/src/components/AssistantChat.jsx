@@ -69,7 +69,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
       const res = await api.chat(message, convRef.current, context);
       convRef.current = res.conversationId;
       onConversation?.(res.conversationId);
-      setMessages((m) => [...m, { ...res.message, dropped: res.dropped?.length || 0 }]);
+      setMessages((m) => [...m, { ...res.message, dropped: res.dropped?.length || 0, droppedList: (res.dropped || []).slice(0, 6) }]);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }, [text, busy, context, onConversation]);
 
@@ -99,7 +99,10 @@ export default function AssistantChat({ conversationId, onConversation, context,
               <Link key={a.id} to={`/reports/${a.id}`} className="artifact" onClick={() => onNavigate?.()}><FileBarChart size={16} aria-hidden="true" /> <span>Report ready: <b>{a.title}</b></span></Link>
             ))}
             {m.proposals?.map((p) => <Proposal key={p.id} p={p} onDecide={update} onEdit={edit} disabled={!writable} />)}
-            {m.dropped > 0 && <small className="hint">{m.dropped} suggested change{m.dropped > 1 ? 's were' : ' was'} not allowed or did not match your data and {m.dropped > 1 ? 'were' : 'was'} discarded.</small>}
+            {m.dropped > 0 && (
+              <small className="hint">{m.dropped} suggested change{m.dropped > 1 ? 's were' : ' was'} discarded because {m.dropped > 1 ? 'they' : 'it'} did not match your data
+                {m.droppedList?.length > 0 && <> ({m.droppedList.map((d) => `${String(d.type).replace(/_/g, ' ')}: ${d.reason}`).join('; ')})</>}. Tell me what to correct and I will try again.</small>
+            )}
             {m.role === 'assistant' && <small className="hint">AI-generated. It can be wrong; check figures in the app.</small>}
           </li>
         ))}

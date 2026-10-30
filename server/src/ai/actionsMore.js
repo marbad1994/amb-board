@@ -241,7 +241,8 @@ export function validateMore(type, a, ws, user) {
   if (type === 'copy_to_workspace') {
     const entity = String(a.entity ?? '');
     if (!['project', 'goal', 'note', 'idea'].includes(entity)) return { error: 'entity must be project, goal, note or idea' };
-    const target = workspaceByRef(user.id, a.workspace ?? a.target_workspace_id); if (!target) return { error: 'unknown workspace (you must be a member)' };
+    const target = workspaceByRef(user.id, a.workspace ?? a.target_workspace_id);
+    if (!target) return { error: `unknown workspace "${str(a.workspace ?? a.target_workspace_id, 60)}". Your workspaces: ${db.prepare('SELECT w.name FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id WHERE m.user_id = ? AND w.archived_at IS NULL').all(user.id).map((w) => w.name).join(', ')}` };
     try { checkCopyTarget(user.id, ws, target.id); } catch (e) { return { error: e.message }; }
     let name;
     if (entity === 'project') name = projectInWs(a.id, ws)?.name;

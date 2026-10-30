@@ -123,3 +123,26 @@ test('auto-approve: only routine types, applied as the user with an audit entry;
   const other = await signUp(srv.base, 'AutoOther');
   assert.deepEqual((await other.c.get('/api/ai/assistant/settings')).json.auto_approve, []);
 });
+
+test('the assistant knows every workspace the person belongs to (names, roles, current) and can copy many projects with one plan', async () => {
+  const u = await signUp(srv.base, 'Spaces');
+  const team = (await u.c.post('/api/workspaces', { name: 'AMB' })).json;
+  const p1 = (await u.c.post('/api/projects', { name: 'One' })).json; const p2 = (await u.c.post('/api/projects', { name: 'Two' })).json;
+  script = [{ type: 'tool', calls: [{ tool: 'list_workspaces', args: {} }] }, { type: 'final', answer: 'x', proposals: [] }];
+  aiReqs.length = 0; await ask(u, 'which workspaces do I have?');
+  const first = aiReqs[0][1].content;
+  assert.ok(first.includes('"my_workspaces"') && first.includes('"name":"AMB"') && first.includes('"current_workspace"'), 'in the snapshot');
+  const listed = aiReqs.at(-1)[1].content;
+  assert.ok(listed.includes('"can_copy_into":true') && listed.includes('"your_role":"owner"'));
+  assert.match(aiReqs[0][0].content, /never say you cannot see their workspaces/);
+  script = [{ type: 'final', answer: 'Copying both.', proposals: [{ type: 'setup_plan', args: { title: 'Copy projects to AMB', steps: [
+    { type: 'copy_to_workspace', args: { entity: 'project', id: p1.id, workspace: 'AMB' } }, { type: 'copy_to_workspace', args: { entity: 'project', id: p2.id, workspace: 'amb' } }] } }] }];
+  const r = (await ask(u, 'copy my projects to AMB')).json;
+  assert.equal(r.message.proposals.length, 1, JSON.stringify(r.dropped));
+  assert.equal((await u.c.post(`/api/ai/assistant/proposals/${r.message.proposals[0].id}/approve`)).status, 200);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ?').get(team.id).n, 2);
+  // a wrong name is reported with the real ones
+  script = [{ type: 'final', answer: 'x', proposals: [{ type: 'copy_to_workspace', args: { entity: 'project', id: p1.id, workspace: 'My space' } }] }];
+  const bad = (await ask(u, 'copy')).json;
+  assert.match(bad.dropped[0].reason, /Your workspaces: .*AMB/);
+});
