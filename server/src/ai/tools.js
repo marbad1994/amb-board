@@ -8,7 +8,8 @@ import { monthBudget } from '../finance/budget.js';
 import { crossReference, analyzeSpending, analyzeWorkload, projectHealth, findGaps } from './analysis.js';
 import { generateReport, PRESETS, SECTION_IDS } from '../reports/build.js';
 import { workspaceDigest } from './digest.js';
-import { describeTrigger, registerToolNames } from '../automations/spec.js';
+import { describeTrigger, registerToolNames, validateTrigger } from '../automations/spec.js';
+import { testStep } from '../automations/engine.js';
 import { flowGuide } from './flowGuide.js';
 import { userServers, findServer, toolsOf } from './mcpServers.js';
 import { callTool } from './mcpClient.js';
@@ -37,6 +38,8 @@ export const TOOLS = {
     } },
   list_workspaces: { kind: 'read', doc: 'list_workspaces {} -> every workspace the user belongs to (name, kind personal/shared, their role, which one is current, whether they can copy into it)',
     run: (ws, a, user) => { const d = workspaceDigest(ws, user?.id); return { current: d.current_workspace, workspaces: d.my_workspaces }; } },
+  test_automation_step: { kind: 'read', async: true, maxChars: 9000, doc: 'test_automation_step {step:{type,args}, vars?:{name:"text of an earlier result"}, trigger?} -> runs ONE flow step as a test and returns its output. Reading steps (use_tool, scrape, parse, ai_text) really run; steps that would change something (create, notify, email, write tools) only describe what they would do. Pass the "vars" from the previous test to chain steps. Use it to check a step before proposing the flow, and show the user the output',
+    run: async (ws, a, user) => { const out = await testStep({ ws, user, step: a.step, vars: a.vars, trigger: a.trigger ? validateTrigger(a.trigger).trigger : null }); return out.ok ? { ok: true, message: out.message, output: out.output.slice(0, 6000), vars: Object.fromEntries(Object.entries(out.vars).map(([k, v]) => [k, v.slice(0, 20000)])) } : { error: out.error }; } },
   // ---- the user's own browser (Chrome extension; only a tab the user shared) ----
   browser_status: { kind: 'browser', doc: 'browser_status {} -> whether the user has shared a browser tab with you, and which site and page it is',
     run: (ws, a, user) => browserStatus(ws, user?.id) },

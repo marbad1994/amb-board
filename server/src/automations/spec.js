@@ -6,8 +6,12 @@ import { addDays } from '../finance/money.js';
 import { PRIORITIES, parseDate } from '../validate.js';
 import { render, BUILTIN_TEMPLATES } from './template.js';
 import { mailConfigured } from '../notifications/mailer.js';
+import { PARSERS, OUTPUT_FORMATS } from './parser.js';
+import { SCRAPE_FORMATS } from '../ai/web.js';
 
 export const MAX_STEPS = 10;
+export const MAX_LOOP_STEPS = 5;
+export const MAX_LOOP_ITEMS = 50;
 export const MAX_AUTOMATIONS = 25;
 export const MAX_RECIPIENTS = 5;
 export const EMAIL_RE = /^[^\s@<>",;()\\]{1,64}@[^\s@<>",;()\\]{1,190}\.[a-z]{2,}$/i;
@@ -24,10 +28,13 @@ export const STEP_DOCS = {
   use_tool: '{"tool":"web_search|read_web_page|<a built-in skill such as list_tasks, analyze_spending, project_health, month_summary>|external","args":{"query":"..."},"server":"(external only) name of a connected server","external_tool":"(external only) tool name","allow_write":false,"save_as":"short_name"} runs the tool; later steps can use its text as {{result.short_name}}. A connected tool that is not read-only needs allow_write true',
   ai_text: '{"instruction":"what to write, e.g. Summarise the news in 3 bullet points","input":"{{result.news}}","save_as":"short_name"} lets the AI write text from the input; use it as {{result.short_name}} (counts against the daily AI limit)',
   send_email: '{"to":["me","name@example.com"],"template":"optional template id or built-in key: daily_digest|news_summary|alert|weekly_review","subject":"may use {{placeholders | filters}}","body":"Markdown-lite text with {{placeholders}}: # heading, - list, **bold**, [text](https://link)"} sends from the AMB Board address; "me" is the flow owner; up to 5 recipients; replies go to the flow owner; limits per day apply. Needs email set up on the server',
+  scrape: '{"url":"https://... (may use {{placeholders}}, e.g. {{item.url}} inside a loop)","format":"text|html|links|json|feed|meta","contains":"(links only) keep links whose address contains this","max":50,"save_as":"short_name"} fetches ONE public page and saves what you chose: text = readable text, html = cleaned HTML, links = [{text,url}], json = the JSON the address returns, feed = RSS/Atom items [{title,link,date,summary}], meta = {title,description,image,canonical,headings}. Use it as {{result.short_name}}; feed it to a parse step or to a loop',
+  parse: '{"input":"{{result.page}}","parser":"json|html|xml|csv|markdown|text|custom","prompt":"(custom: your own parsing prompt; optional extra guidance for the others)","fields":["title","price"] (optional: which data you want),"output_format":"json|csv|markdown_table|bullets|text (optional, default json)","save_as":"short_name"} turns raw text into clean data with a hardened AI prompt (the data is never obeyed as instructions; values are not invented; JSON is checked in code and reduced to the wanted fields). JSON that needs no reshaping costs no AI call. Use it as {{result.short_name}} or {{result.short_name.0.title}}',
+  loop: '{"over":"{{result.parsed}}","max_items":20,"on_error":"stop|continue","steps":[ ...up to 5 steps of any type except loop, each can use {{item}}, {{item.field}}, {{index}}, {{total}} ],"collect":"(optional) a save_as name used inside steps","save_as":"(with collect) name for the list of collected results"} runs the steps once for every item of a JSON list (max 50 items). Each item is passed to a tool by writing the placeholder as the WHOLE value of an argument, e.g. "args":{"url":"{{item.link}}"}; a whole-value placeholder keeps its type (list, object, number)',
   generate_report: '{"kind":"overview|monthly_finance|workload|project_status","project_id":""}',
 };
 export const STEP_TYPES = Object.keys(STEP_DOCS);
-export const PLACEHOLDERS = ['result.NAME (from a tool or AI step)', 'owner.name', 'owner.email', 'workspace.name', 'date', 'weekday', 'trigger.title', 'trigger.project', 'trigger.priority', 'trigger.description', 'trigger.amount', 'trigger.currency'];
+export const PLACEHOLDERS = ['item, item.FIELD, index, total (inside a loop)', 'result.NAME.FIELD / result.NAME.0.FIELD (walk into JSON results)', 'result.NAME (from a tool or AI step)', 'owner.name', 'owner.email', 'workspace.name', 'date', 'weekday', 'trigger.title', 'trigger.project', 'trigger.priority', 'trigger.description', 'trigger.amount', 'trigger.currency'];
 
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -70,14 +77,16 @@ export const registerExternalLookup = (fn) => { externalLookup = fn; };
 const NAME_RE = /^[a-z][a-z0-9_]{0,19}$/;
 const NOT_IN_FLOWS = new Set(['call_external_tool', 'external_tools', 'generate_report', 'browser_status', 'browser_snapshot', 'browser_fill', 'browser_click']);   // external tools have their own form; reports their own step
 
-export function validateSteps(steps, ws, trigger, userId = null) {
+export function validateSteps(steps, ws, trigger, userId = null, opts = {}) {
+  const limit = opts.inLoop ? MAX_LOOP_STEPS : MAX_STEPS;
   if (!Array.isArray(steps) || steps.length === 0) return { error: 'at least one step is required' };
-  if (steps.length > MAX_STEPS) return { error: `at most ${MAX_STEPS} steps` };
+  if (steps.length > limit) return { error: `at most ${limit} steps${opts.inLoop ? ' inside a loop' : ''}` };
   const out = [];
   for (const [i, s] of steps.entries()) {
     const type = s?.type; const a = s?.args && typeof s.args === 'object' ? s.args : {};
-    const at = `step ${i + 1}`;
+    const at = `${opts.inLoop ? 'loop ' : ''}step ${i + 1}`;
     if (!STEP_TYPES.includes(type)) return { error: `${at}: unknown step type` };
+    if (type === 'loop' && opts.inLoop) return { error: `${at}: a loop cannot contain another loop` };
     const taskTrigger = trigger?.type === 'event' && trigger.event !== 'transaction_added';
     if (type === 'create_task') {
       if (!db.prepare('SELECT 1 FROM projects WHERE id = ? AND workspace_id = ?').get(str(a.project_id, 40), ws)) return { error: `${at}: unknown project` };
@@ -144,6 +153,29 @@ export function validateSteps(steps, ws, trigger, userId = null) {
       const instruction = str(a.instruction, 1000); if (!instruction) return { error: `${at}: instruction required` };
       const saveAs = str(a.save_as, 20).toLowerCase(); if (!NAME_RE.test(saveAs)) return { error: `${at}: save_as is required (a short lower-case name)` };
       out.push({ type, args: { instruction, input: str(a.input, 4000), save_as: saveAs } });
+    } else if (type === 'scrape') {
+      const url = str(a.url, 500); if (!url) return { error: `${at}: url required` };
+      if (!/\{\{/.test(url) && !(process.env.MCP_ALLOW_PRIVATE === 'true' ? /^https?:\/\//i : /^https:\/\//i).test(url)) return { error: `${at}: the address must start with https://` };
+      const format = a.format || 'text'; if (!SCRAPE_FORMATS.includes(format)) return { error: `${at}: format must be one of ${SCRAPE_FORMATS.join(', ')}` };
+      const saveAs = str(a.save_as, 20).toLowerCase(); if (!NAME_RE.test(saveAs)) return { error: `${at}: save_as is required (a short lower-case name)` };
+      const max = a.max == null || a.max === '' ? 50 : Math.round(Number(a.max)); if (!Number.isFinite(max) || max < 1 || max > 300) return { error: `${at}: max must be 1 to 300` };
+      out.push({ type, args: { url, format, contains: str(a.contains, 200), max, save_as: saveAs } });
+    } else if (type === 'parse') {
+      const parser = a.parser || 'json'; if (!PARSERS[parser]) return { error: `${at}: parser must be one of ${Object.keys(PARSERS).join(', ')}` };
+      const output = a.output_format || 'json'; if (!OUTPUT_FORMATS[output]) return { error: `${at}: output_format must be one of ${Object.keys(OUTPUT_FORMATS).join(', ')}` };
+      const input = str(a.input, 4000); if (!input) return { error: `${at}: input required (for example {{result.page}})` };
+      const prompt = str(a.prompt, 2000); if (parser === 'custom' && !prompt) return { error: `${at}: the custom parser needs your parsing prompt` };
+      const fields = (Array.isArray(a.fields) ? a.fields : String(a.fields ?? '').split(/[,\n]/)).map((x) => str(x, 60)).filter(Boolean).slice(0, 30);
+      const saveAs = str(a.save_as, 20).toLowerCase(); if (!NAME_RE.test(saveAs)) return { error: `${at}: save_as is required (a short lower-case name)` };
+      out.push({ type, args: { input, parser, prompt, fields, output_format: output, save_as: saveAs } });
+    } else if (type === 'loop') {
+      const over = str(a.over, 500); if (!over) return { error: `${at}: "over" is required (the list to go through, e.g. {{result.parsed}})` };
+      const inner = validateSteps(a.steps, ws, trigger, userId, { inLoop: true }); if (inner.error) return { error: `${at}: ${inner.error}` };
+      const maxItems = a.max_items == null || a.max_items === '' ? 20 : Math.round(Number(a.max_items)); if (!Number.isFinite(maxItems) || maxItems < 1 || maxItems > MAX_LOOP_ITEMS) return { error: `${at}: max_items must be 1 to ${MAX_LOOP_ITEMS}` };
+      const collect = str(a.collect, 20).toLowerCase(); const saveAs = str(a.save_as, 20).toLowerCase();
+      if (collect && !inner.steps.some((x) => x.args?.save_as === collect)) return { error: `${at}: "collect" must be the save_as of one of the steps inside the loop` };
+      if (collect && !NAME_RE.test(saveAs)) return { error: `${at}: save_as is required to name the collected list` };
+      out.push({ type, args: { over, max_items: maxItems, on_error: a.on_error === 'continue' ? 'continue' : 'stop', steps: inner.steps, collect, save_as: collect ? saveAs : '' } });
     } else if (type === 'generate_report') {
       if (!['overview', 'monthly_finance', 'workload', 'project_status'].includes(a.kind)) return { error: `${at}: unknown report kind` };
       if (a.kind === 'project_status' && !db.prepare('SELECT 1 FROM projects WHERE id = ? AND workspace_id = ?').get(str(a.project_id, 40), ws)) return { error: `${at}: unknown project` };

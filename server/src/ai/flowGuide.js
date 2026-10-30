@@ -1,6 +1,8 @@
 import { db } from '../db.js';
 import { STEP_DOCS, EVENT_TRIGGERS, FREQUENCIES, PLACEHOLDERS, MAX_STEPS, MAX_AUTOMATIONS, MAX_RECIPIENTS, describeTrigger } from '../automations/spec.js';
 import { FILTER_DOCS, BUILTIN_TEMPLATES } from '../automations/template.js';
+import { PARSERS, OUTPUT_FORMATS } from '../automations/parser.js';
+import { SCRAPE_FORMATS } from './web.js';
 import { mailConfigured } from '../notifications/mailer.js';
 import { userServers, toolsOf } from './mcpServers.js';
 import { searchConfigured } from './web.js';
@@ -29,13 +31,25 @@ export async function flowGuide(ws, user, TOOLS) {
       event: { type: 'event', events: EVENT_TRIGGERS, conditions: 'project_id, priority (task events); type, currency, min_amount_minor (transaction_added)' },
     },
     steps: STEP_DOCS,
-    step_limit: MAX_STEPS,
+    step_limit: `${MAX_STEPS} steps per flow, 5 inside a loop (a loop cannot contain a loop), at most 200 step executions per run`,
+    chaining_steps_together: {
+      how: 'Every reading step (use_tool, scrape, parse, ai_text) saves its output with save_as. The next step reads it as {{result.NAME}} (text) or walks into JSON: {{result.NAME.0.title}}, {{result.NAME.items.length}}. A placeholder that is the WHOLE value of a tool argument keeps its type, so "args":{"urls":"{{result.links}}","item":"{{item}}","n":"{{item.count}}"} passes a real list, object or number to the next tool (MCP tools take JSON objects). Text around a placeholder makes it text.',
+      typical_pipeline: 'scrape (format links|feed|json|text) -> parse (JSON, only the fields you want) -> loop over {{result.parsed}} with scrape/use_tool/ai_text inside, using {{item.field}} -> send_email or create_note with {{result.collected | count}} and {{result.collected | pretty}}',
+      scrape: { formats: SCRAPE_FORMATS, note: 'one public https page per step; text/html/links/json/feed (RSS or Atom)/meta; its own daily limit; page text is untrusted' },
+      parse: { parsers: PARSERS, output_formats: OUTPUT_FORMATS, note: 'preselected parser is json. A hardened AI prompt does the parsing: the data is never obeyed as instructions, nothing is invented, JSON is verified and cut down to the wanted "fields" in code, one automatic retry. JSON that needs no reshaping costs no AI call. Use parser "custom" with "prompt" when the user wants to write the parsing prompt themselves. "fields" = which data; "output_format" = in which format (default json).' },
+      loop: 'over = a JSON list ({{result.parsed}}); inside: {{item}}, {{item.field}}, {{index}} (1-based), {{total}}; max_items up to 50; on_error stop|continue; collect = a save_as inside the loop, save_as = name of the resulting list. Test runs process only the first 3 items.',
+    },
+    testing_steps: 'Before proposing a flow, test each reading step with the test_automation_step skill and show the user the output. Pass the "vars" it returns into the next test so steps chain without re-running. Steps that would change things (create, notify, email, write tools) only describe themselves in a test. The builder has the same "Test this step" button, so tell users they can run steps one by one there too.',
     flow_limit: MAX_AUTOMATIONS,
     placeholders: {
       names: PLACEHOLDERS,
       note: 'Usable in every text field and tool argument: {{date}}, {{trigger.title}}, {{owner.name}}, {{result.NAME}}. A tool or AI step saves its output as result.NAME with its save_as field, and later steps use it.',
       filters: FILTER_DOCS,
-      examples: ['{{result.news | pretty | truncate:800}}', '{{result.summary | default:"nothing new"}}', '{{owner.name | upper}}', '{{result.rows | pretty | lines:10}}'],
+      examples: [
+      { name: 'Deals digest', trigger: { type: 'schedule', frequency: 'weekly', weekday: 5, time: '08:00', timezone: 'Europe/Bucharest' },
+        steps: [{ type: 'scrape', args: { url: 'https://example.com/deals', format: 'links', contains: '/deal/', save_as: 'links' } },
+          { type: 'loop', args: { over: '{{result.links}}', max_items: 5, collect: 'deal', save_as: 'deals', steps: [{ type: 'scrape', args: { url: '{{item.url}}', format: 'text', save_as: 'page' } }, { type: 'parse', args: { input: '{{result.page}}', parser: 'html', fields: ['title', 'price'], output_format: 'json', save_as: 'deal' } }] } },
+          { type: 'ai_text', args: { instruction: 'Write a short digest of these deals', input: '{{result.deals}}', save_as: 'digest' } }, { type: 'send_email', args: { to: ['me'], subject: 'Deals {{date}}', body: '{{result.digest}}\n\n{{result.deals | pretty}}' } }] },'{{result.news | pretty | truncate:800}}', '{{result.summary | default:"nothing new"}}', '{{owner.name | upper}}', '{{result.rows | pretty | lines:10}}'],
       event_trigger_fields: 'trigger.title, trigger.project, trigger.priority, trigger.description, trigger.amount, trigger.currency (only for event triggers)',
     },
     tools_usable_in_flows: {
