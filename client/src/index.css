@@ -2126,3 +2126,14 @@ input[type='file']::file-selector-button:hover { background: var(--color-surface
 .column__settings .field__label { font-size: 12px; font-weight: 600; color: var(--color-text-muted); }
 
 .proposal__label--danger { color: var(--color-danger); font-weight: 700; }
+
+.chat__suggest { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.chat__suggest .chip { cursor: pointer; border: 1px solid var(--color-primary); background: transparent; color: var(--color-primary); padding: 6px 12px; border-radius: 999px; font-size: 13px; text-align: left; }
+.chat__suggest .chip:hover, .chat__suggest .chip:focus-visible { background: var(--color-primary); color: #fff; }
+.chat__skill { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; margin: 6px 0; font-size: 13px; border-radius: 8px; background: var(--color-surface-alt); }
+.chat__slash { list-style: none; margin: 0 0 6px; padding: 4px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); }
+.chat__slash button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 6px 8px; border-radius: 6px; cursor: pointer; color: inherit; }
+.chat__slash button:hover, .chat__slash button:focus-visible { background: var(--color-surface-alt); }
+/* open dock: the close button sits in the header so it never covers the message box or Send */
+.dock-fab[aria-expanded="true"] { top: 10px; bottom: auto; right: 12px; width: 36px; height: 36px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.45); box-shadow: none; z-index: 71; }
+.dock__head { padding-right: 60px; }

@@ -25,6 +25,15 @@ const fakeAi = createServer((req, res) => {
     const msgs = JSON.parse(b).messages;
     if (msgs[0].content.includes('assistant inside AMB Board')) {
       const user = msgs[1].content;
+      if (/<question>[^<]*automation/i.test(user)) {
+        res.setHeader('content-type', 'application/json');
+        const guided = msgs[0].content.includes('ACTIVE SKILL /create-automation');
+        return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'final', answer: guided ? 'When should it run?' : 'NOT GUIDED', suggestions: ['Every Monday at 08:00', 'Every weekday at 09:00'], proposals: [] }) } }], usage: {} }));
+      }
+      if (/<question>[^<]*Every Monday at 08:00/.test(user)) {
+        res.setHeader('content-type', 'application/json');
+        return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'final', answer: 'Scheduled for Mondays. All set.', done: true, proposals: [] }) } }], usage: {} }));
+      }
       const wantsPlan = /<question>[^<]*plan my move/i.test(user);
       if (wantsPlan) {
         // the whole-workspace snapshot must reach the model
@@ -564,6 +573,27 @@ try {
     assert.equal(await page.getByLabel('Due date').inputValue(), '2027-01-15');
     await page.getByRole('dialog', { name: 'Quick add task' }).getByRole('button', { name: 'Close' }).click();
     await shot(page, '20-dock');
+  });
+
+  await step('assistant drives a guided skill with clickable suggestions; stop and import skills', async () => {
+    await page.getByRole('button', { name: /Open assistant/ }).click();
+    await page.getByLabel('Message').fill('help me create an automation');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByText('When should it run?').waitFor();
+    await page.getByText(/Running \/create-automation/).waitFor();
+    await page.getByRole('button', { name: 'Every Monday at 08:00' }).click();
+    await page.getByText('Scheduled for Mondays. All set.').waitFor();
+    await page.getByText(/Running \/create-automation/).waitFor({ state: 'detached' });
+    await page.getByLabel('Message').fill('/amb');
+    await page.getByRole('option', { name: /amb-workflow/ }).waitFor();
+    await page.getByLabel('Message').fill('');
+    await page.getByRole('button', { name: 'Close assistant' }).click();
+    await page.getByRole('link', { name: 'Workspace' }).click();
+    await page.getByLabel('Or paste a skill (SKILL.md text)').fill('---\nname: friday-tidy\ndescription: tidy up on Fridays\n---\nList overdue tasks first.');
+    await page.getByRole('button', { name: 'Add skill' }).click();
+    await page.getByText('Added /friday-tidy.').waitFor();
+    await page.getByRole('button', { name: 'Delete skill friday-tidy' }).click();
+    await page.getByRole('button', { name: 'Delete skill friday-tidy' }).waitFor({ state: 'detached' });
   });
 
   await step('MCP: create a token in settings; an external client reads, analyses and proposes; approval happens in the app', async () => {
