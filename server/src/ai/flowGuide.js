@@ -21,7 +21,7 @@ export async function flowGuide(ws, user, TOOLS) {
   const templates = db.prepare('SELECT id, name, subject FROM email_templates WHERE workspace_id = ? ORDER BY name').all(ws);
   return {
     ways_to_create_or_change_flows: [
-      'The Automations page (sidebar, Manage): a builder with trigger, ordered steps, placeholders, preview and "Run now".',
+      'The Automations page (sidebar, Manage): a list of flows with status, a builder (flow on the left, step settings and the test result on the right, a step picker grouped as get data / shape data / do something), per-step "Test this step", run history per run, and templates to start from.',
       'Propose create_automation (one flow, the user approves it); several flows or flows plus other setup in ONE setup_plan; change one with update_automation (name, trigger, steps, on/off); remove with delete_automation; run a scheduled one now with run_automation.',
       'Email templates: propose create_email_template / update_email_template / delete_email_template.',
       'External MCP clients cannot create flows; only the signed-in person (through the app or you) can.',

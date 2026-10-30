@@ -151,8 +151,9 @@ export async function runStep(step, env, key) {
       const ienv = { ...env, ctx: ictx };
       try {
         for (const [j, inner] of a.steps.entries()) {
+          const t1 = Date.now();
           const r = await runStep(inner, ienv, `${key}.${n + 1}.${j + 1}`);
-          env.log.push({ step: `${key}.${n + 1}.${j + 1}`, type: inner.type, ok: true, message: r.message, ...(r.output ? { output: r.output.slice(0, preview ? 4000 : 400) } : {}) });
+          env.log.push({ step: `${key}.${n + 1}.${j + 1}`, type: inner.type, ok: true, message: r.message, ms: Date.now() - t1, ...(r.output ? { output: r.output.slice(0, preview ? 4000 : 400) } : {}) });
         }
         if (a.collect) { const v = ictx[`result.${a.collect}`]; let j; try { j = JSON.parse(v); } catch { j = v; } collected.push(j ?? null); }
       } catch (err) {
@@ -220,11 +221,12 @@ async function execute(auto, slot, trigCtx, now = new Date()) {
   const ctx = { 'owner.name': user.name, 'owner.email': user.email, 'workspace.name': db.prepare('SELECT name FROM workspaces WHERE id = ?').get(auto.workspace_id)?.name ?? '', date: today, weekday: new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }), ...trigCtx };
   const env = { auto, user, ctx, today, slot, preview: false, log, executed: 0 };
   for (const [i, step] of auto.steps.entries()) {
+    const t0 = Date.now();
     try {
       const r = await runStep(step, env, String(i + 1));
-      log.push({ step: i + 1, type: step.type, ok: true, message: r.message, ...(r.link ? { link: r.link } : {}), ...(r.output ? { output: r.output.slice(0, 800) } : {}) });
+      log.push({ step: i + 1, type: step.type, ok: true, message: r.message, ms: Date.now() - t0, ...(r.link ? { link: r.link } : {}), ...(r.output ? { output: r.output.slice(0, 800) } : {}) });
     } catch (err) {
-      status = 'failed'; log.push({ step: i + 1, type: step.type, ok: false, message: String(err.message).slice(0, 300) }); break;
+      status = 'failed'; log.push({ step: i + 1, type: step.type, ok: false, message: String(err.message).slice(0, 300), ms: Date.now() - t0 }); break;
     }
   }
   return finish();
