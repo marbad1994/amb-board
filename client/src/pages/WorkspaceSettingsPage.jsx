@@ -171,19 +171,43 @@ function BrowserAssistant() {
   );
 }
 
+const BLANK_CONN = { preset: '', name: '', url: '', auth_type: 'none', token: '', header_name: '', oauth: { client_id: '', client_secret: '', auth_url: '', token_url: '', scopes: '' } };
+const AUTH_NAME = { none: 'No authentication', bearer: 'Token', header: 'Custom header', oauth: 'OAuth 2.0' };
+
 function AssistantSettings() {
   const [auto, setAuto] = useState(null);
   const [conns, setConns] = useState(null);
-  const [form, setForm] = useState({ name: '', url: '', token: '' });
+  const [form, setForm] = useState(BLANK_CONN);
+  const [opts, setOpts] = useState(null);
+  const [params, setParams] = useSearchParams();
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const load = () => api.listConnections().then(setConns).catch(() => setConns([]));
-  useEffect(() => { api.assistantSettings().then(setAuto).catch(() => {}); load(); }, []);
+  useEffect(() => {
+    api.assistantSettings().then(setAuto).catch(() => {}); api.connectionOptions().then(setOpts).catch(() => {}); load();
+    // back from the sign-in page of an OAuth provider
+    if (params.get('oauth')) {
+      setMsg(params.get('oauth') === 'ok' ? `Authorized "${params.get('name')}". Press Test to see its tools.` : `Sign-in failed: ${params.get('message') || 'unknown error'}`);
+      const next = new URLSearchParams(params); ['oauth', 'name', 'message'].forEach((k) => next.delete(k)); setParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const toggle = (t, on) => { const next = on ? [...auto.auto_approve, t] : auto.auto_approve.filter((x) => x !== t); setAuto({ ...auto, auto_approve: next }); api.setAssistantSettings({ auto_approve: next }).then(setAuto).catch((e) => setMsg(e.message)); };
   const add = async (e) => {
     e.preventDefault(); setBusy(true); setMsg('');
-    try { const r = await api.addConnection(form); setMsg(r.warning || `Connected "${r.name}": ${r.tools} tools found.`); setForm({ name: '', url: '', token: '' }); load(); } catch (err) { setMsg(err.message); } finally { setBusy(false); }
+    try {
+      const r = await api.addConnection(form);
+      setMsg(r.needs_authorization ? `Saved "${r.name}". Press Authorize to sign in.` : r.warning || `Connected "${r.name}": ${r.tools} tools found.`);
+      setForm(BLANK_CONN); load();
+    } catch (err) { setMsg(err.message); } finally { setBusy(false); }
   };
+  const authorize = async (c) => { setMsg(''); try { window.location.assign((await api.authorizeConnection(c.id)).url); } catch (err) { setMsg(err.message); } };
+  const usePreset = (id) => {
+    const p = opts?.presets?.find((x) => x.id === id);
+    setForm(p ? { ...BLANK_CONN, preset: id, name: p.server_name, url: p.url, auth_type: p.auth_type, oauth: { ...BLANK_CONN.oauth, ...p.oauth, auth_params: p.oauth?.auth_params } } : BLANK_CONN);
+  };
+  const preset = opts?.presets?.find((x) => x.id === form.preset);
+  const setO = (k, v) => setForm({ ...form, oauth: { ...form.oauth, [k]: v } });
   return (
     <section className="panel" aria-labelledby="as-h" style={{ gridColumn: '1 / -1' }}>
       <div className="panel__title"><h2 id="as-h">Assistant: autonomy and connected tools</h2></div>
@@ -196,16 +220,43 @@ function AssistantSettings() {
       <p className="hint">Let the assistant use other tools, for example a notes app or a calendar, through their MCP address (https only). Read-only tools run directly; anything that changes data outside AMB Board asks you first. Connections are private to you and the token is stored encrypted.</p>
       {conns && conns.length > 0 && (
         <ul className="plain-list" aria-label="Connected servers">{conns.map((c) => (
-          <li key={c.id}><span><b>{c.name}</b> <small className="muted">{c.url}</small>{c.last_error && <small className="form-error"> {c.last_error}</small>}</span>
+          <li key={c.id}><span><b>{c.name}</b> <small className="muted">{c.url}</small> <span className="badge">{AUTH_NAME[c.auth_type] || c.auth_type}</span>
+            {c.auth_type === 'oauth' && (c.oauth?.authorized ? <span className="badge status-done"> Signed in</span> : <span className="badge"> Not signed in</span>)}
+            {c.last_error && <small className="form-error"> {c.last_error}</small>}</span>
+            {c.auth_type === 'oauth' && <button type="button" className="btn" onClick={() => authorize(c)}>{c.oauth?.authorized ? 'Sign in again' : 'Authorize'}</button>}
             <button type="button" className="btn" onClick={async () => { try { const r = await api.testConnection(c.id); setMsg(`${c.name}: ${r.tools.length} tools (${r.tools.filter((t) => t.read_only).length} read-only).`); } catch (e) { setMsg(`${c.name}: ${e.message}`); } load(); }}>Test</button>
             <button type="button" className="btn btn-icon btn-ghost" aria-label={`Disconnect ${c.name}`} onClick={async () => { await api.deleteConnection(c.id); load(); }}><Trash2 size={16} color="var(--color-danger)" /></button></li>
         ))}</ul>
       )}
       <form className="flow-row" onSubmit={add} aria-label="Connect a tool">
+        {opts?.presets?.length > 0 && (
+          <label className="field"><span className="field__label">Start from</span>
+            <select value={form.preset} onChange={(e) => usePreset(e.target.value)}><option value="">Custom server</option>{opts.presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        )}
         <label className="field"><span className="field__label">Name</span><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={40} placeholder="e.g. Notes" required /></label>
         <label className="field"><span className="field__label">Server address</span><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://..." required /></label>
-        <label className="field"><span className="field__label">Access token (optional)</span><input type="password" autoComplete="off" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} /></label>
-        <div style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-primary" disabled={busy}>Connect</button></div>
+        <label className="field"><span className="field__label">Transport</span>
+          <select value="streamable-http" onChange={() => {}} aria-describedby="conn-transport"><option value="streamable-http">Streamable HTTP</option></select></label>
+        <p className="hint" id="conn-transport" style={{ alignSelf: 'end' }}>The only transport supported. Servers that offer only the older SSE transport cannot be connected yet.</p>
+        <label className="field"><span className="field__label">Authentication</span>
+          <select value={form.auth_type} onChange={(e) => setForm({ ...form, auth_type: e.target.value })}>
+            <option value="none">None (open server)</option><option value="bearer">Access token (Authorization: Bearer)</option><option value="header">Custom header (for example an API key)</option><option value="oauth">OAuth 2.0 (sign in with your account)</option></select></label>
+        {form.auth_type === 'bearer' && <label className="field"><span className="field__label">Access token</span><input type="password" autoComplete="off" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required /></label>}
+        {form.auth_type === 'header' && (<>
+          <label className="field"><span className="field__label">Header name</span><input value={form.header_name} onChange={(e) => setForm({ ...form, header_name: e.target.value })} placeholder="X-API-Key" maxLength={60} required /></label>
+          <label className="field"><span className="field__label">Header value</span><input type="password" autoComplete="off" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required /></label>
+        </>)}
+        {form.auth_type === 'oauth' && (<>
+          {preset?.help && <p className="hint" style={{ gridColumn: '1 / -1' }}>{preset.help}</p>}
+          <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Redirect address to register with the provider</span>
+            <input readOnly value={opts?.redirect_uri || ''} onFocus={(e) => e.target.select()} /></label>
+          <label className="field"><span className="field__label">Client ID</span><input value={form.oauth.client_id} onChange={(e) => setO('client_id', e.target.value)} autoComplete="off" required /></label>
+          <label className="field"><span className="field__label">Client secret (if the provider gave you one)</span><input type="password" autoComplete="off" value={form.oauth.client_secret} onChange={(e) => setO('client_secret', e.target.value)} /></label>
+          <label className="field"><span className="field__label">Authorization address</span><input value={form.oauth.auth_url} onChange={(e) => setO('auth_url', e.target.value)} placeholder="https://..." required /></label>
+          <label className="field"><span className="field__label">Token address</span><input value={form.oauth.token_url} onChange={(e) => setO('token_url', e.target.value)} placeholder="https://..." required /></label>
+          <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Scopes (separated by spaces)</span><input value={form.oauth.scopes} onChange={(e) => setO('scopes', e.target.value)} /></label>
+        </>)}
+        <div style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-primary" disabled={busy}>{form.auth_type === 'oauth' ? 'Save, then authorize' : 'Connect'}</button></div>
       </form>
       {msg && <p className="hint" role="status">{msg}</p>}
       <AssistantQuality />

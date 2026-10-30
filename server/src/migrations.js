@@ -637,7 +637,14 @@ export const migrations = [
   { id: '017_assistant_skills', up: (db) => db.exec(assistantSkills) },
   { id: '018_assistant_quality', up: (db) => db.exec(assistantQuality) },
   { id: '019_dashboard_plans', up: (db) => db.exec(dashboardPlans) },
+  { id: '020_mcp_auth_methods', up: (db) => db.exec(mcpAuthMethods) },
 ];
+
+const mcpAuthMethods = `
+ALTER TABLE mcp_servers ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'bearer';
+ALTER TABLE mcp_servers ADD COLUMN auth_meta_enc TEXT NOT NULL DEFAULT '';
+UPDATE mcp_servers SET auth_type = CASE WHEN auth_enc <> '' THEN 'bearer' ELSE 'none' END;
+`;
 
 const dashboardPlans = `
 CREATE TABLE dashboard_plans (

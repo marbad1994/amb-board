@@ -9,6 +9,7 @@ import authRouter from './routes/auth.js';
 import workspacesRouter, { invitationsRouter } from './routes/workspaces.js';
 import lifeAreasRouter from './routes/lifeAreas.js';
 import dashboardRouter from './routes/dashboard.js';
+import oauthCallbackRouter from './routes/oauthCallback.js';
 import financeRouter, { projectFinanceRouter } from './routes/finance.js';
 import calendarRouter from './routes/calendar.js';
 import goalsRouter, { projectGoalsRouter } from './routes/goals.js';
@@ -60,6 +61,7 @@ export function createApp() {
   app.use('/api', requireAuth);
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/invitations', invitationsRouter);
+  app.use('/api/oauth', oauthCallbackRouter);
 
   // Notifications: workspace-scoped, but every member (viewers too) manages their own.
   app.use('/api/notifications', requireWorkspace, notificationsRouter);
