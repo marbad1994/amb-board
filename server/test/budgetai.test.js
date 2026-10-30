@@ -323,3 +323,34 @@ test('budget sheet without an AI provider falls back to rules', async () => {
   assert.equal(res.json.sheet.expenses_total_minor, 427050);
   assert.equal(res.json.income.avg_monthly_minor, 650000);
 });
+
+const TABLE = [
+  'BUGET LUNAR,,,,,', 'Luna:,nov. 2026,,Monedă de bază:,RON/Eur,', '"Completează bugetul planificat, apoi trece cheltuielile reale.",,,,,', ',,,,,',
+  'Tip,Categorie,Buget planificat,Realizat,Diferență,Note',
+  'Venit,Salariu / venit propriu,"10.000,00","0,00","10.000,00",Venit lunar net',
+  'Venit,Freelance,"0,00","0,00","0,00",',
+  'Cheltuială fixă,Chirie,"3.000,00","0,00","3.000,00","Gaz,Curent"',
+  'Cheltuială fixă,Abonamente,"980,00","0,00","980,00","Youtube, netflix"',
+  'Cheltuială variabilă,Mâncare și cumpărături,"2.500,00","400,00","2.100,00",x',
+  'Cheltuială variabilă,Altele,"0,00","150,00","-150,00",cutii',
+  'Datorii,Rată / rambursare datorii,"5.000,00","0,00","5.000,00",',
+  'Economii,Fond de urgență,"0,00","0,00","0,00",',
+  ',,,,,', 'REZUMAT,,,,,', 'Venituri planificate,"10.000,00",,,,', 'Cheltuieli + datorii + economii planificate,"11.480,00",,,,',
+].join('\n');
+
+test('budget table (Tip / Categorie / Buget planificat): read directly, types become parents, summary block ignored, no AI needed', async () => {
+  const u = await signUp(srv.base, 'Table1');
+  requests.length = 0;
+  const res = await draftReq(u, { csv: TABLE, currency: 'RON', name: 'Buget lunar.csv' });
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  assert.equal(requests.length, 0, 'the AI is not called for a clear table');
+  const lines = Object.fromEntries(res.json.lines.map((l) => [l.category, [l.limit_minor, l.parent]]));
+  assert.deepEqual(lines, {
+    Chirie: [300000, 'Cheltuială fixă'], Abonamente: [98000, 'Cheltuială fixă'], 'Mâncare și cumpărături': [250000, 'Cheltuială variabilă'], 'Rată / rambursare datorii': [500000, 'Datorii'] });
+  assert.equal(res.json.income.avg_monthly_minor, 1000000);
+  assert.equal(res.json.sheet.expenses_total_minor, 1148000);
+  // applying creates the parents and the budget for the chosen month
+  const ap = await u.c.post(`/api/finance/ai-budget/drafts/${res.json.id}/apply`, {});
+  assert.equal(ap.status, 200, JSON.stringify(ap.json));
+  assert.equal(ap.json.budgets_set, 4);
+});
