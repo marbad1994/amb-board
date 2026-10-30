@@ -9,7 +9,7 @@ export const FREQ = [['daily', 'Every day'], ['weekdays', 'Every weekday (Mon to
 export const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 export const LABEL = { create_task: 'Create a task', update_task: 'Change the triggering task', add_comment: 'Comment on the triggering task', create_transaction: 'Record a transaction',
   create_note: 'Write a note', create_event: 'Add a calendar event', notify: 'Send me a notification', generate_report: 'Generate a report',
-  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI', send_email: 'Send an email',
+  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI', run_skill: 'Run an installed skill', send_email: 'Send an email',
   scrape: 'Scrape a web page', parse: 'Parse data (JSON, HTML, CSV or your own prompt)', loop: 'Repeat for every item in a list' };
 export const REPORTS = [['overview', 'Overview'], ['monthly_finance', 'Monthly finance'], ['workload', 'Workload'], ['project_status', 'Project status']];
 
@@ -17,7 +17,7 @@ export const DEFAULT_ARGS = {
   create_task: { project_id: '', title: '', due_in_days: '', priority: 'medium' }, update_task: { status: '', priority: '', due_in_days: '' }, add_comment: { text: '' },
   create_transaction: { type: 'expense', amount: '', currency: 'EUR', description: '', category: '', status: 'planned' }, create_note: { title: '', body: '' },
   send_email: { to: ['me'], toText: 'me', template: '', subject: '', body: '' },
-  use_tool: { tool: 'web_search', args: { query: '' }, save_as: '' }, ai_text: { instruction: '', input: '', save_as: '' },
+  use_tool: { tool: 'web_search', args: { query: '' }, save_as: '' }, ai_text: { instruction: '', input: '', save_as: '' }, run_skill: { skill: '', input: '', instruction: '', save_as: '' },
   scrape: { url: '', format: 'text', contains: '', max: 50, save_as: '' },
   parse: { input: '', parser: 'json', prompt: '', fieldsText: '', output_format: 'json', save_as: '' },
   loop: { over: '', max_items: 20, on_error: 'stop', steps: [{ type: 'use_tool', args: { tool: 'web_search', args: { query: '{{item}}' }, save_as: '' } }], collect: '', save_as: '' },
@@ -208,6 +208,16 @@ export function StepFields({ step, set, projects, categories, trigger, tools, te
       <Field label="Material to use" wide><textarea rows={2} value={a.input} onChange={up('input')} placeholder="e.g. {{result.news}}" /></Field>
       <Field label="Save the text as"><input value={a.save_as} maxLength={20} onChange={(e) => set({ ...a, save_as: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="e.g. summary" /></Field>
       <p className="hint" style={{ alignSelf: 'end' }}>Counts against the daily AI limit. Use it later as {'{{result.' + (a.save_as || 'name') + '}}'}</p></div>);
+    case 'run_skill': {
+      const skills = tools?.skills || []; const sel = skills.find((s) => s.name === a.skill);
+      return (<div className="flow-row">
+        <Field label="Skill"><select value={a.skill} onChange={up('skill')}><option value="">Choose a skill</option>{a.skill && !sel && <option value={a.skill}>{a.skill} (not installed)</option>}{skills.map((s) => <option key={s.name} value={s.name}>/{s.name}</option>)}</select></Field>
+        <Field label="Save the text as"><input value={a.save_as} maxLength={20} onChange={(e) => set({ ...a, save_as: slug(e.target.value) })} placeholder="e.g. digest" /></Field>
+        {sel?.description && <p className="hint" style={{ gridColumn: '1 / -1' }}>{sel.description}</p>}
+        <Field label="Material to use" wide><textarea rows={2} value={a.input} onChange={up('input')} placeholder={before?.length ? `e.g. {{result.${before[before.length - 1]}}}` : 'e.g. {{result.page}}'} /></Field>
+        <Field label="Extra instruction for this run (optional)" wide><input value={a.instruction || ''} onChange={up('instruction')} maxLength={1000} placeholder="e.g. Keep it under 5 bullets" /></Field>
+        <p className="hint" style={{ gridColumn: '1 / -1' }}>The skill works as the AI's instructions. It only writes text and cannot change anything by itself; a later step does the saving or sending. Counts against the daily AI limit.</p></div>);
+    }
     case 'scrape': return <ScrapeFields a={a} set={set} />;
     case 'parse': return <ParseFields a={a} set={set} before={before || []} />;
     case 'loop': return <LoopSettings a={a} set={set} before={before || []} />;

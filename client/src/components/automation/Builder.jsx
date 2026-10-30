@@ -95,6 +95,7 @@ export default function Builder({ initial, enabledInitial = true, projects, cate
   const t = f.trigger;
   const taskTrigger = t.type === 'event' && t.event !== 'transaction_added';
   const hasServers = !!tools?.servers?.length;
+  const hasSkills = !!tools?.skills?.length;
   const trigPayload = t.type === 'event' ? { type: 'event', event: t.event || 'task_done', conditions: t.conditions || {} } : t;
 
   // ---- finding and changing steps by key: "trigger", "2" (top level) or "2.1" (inside the loop at 2)
@@ -312,7 +313,7 @@ export default function Builder({ initial, enabledInitial = true, projects, cate
         {f.steps.length > 0 && untested === 0 && <span className="ab-ok"><Check size={14} aria-hidden="true" /> All steps tested</span>}
         <button type="button" className="ab-btn" onClick={onCancel}>Cancel</button>
       </div>
-      {picker && <Picker title={picker.parent != null ? 'Add a step to the loop' : picker.at === 0 ? 'Add the first step' : `Add a step after step ${picker.at}`} taskTrigger={taskTrigger} hasServers={hasServers} insideLoop={loopIndex != null} suggest={pickerSuggest(picker)}
+      {picker && <Picker title={picker.parent != null ? 'Add a step to the loop' : picker.at === 0 ? 'Add the first step' : `Add a step after step ${picker.at}`} taskTrigger={taskTrigger} hasServers={hasServers} hasSkills={hasSkills} insideLoop={loopIndex != null} suggest={pickerSuggest(picker)}
         onPick={(step) => insert(picker.parent, picker.at, step)} onClose={() => setPicker(null)} />}
     </form>
   );

@@ -78,7 +78,8 @@ router.post('/email-preview', (req, res) => {
 router.get('/tools', async (req, res) => {
   const internal = Object.entries(TOOLS).filter(([n]) => !['call_external_tool', 'external_tools', 'generate_report', 'browser_status', 'browser_snapshot', 'browser_fill', 'browser_click'].includes(n)).map(([name, t]) => ({ name, kind: t.kind || 'read', doc: t.doc.slice(0, 160) }));
   const servers = await Promise.all(userServers(req.ws.id, req.user.id).map(async (s) => { try { return { name: s.name, tools: (await toolsOf(s)).map((t) => ({ name: t.name, read_only: t.read_only, description: t.description })) }; } catch (e) { return { name: s.name, tools: [], error: String(e.message).slice(0, 100) }; } }));
-  res.json({ internal, servers });
+  const skills = db.prepare('SELECT name, description FROM ai_skills WHERE workspace_id = ? AND user_id = ? ORDER BY name').all(req.ws.id, req.user.id);
+  res.json({ internal, servers, skills });
 });
 
 // Test ONE step with the results of earlier steps (`vars`, name -> text). Reading steps really run (tools, scrape, parse, AI text);

@@ -19,7 +19,9 @@ export async function flowGuide(ws, user, TOOLS) {
   const existing = db.prepare('SELECT id, name, enabled, trigger, steps, next_run_at, last_run_at, last_status, created_via FROM automations WHERE workspace_id = ? ORDER BY created_at LIMIT 30').all(ws)
     .map((a) => ({ id: a.id, name: a.name, enabled: !!a.enabled, when: describeTrigger(JSON.parse(a.trigger)), trigger: JSON.parse(a.trigger), steps: JSON.parse(a.steps), next_run_at: a.next_run_at, last_run_at: a.last_run_at, last_status: a.last_status, created_via: a.created_via }));
   const templates = db.prepare('SELECT id, name, subject FROM email_templates WHERE workspace_id = ? ORDER BY name').all(ws);
+  const installed_skills = db.prepare('SELECT name, description FROM ai_skills WHERE workspace_id = ? AND user_id = ? ORDER BY name').all(ws, user.id);
   return {
+    installed_skills: installed_skills.length ? { note: 'Skills this person imported. A run_skill step applies one to the output of earlier steps.', skills: installed_skills } : 'none installed; run_skill needs one imported first',
     ways_to_create_or_change_flows: [
       'The Automations page (sidebar, Manage): a list of flows with status, a builder (flow on the left, step settings and the test result on the right, a step picker grouped as get data / shape data / do something), per-step "Test this step", run history per run, and templates to start from.',
       'Propose create_automation (one flow, the user approves it); several flows or flows plus other setup in ONE setup_plan; change one with update_automation (name, trigger, steps, on/off); remove with delete_automation; run a scheduled one now with run_automation.',

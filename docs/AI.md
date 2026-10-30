@@ -70,6 +70,9 @@ Two step types let a flow use tools unattended, as its owner. **Use a tool** run
 ## Reviews
 `GET|POST /api/ai/review/weekly|monthly[?date=YYYY-MM-DD]` builds deterministic facts (`ai/reviews.js`: completed and incomplete tasks, project progress, posted finance per currency, the requesting user's habits, appointments, upcoming deadlines; monthly adds completed projects, goals, category budget performance, previous-month comparison, savings and debts) and asks the model only to phrase them. Cached per user and period; flagged stale when facts change; in-progress periods say so. Journal and notes are excluded.
 
+## Dashboard arrangement
+Once a day (and on Rearrange, five times a day) the model receives `signals` (overdue, due today, events, budget alerts, activity, weekday, ...) plus the rules' own arrangement and returns an order, a size per widget and a reason. `server/src/dashboard/plan.js` validates it: unknown or duplicate widgets dropped, missing ones added, empty widgets compact, at most two heroes, and any number in a reason or headline that is not in the signals replaces that text with the rules' wording. Without a key or on failure the rules plan is stored instead. Plans are per person and day (`dashboard_plans`); a plan is adjusted on read when a widget has emptied or gained content since it was made.
+
 ## Safety design
 - Prompt structure: fixed system prompt (rules + output schema); user data only inside `<data>` as JSON with `<` escaped so text like `</data>` cannot close the block. The system prompt tells the model the data is untrusted.
 - Scope: facts queries are all `workspace_id`-bound; tested that another workspace's text never reaches a prompt.

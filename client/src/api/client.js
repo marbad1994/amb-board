@@ -84,6 +84,8 @@ export const api = {
 
   // dashboard + life areas
   dashboard: () => request('/dashboard'),
+  dashboardPlan: () => request('/dashboard/plan'),
+  refreshDashboardPlan: () => request('/dashboard/plan/refresh', json('POST', {})),
   listLifeAreas: (includeArchived = false) => request(`/life-areas${includeArchived ? '?archived=1' : ''}`),
   createLifeArea: (data) => request('/life-areas', json('POST', data)),
   updateLifeArea: (id, data) => request(`/life-areas/${id}`, json('PATCH', data)),

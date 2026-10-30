@@ -1,64 +1,51 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { FolderKanban, ListChecks, StickyNote, Layers } from 'lucide-react';
+import { FolderKanban, ListChecks, CalendarCheck, TriangleAlert, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { api } from '../api/client.js';
-import { useAuth } from '../context/AuthContext.jsx';
-import { fmt } from '../lib/money.js';
-import AiSummaryCard from '../components/AiSummaryCard.jsx';
-import { canWrite } from '../context/AuthContext.jsx';
-import { LifeAreaIcon } from '../lib/lifeAreaIcons.jsx';
+import { useAuth, canWrite } from '../context/AuthContext.jsx';
+import { Widget, WIDGETS, relTime } from '../components/dashboard/widgets.jsx';
 
-const ACTION_LABELS = {
-  'project.create': 'created a project', 'project.archive': 'archived a project', 'project.restore': 'restored a project',
-  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'ai.project_summary': 'generated an AI project summary', 'ai.action_executed': 'approved an AI suggestion', 'ai.action_rejected': 'rejected an AI suggestion', 'transaction.create': 'recorded a transaction', 'transaction.void': 'voided a transaction', 'budget.set': 'set a project budget', 'event.create': 'added a calendar event', 'event.update': 'updated a calendar event', 'event.delete': 'deleted a calendar event', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
-  'lifearea.archive': 'archived a life area', 'lifearea.restore': 'restored a life area', 'workspace.create': 'created this workspace',
-  'invitation.create': 'invited someone', 'invitation.accept': 'joined the workspace', 'member.role_change': 'changed a role',
-  'member.remove': 'removed a member', 'member.leave': 'left the workspace', 'workspace.rename': 'renamed the workspace',
-};
+const SIZE_TEXT = { hero: 'Larger', normal: 'Normal', compact: 'Quiet' };
+// If the arrangement cannot be fetched the dashboard still works: every widget at normal size in a fixed order.
+const FALLBACK = { source: 'fallback', headline: '', widgets: ['attention', 'today', 'events', 'budget', 'briefing', 'projects', 'areas', 'activity'].map((id) => ({ id, size: 'normal', reason: '' })) };
 
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const VERBS = { create: 'added', update: 'updated', delete: 'deleted', archive: 'archived', restore: 'restored', complete: 'completed', move: 'moved' };
-const humanAction = (a) => {
-  if (ACTION_LABELS[a]) return ACTION_LABELS[a];
-  const [entity, verb] = a.split('.');
-  return verb ? `${VERBS[verb] || verb.replace(/_/g, ' ')} ${/^[aeiou]/i.test(entity) ? 'an' : 'a'} ${entity.replace(/_/g, ' ')}` : a.replace(/_/g, ' ');
-};
-// "2026-10-31T09:00" -> "Sat 31 Oct, 09:00" (wall-clock text is kept, nothing is shifted between time zones)
-function eventWhen(e) {
-  const [d, t] = String(e.start_local).split('T');
-  const label = new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-  return e.all_day || !t ? `${label}, all day` : `${label}, ${t.slice(0, 5)}`;
-}
-const dueLabel = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-
-// "5 min ago", "Yesterday, 14:05", "Oct 29": people read when, not timestamps with seconds
-function relTime(iso) {
-  const d = new Date(iso); const mins = Math.round((Date.now() - d.getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins} min ago`;
-  if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
-  const y = new Date(); y.setDate(y.getDate() - 1);
-  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return d.toDateString() === y.toDateString() ? `Yesterday, ${t}` : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+function Skeleton() {
+  return (
+    <div className="dw-skeleton" aria-busy="true" aria-label="Loading your dashboard">
+      {[0, 1, 2, 3].map((i) => <div key={i} className="dw-skeleton__box" />)}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
   const { user, active } = useAuth();
   const [data, setData] = useState(null);
+  const [plan, setPlan] = useState(null);
   const [error, setError] = useState('');
-  const [attention, setAttention] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const writable = canWrite(active?.role);
 
   useEffect(() => {
     api.dashboard().then(setData).catch((err) => setError(err.message));
-    api.listTasks('overdue').then((t) => setAttention(t.slice(0, 5))).catch(() => setAttention([]));
+    api.dashboardPlan().then(setPlan).catch(() => setPlan(FALLBACK));
   }, []);
 
+  const rearrange = async () => {
+    setBusy(true); setNote('');
+    try { const p = await api.refreshDashboardPlan(); setPlan(p); setNote(p.source === 'ai' ? 'Rearranged.' : 'The AI could not be reached, so the simple rules arranged it.'); } catch (err) { setNote(err.message); } finally { setBusy(false); }
+  };
+
+  const c = data?.counts;
   const stats = data && [
-    { label: 'Active projects', value: data.counts.activeProjects, icon: FolderKanban, sub: `${data.counts.archivedProjects} archived` },
-    { label: 'Open tasks', value: data.counts.openTasks, icon: ListChecks, sub: `${data.counts.overdueTasks} overdue · ${data.counts.tasks} total` },
-    { label: 'Ideas', value: data.counts.ideas, icon: StickyNote, sub: 'Not yet committed' },
-    { label: 'Life areas', value: data.counts.lifeAreas, icon: Layers, sub: 'Active' },
+    { label: 'Active projects', value: c.activeProjects, icon: FolderKanban, sub: `${c.archivedProjects} archived` },
+    { label: 'Open tasks', value: c.openTasks, icon: ListChecks, sub: `${c.tasks} total` },
+    { label: 'Due today', value: c.dueToday, icon: CalendarCheck, sub: c.dueToday ? 'On your boards' : 'Nothing due' },
+    { label: 'Overdue', value: c.overdueTasks, icon: TriangleAlert, sub: c.overdueTasks ? 'Needs attention' : 'Nothing late', alert: c.overdueTasks > 0 },
   ];
+
+  const items = plan?.widgets || [];
+  const heroes = items.filter((w) => w.size === 'hero'); const normals = items.filter((w) => w.size === 'normal'); const quiet = items.filter((w) => w.size === 'compact');
+  const render = (w) => <Widget key={w.id} id={w.id} size={w.size} reason={w.reason} data={data} writable={writable} />;
 
   return (
     <div className="page page--wide">
@@ -66,18 +53,18 @@ export default function DashboardPage() {
         <div>
           <div className="eyebrow">{active?.name?.toUpperCase()}</div>
           <h1>Hello, {user?.name?.split(' ')[0]}</h1>
-          <p className="page-sub">Your workspace at a glance. Figures below come from your saved records.</p>
+          <p className="page-sub">{plan?.headline || 'Your workspace at a glance. Figures below come from your saved records.'}</p>
         </div>
       </div>
 
       {error && <p className="form-error" role="alert">{error}</p>}
-      {!data && !error && <p>Loading…</p>}
+      {!data && !error && <Skeleton />}
 
       {data && (
         <>
           <div className="stat-grid">
-            {stats.map(({ label, value, icon: Icon, sub }) => (
-              <div key={label} className="stat-card">
+            {stats.map(({ label, value, icon: Icon, sub, alert }) => (
+              <div key={label} className={`stat-card${alert ? ' stat-card--alert' : ''}`}>
                 <div className="stat-card__head"><span>{label}</span><span className="stat-card__icon"><Icon size={18} aria-hidden="true" /></span></div>
                 <div className="stat-card__num">{value}</div>
                 <div className="stat-card__sub">{sub}</div>
@@ -85,80 +72,41 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <AiSummaryCard kind="daily" writable={canWrite(active?.role)} title="Daily briefing" />
+          {!plan ? <Skeleton /> : (
+            <>
+              <div className="dw-bar">
+                <p className="dw-bar__who">
+                  <Sparkles size={14} aria-hidden="true" />
+                  {plan.source === 'ai' ? 'Arranged for today by the AI' : plan.source === 'rules' ? 'Arranged for today by simple rules' : 'Standard layout'}
+                  {plan.generated_at && <span className="muted"> · {relTime(plan.generated_at)}</span>}
+                  {plan.adjusted && <span className="muted"> · adjusted for what changed since</span>}
+                </p>
+                {writable && plan.ai_available && plan.refreshes_left !== undefined && (
+                  <button type="button" className="btn btn-small" onClick={rearrange} disabled={busy || plan.refreshes_left === 0} title={plan.refreshes_left === 0 ? 'You can rearrange 5 times a day' : undefined}>
+                    {busy ? <Loader2 size={14} className="spin" aria-hidden="true" /> : <RefreshCw size={14} aria-hidden="true" />} Rearrange ({plan.refreshes_left} left)
+                  </button>
+                )}
+              </div>
+              <p className="sr-only" role="status">{note}</p>
+              {note && <p className="hint" aria-hidden="true">{note}</p>}
+              {plan.source !== 'fallback' && (
+                <details className="dw-why">
+                  <summary>Why this layout</summary>
+                  <ul>{items.map((w) => <li key={w.id}><b>{WIDGETS[w.id].title}</b> <span className={`dw-tag dw-tag--${w.size}`}>{SIZE_TEXT[w.size]}</span> {w.reason}</li>)}</ul>
+                  <p className="hint">Nothing is ever removed: quiet parts shrink to one line and open with a click. A part that gets something new during the day grows again.</p>
+                </details>
+              )}
 
-          {data.budgetAlerts.length > 0 && (
-            <section className="panel" aria-labelledby="dash-alerts" style={{ marginBottom: 16 }}>
-              <div className="panel__title"><h2 id="dash-alerts">Budget alerts</h2></div>
-              <ul className="plain-list">
-                {data.budgetAlerts.map((a) => (
-                  <li key={a.project_id}><Link to={`/projects/${a.project_id}`}>{a.project_name}</Link>
-                    <span>{{ warning: 'Approaching limit', forecast_over: 'Forecast over budget', over: 'Over budget' }[a.status]}: {fmt(a.actual_minor, a.currency)} of {fmt(a.approved_minor, a.currency)} spent{a.forecast_overrun_minor > 0 ? `, forecast overrun ${fmt(a.forecast_overrun_minor, a.currency)}` : ''}</span></li>
-                ))}
-              </ul>
-            </section>
+              {heroes.length > 0 && <div className="dw-heroes">{heroes.map(render)}</div>}
+              {normals.length > 0 && <div className="dw-grid">{normals.map(render)}</div>}
+              {quiet.length > 0 && (
+                <section className="dw-quiet" aria-label="Quiet today">
+                  <h2 className="dw-quiet__title">Quiet today</h2>
+                  <div className="dw-quiet__list">{quiet.map(render)}</div>
+                </section>
+              )}
+            </>
           )}
-
-          <div className="dash-grid">
-            <section className="panel attention dash-wide" aria-labelledby="dash-attention">
-              <div className="panel__title"><h2 id="dash-attention">Needs attention</h2><Link to="/tasks">All tasks</Link></div>
-              {attention === null ? <p className="muted">Loading...</p> : attention.length === 0 ? <p className="muted">Nothing is overdue. Nice work.</p> : (
-                <ul className="activity">
-                  {attention.map((t) => (
-                    <li key={t.id}><Link to={`/projects/${t.project_id}?card=${t.id}`}><b>{t.title}</b></Link>
-                      <small><span className="is-overdue">Overdue since {dueLabel(t.due_date)}</span> · {t.project_name}</small></li>
-                  ))}
-                </ul>
-              )}
-            </section>
-            <section className="panel" aria-labelledby="dash-events">
-              <div className="panel__title"><h2 id="dash-events">Upcoming events</h2><Link to="/calendar">Calendar</Link></div>
-              {data.upcomingEvents.length === 0 ? <p className="muted">Nothing in the next 7 days.</p> : (
-                <ul className="activity">{data.upcomingEvents.map((e) => (
-                  <li key={e.id}><b>{e.title}</b><small>{eventWhen(e)}</small></li>
-                ))}</ul>
-              )}
-            </section>
-
-            <section className="panel" aria-labelledby="dash-projects">
-              <div className="panel__title"><h2 id="dash-projects">Recent projects</h2><Link to="/projects">View all</Link></div>
-              {data.recentProjects.length === 0 ? (
-                <p className="muted">No projects yet. <Link to="/projects">Create your first project.</Link></p>
-              ) : data.recentProjects.map((p) => (
-                <Link key={p.id} to={`/projects/${p.id}`} className="row-link">
-                  <span className="dot" style={{ background: p.color }} aria-hidden="true" />
-                  <span><b>{p.name}</b><small>{p.life_area_name || 'No life area'} · {plural(p.card_count, 'task')}</small></span>
-                </Link>
-              ))}
-            </section>
-
-            <section className="panel" aria-labelledby="dash-areas">
-              <div className="panel__title"><h2 id="dash-areas">Life areas</h2><Link to="/life-areas">Manage</Link></div>
-              {data.lifeAreas.every((a) => !a.project_count) && <p className="muted">No project is assigned to a life area yet. Give a project a life area to see it here.</p>}
-              <ul className="area-list">
-                {[...data.lifeAreas].filter((a) => a.project_count > 0).sort((x, y) => y.project_count - x.project_count).slice(0, 8).map((a) => (
-                  <li key={a.id}>
-                    <Link to={`/projects?lifeArea=${a.id}`}>
-                      <LifeAreaIcon name={a.icon} size={16} /><span>{a.name}</span><b>{a.project_count}</b>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="panel" aria-labelledby="dash-activity">
-              <div className="panel__title"><h2 id="dash-activity">Recent activity</h2></div>
-              {data.activity.length === 0 ? <p className="muted">No activity yet.</p> : (
-                <ul className="activity">
-                  {data.activity.map((a, i) => (
-                    <li key={i}><b>{a.user_name || 'Someone'}</b> {humanAction(a.action)}
-                      <small title={new Date(a.created_at).toLocaleString()}>{relTime(a.created_at)}</small></li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-          </div>
         </>
       )}
     </div>

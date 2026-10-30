@@ -1,12 +1,12 @@
-import { BarChart3, Bell, Braces, CalendarPlus, CheckSquare, Clock, FileText, Globe, Mail, MessageSquare, Pencil, Plug, Repeat, Search, Sparkles, Wallet, Zap } from 'lucide-react';
+import { BarChart3, Bell, Braces, CalendarPlus, CheckSquare, Clock, FileText, Globe, Mail, MessageSquare, Pencil, Plug, Repeat, Search, Sparkles, Wand2, Wallet, Zap } from 'lucide-react';
 import { DEFAULT_ARGS, LABEL } from './fields.jsx';
 
 // Which family a step belongs to: it drives the colour, the picker group and the "does it change anything" wording.
 export const KIND = {
-  use_tool: 'get', scrape: 'get', parse: 'mix', loop: 'mix', ai_text: 'mix',
+  use_tool: 'get', scrape: 'get', parse: 'mix', loop: 'mix', ai_text: 'mix', run_skill: 'mix',
   send_email: 'act', notify: 'act', create_task: 'act', update_task: 'act', add_comment: 'act', create_note: 'act', create_event: 'act', create_transaction: 'act', generate_report: 'act',
 };
-const ICONS = { trigger: Clock, event: Zap, use_tool: Plug, web_search: Search, scrape: Globe, parse: Braces, loop: Repeat, ai_text: Sparkles, send_email: Mail, notify: Bell, create_task: CheckSquare, update_task: Pencil, add_comment: MessageSquare, create_note: FileText, create_event: CalendarPlus, create_transaction: Wallet, generate_report: BarChart3 };
+const ICONS = { trigger: Clock, event: Zap, use_tool: Plug, web_search: Search, scrape: Globe, parse: Braces, loop: Repeat, ai_text: Sparkles, run_skill: Wand2, send_email: Mail, notify: Bell, create_task: CheckSquare, update_task: Pencil, add_comment: MessageSquare, create_note: FileText, create_event: CalendarPlus, create_transaction: Wallet, generate_report: BarChart3 };
 
 export function StepIcon({ type, size = 20 }) {
   const Icon = ICONS[type] || Plug;
@@ -14,7 +14,7 @@ export function StepIcon({ type, size = 20 }) {
 }
 
 export const TITLE = {
-  ...LABEL, use_tool: 'Use a tool', scrape: 'Scrape a web page', parse: 'Parse data', loop: 'Repeat for every item', ai_text: 'Write text with AI', send_email: 'Send an email',
+  ...LABEL, use_tool: 'Use a tool', scrape: 'Scrape a web page', parse: 'Parse data', loop: 'Repeat for every item', ai_text: 'Write text with AI', run_skill: 'Run an installed skill', send_email: 'Send an email',
   update_task: 'Change the triggering task', add_comment: 'Comment on the triggering task',
 };
 export const stepTitle = (s) => (s.type === 'use_tool' ? (s.args.tool === 'web_search' ? 'Search the web' : s.args.tool === 'read_web_page' ? 'Read a web page' : s.args.tool === 'external' ? 'Use a connected tool' : 'Read your workspace') : TITLE[s.type] || s.type);
@@ -31,6 +31,7 @@ export function describe(s) {
     case 'loop': return `Up to ${a.max_items || 20} items of ${clip(a.over, 40) || 'a list'}, ${(a.steps || []).length} step${(a.steps || []).length === 1 ? '' : 's'} each`;
     case 'use_tool': return a.tool === 'web_search' ? clip(a.args?.query, 60) || 'No search yet' : a.tool === 'read_web_page' ? host(a.args?.url) || 'No address yet' : a.tool === 'external' ? `${a.server || 'No server'}: ${a.external_tool || 'choose a tool'}` : a.tool;
     case 'ai_text': return clip(a.instruction, 70) || 'No instruction yet';
+    case 'run_skill': return a.skill ? `/${a.skill}${a.instruction ? `: ${clip(a.instruction, 50)}` : ''}` : 'No skill chosen yet';
     case 'send_email': return `To ${clip(a.toText ?? (a.to || ['me']).join(', '), 40)}${a.subject ? `. Subject: ${clip(a.subject, 40)}` : a.template ? '. From a template' : ''}`;
     case 'notify': return clip(a.title, 70) || 'No title yet';
     case 'create_task': return clip(a.title, 70) || 'No title yet';
@@ -56,6 +57,7 @@ export const CATALOG = [
     { type: 'parse', name: 'Parse data', desc: 'Pick the fields you want from JSON, HTML or text, in the format you want.', gives: 'gives JSON, CSV or text' },
     { type: 'loop', name: 'Repeat for every item', desc: 'Run steps once for each item of a list, up to 50.', gives: 'gives a list of results', noLoop: true },
     { type: 'ai_text', name: 'Write text with AI', desc: 'Summarise or rewrite what the earlier steps found.', gives: 'gives text' },
+    { type: 'run_skill', name: 'Run an installed skill', desc: 'Apply a skill you imported to what earlier steps found.', gives: 'gives text', needs: 'skills' },
   ] },
   { group: 'Do something', hint: 'changes happen only here, and tests only describe them', items: [
     { type: 'send_email', name: 'Send an email', desc: 'To you or up to 5 people, with a template.' },

@@ -636,7 +636,16 @@ export const migrations = [
   { id: '016_email_flows', up: (db) => db.exec(emailFlows) },
   { id: '017_assistant_skills', up: (db) => db.exec(assistantSkills) },
   { id: '018_assistant_quality', up: (db) => db.exec(assistantQuality) },
+  { id: '019_dashboard_plans', up: (db) => db.exec(dashboardPlans) },
 ];
+
+const dashboardPlans = `
+CREATE TABLE dashboard_plans (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL, plan TEXT NOT NULL, source TEXT NOT NULL, refreshes INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, user_id, day)
+);
+`;
 
 const automationsTables = `
 CREATE TABLE automations (
