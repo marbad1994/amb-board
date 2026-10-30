@@ -16,13 +16,30 @@ const ACTION_LABELS = {
   'member.remove': 'removed a member', 'member.leave': 'left the workspace', 'workspace.rename': 'renamed the workspace',
 };
 
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const VERBS = { create: 'added', update: 'updated', delete: 'deleted', archive: 'archived', restore: 'restored', complete: 'completed', move: 'moved' };
+const humanAction = (a) => {
+  if (ACTION_LABELS[a]) return ACTION_LABELS[a];
+  const [entity, verb] = a.split('.');
+  return verb ? `${VERBS[verb] || verb.replace(/_/g, ' ')} ${/^[aeiou]/i.test(entity) ? 'an' : 'a'} ${entity.replace(/_/g, ' ')}` : a.replace(/_/g, ' ');
+};
+// "2026-10-31T09:00" -> "Sat 31 Oct, 09:00" (wall-clock text is kept, nothing is shifted between time zones)
+function eventWhen(e) {
+  const [d, t] = String(e.start_local).split('T');
+  const label = new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return e.all_day || !t ? `${label}, all day` : `${label}, ${t.slice(0, 5)}`;
+}
+const dueLabel = (d) => new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
 export default function DashboardPage() {
   const { user, active } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [attention, setAttention] = useState(null);
 
   useEffect(() => {
     api.dashboard().then(setData).catch((err) => setError(err.message));
+    api.listTasks('overdue').then((t) => setAttention(t.slice(0, 5))).catch(() => setAttention([]));
   }, []);
 
   const stats = data && [
@@ -76,7 +93,7 @@ export default function DashboardPage() {
               <div className="panel__title"><h2 id="dash-events">Upcoming events</h2><Link to="/calendar">Calendar</Link></div>
               {data.upcomingEvents.length === 0 ? <p className="muted">Nothing in the next 7 days.</p> : (
                 <ul className="activity">{data.upcomingEvents.map((e) => (
-                  <li key={e.id}><b>{e.title}</b><small>{e.all_day ? e.start_local : e.start_local.replace('T', ' ')} ({e.timezone})</small></li>
+                  <li key={e.id}><b>{e.title}</b><small>{eventWhen(e)}</small></li>
                 ))}</ul>
               )}
             </section>
@@ -88,7 +105,7 @@ export default function DashboardPage() {
               ) : data.recentProjects.map((p) => (
                 <Link key={p.id} to={`/projects/${p.id}`} className="row-link">
                   <span className="dot" style={{ background: p.color }} aria-hidden="true" />
-                  <span><b>{p.name}</b><small>{p.life_area_name || 'No life area'} · {p.card_count} tasks</small></span>
+                  <span><b>{p.name}</b><small>{p.life_area_name || 'No life area'} · {plural(p.card_count, 'task')}</small></span>
                 </Link>
               ))}
             </section>
@@ -111,16 +128,23 @@ export default function DashboardPage() {
               {data.activity.length === 0 ? <p className="muted">No activity yet.</p> : (
                 <ul className="activity">
                   {data.activity.map((a, i) => (
-                    <li key={i}><b>{a.user_name || 'Someone'}</b> {ACTION_LABELS[a.action] || a.action}
+                    <li key={i}><b>{a.user_name || 'Someone'}</b> {humanAction(a.action)}
                       <small>{new Date(a.created_at).toLocaleString()}</small></li>
                   ))}
                 </ul>
               )}
             </section>
 
-            <section className="panel panel--note" aria-labelledby="dash-soon">
-              <div className="panel__title"><h2 id="dash-soon">Coming next</h2></div>
-              <p className="muted">Everything planned in the first roadmap is now available. Next: hardening, notifications and external calendar sync. They are shown disabled in the sidebar and will appear here as they ship.</p>
+            <section className="panel attention" aria-labelledby="dash-attention">
+              <div className="panel__title"><h2 id="dash-attention">Needs attention</h2><Link to="/tasks">All tasks</Link></div>
+              {attention === null ? <p className="muted">Loading...</p> : attention.length === 0 ? <p className="muted">Nothing is overdue. Nice work.</p> : (
+                <ul className="activity">
+                  {attention.map((t) => (
+                    <li key={t.id}><Link to={`/projects/${t.project_id}?card=${t.id}`}><b>{t.title}</b></Link>
+                      <small><span className="is-overdue">Overdue since {dueLabel(t.due_date)}</span> · {t.project_name}</small></li>
+                  ))}
+                </ul>
+              )}
             </section>
           </div>
         </>

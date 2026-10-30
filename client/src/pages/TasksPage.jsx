@@ -48,7 +48,7 @@ export default function TasksPage() {
         <div>
           <div className="eyebrow">TASK MANAGER</div>
           <h1>Tasks</h1>
-          <p className="page-sub">Every task across your active projects. Due dates are compared in UTC.</p>
+          <p className="page-sub">Every task across your active projects, soonest due first.</p>
         </div>
       </div>
       <div className="seg seg--tabs" role="group" aria-label="Task views">

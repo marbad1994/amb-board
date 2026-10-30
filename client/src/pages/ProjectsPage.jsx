@@ -1,11 +1,26 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus, Trash2, Folder, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, Trash2, Folder, Archive, ArchiveRestore, ArrowRight } from 'lucide-react';
+import { DndContext, MouseSensor, TouchSensor, useSensor, useSensors, useDraggable, useDroppable, pointerWithin } from '@dnd-kit/core';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import { PROJECT_STATUSES, priorityLabel, formatDate } from '../lib/labels.js';
 
 const COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6'];
+
+function StatusColumn({ status, count, children }) {
+  const { setNodeRef, isOver } = useDroppable({ id: status.value });
+  return (
+    <section ref={setNodeRef} className={`status-col ${isOver ? 'is-over' : ''}`} aria-label={status.label}>
+      <h2>{status.label}<span>{count}</span></h2>
+      {children}
+    </section>
+  );
+}
+function DraggableProject({ id, enabled, children }) {
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({ id, disabled: !enabled });
+  return <div ref={setNodeRef} {...listeners} {...attributes} className={isDragging ? 'is-dragging' : ''} style={{ touchAction: 'manipulation' }}>{children}</div>;
+}
 
 export default function ProjectsPage() {
   const { active } = useAuth();
@@ -18,7 +33,12 @@ export default function ProjectsPage() {
   const [name, setName] = useState('');
   const [newArea, setNewArea] = useState('');
   const [error, setError] = useState('');
-  const [view, setView] = useState('board');
+  const [view, setView] = useState('grid');
+  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 8 } }), useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }));
+  const onDragEnd = ({ active, over }) => {
+    const project = projects?.find((p) => p.id === active.id);
+    if (project && over && PROJECT_STATUSES.some((s) => s.value === over.id) && over.id !== project.status) setStatus(project, over.id);
+  };
 
   useEffect(() => {
     api.listLifeAreas().then(setAreas).catch((err) => setError(err.message));
@@ -84,6 +104,7 @@ export default function ProjectsPage() {
           <span className={`prio prio--${project.priority}`}>{priorityLabel(project.priority)}</span>
           {project.target_date && <span>Due {formatDate(project.target_date)}</span>}
           {project.overdue_count > 0 && <span className="prio prio--urgent">{project.overdue_count} overdue</span>}
+          <span className="project-card__open">Open board <ArrowRight size={14} aria-hidden="true" /></span>
         </div>
       </Link>
       {writable && withStatus && !showArchived && (
@@ -113,7 +134,8 @@ export default function ProjectsPage() {
       <div className="page-header">
         <div>
           <div className="eyebrow">LIFE MANAGEMENT</div>
-          <h1>Projects Board</h1>
+          <h1>Projects</h1>
+          <p className="page-sub">Each project has its own board of tasks. Open a project to drag its tasks between columns.</p>
         </div>
       </div>
 
@@ -142,8 +164,8 @@ export default function ProjectsPage() {
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Show archived
         </label>
         <div className="seg" role="group" aria-label="View">
-          <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>Board</button>
-          <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}>Grid</button>
+          <button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}>All projects</button>
+          <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>By status</button>
         </div>
       </div>
 
@@ -164,17 +186,19 @@ export default function ProjectsPage() {
       )}
 
       {projects && projects.length > 0 && view === 'board' && (
-        <div className="status-board">
-          {PROJECT_STATUSES.map((st) => {
-            const items = projects.filter((p) => p.status === st.value);
-            return (
-              <section key={st.value} className="status-col" aria-label={st.label}>
-                <h2>{st.label}<span>{items.length}</span></h2>
-                {items.map((project) => renderCard(project, true))}
-              </section>
-            );
-          })}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={onDragEnd}>
+          <p className="hint">Drag a project to another column to change its status. To work on its tasks, open the project.</p>
+          <div className="status-board">
+            {PROJECT_STATUSES.map((st) => {
+              const items = projects.filter((p) => p.status === st.value);
+              return (
+                <StatusColumn key={st.value} status={st} count={items.length}>
+                  {items.map((project) => <DraggableProject key={project.id} id={project.id} enabled={writable && !showArchived}>{renderCard(project, true)}</DraggableProject>)}
+                </StatusColumn>
+              );
+            })}
+          </div>
+        </DndContext>
       )}
     </div>
   );

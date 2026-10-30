@@ -4,6 +4,7 @@ import { complete, parseJson, AiFailureError } from './gateway.js';
 import { TOOLS, runSkill } from './tools.js';
 import { ACTION_TYPES, PROPOSAL_DOCS, validateProposal } from './actions.js';
 import { todayUtc } from '../validate.js';
+import { workspaceDigest } from './digest.js';
 
 const MAX_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 3;
@@ -18,6 +19,8 @@ Hard rules:
 - Only state facts that appear in tool results or the data. Amounts are in minor units (cents): divide by 100 and name the currency. Never add amounts in different currencies. If you do not have the data, say so or call a skill.
 - <data>.current_view tells you which page the user is on and the item they are looking at; resolve "this project", "here", "these tasks" from it.
 - Prefer analysis skills for questions about risk, spending, workload and gaps, cross_reference for "what is linked to X", and generate_report when the user wants a report, summary document or something to share. Tell the user a report is saved under Reports.
+- <data>.workspace is a snapshot of the whole workspace with ids (projects, life areas, goals, your habits, categories, shared notes, next events, automations). Use those ids directly; call workspace_overview or a list skill for more. Never invent an id that is not in the snapshot or a tool result.
+- To set up several things at once (a project with tasks, a goal with milestones, a routine), propose ONE setup_plan with ordered steps; give an earlier step a "ref" and use "@ref" for its id in later steps. To make something happen on a schedule or when an event occurs, propose create_automation. Plans and automations are shown to the user step by step and nothing runs until they approve.
 - Proactively end answers with 1-3 concrete next steps when useful, as proposals the user can approve.
 - You can propose only these types, nothing else: ${ACTION_TYPES.join(', ')}. You cannot change budgets, delete anything, change members, permissions or journals, or send messages.
 
@@ -97,7 +100,7 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
     const forceFinal = round === MAX_ROUNDS;
     const { text } = await complete({ workspaceId, userId: user.id, purpose: 'assistant' }, {
       system: forceFinal ? `${SYSTEM}\n\nTool budget exhausted: reply now with {"type":"final",...} using only what you have.` : SYSTEM,
-      user: `<question>${message.replace(/</g, '\\u003c')}</question>\n<data>${esc({ today: todayUtc(), user: { name: user.name, role }, current_view: resolveContext(workspaceId, context), conversation: history, tool_results: results })}</data>`,
+      user: `<question>${message.replace(/</g, '\\u003c')}</question>\n<data>${esc({ today: todayUtc(), user: { name: user.name, role }, workspace: workspaceDigest(workspaceId, user.id), current_view: resolveContext(workspaceId, context), conversation: history, tool_results: results })}</data>`,
     });
     let out;
     try { out = parseJson(text); } catch { throw new AiFailureError('The AI service returned an unreadable answer. Try again.'); }
@@ -123,7 +126,7 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
   for (const prop of (Array.isArray(final.proposals) ? final.proposals : []).slice(0, MAX_PROPOSALS)) {
     const type = String(prop?.type ?? '');
     if (!ACTION_TYPES.includes(type)) { dropped.push({ type: type.slice(0, 40), reason: 'action type not allowed' }); continue; }
-    const v = validateProposal(type, prop.args, workspaceId);
+    const v = validateProposal(type, prop.args, workspaceId, user);
     if (v.error) { dropped.push({ type, reason: v.error }); continue; }
     accepted.push({ type, ...v });
   }

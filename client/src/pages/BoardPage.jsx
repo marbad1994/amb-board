@@ -153,6 +153,11 @@ export default function BoardPage() {
 
       api
         .moveCard(active.id, { columnId: col.id, order: reorderedCards.map((c) => c.id) })
+        .then((moved) => {
+          // the server may have changed the status because of the column; show it and refresh progress
+          setColumns((cur) => cur.map((c) => ({ ...c, cards: c.cards.map((x) => (x.id === moved.id ? { ...x, status: moved.status, completed_at: moved.completed_at } : x)) })));
+          api.getProject(projectId).then(setProject).catch(() => {});
+        })
         .catch((err) => setError(err.message));
 
       return next;
@@ -213,6 +218,9 @@ export default function BoardPage() {
   };
 
   const handleCardChanged = (updatedCard) => {
+    // a status change can move the card to another column on the server: reload when it is no longer where we show it
+    const shown = columns?.find((col) => col.cards.some((c) => c.id === updatedCard.id));
+    if (updatedCard.column_id && shown && shown.id !== updatedCard.column_id) api.listColumns(projectId).then(setColumns).catch(() => {});
     setColumns((prev) =>
       prev.map((col) => ({
         ...col,

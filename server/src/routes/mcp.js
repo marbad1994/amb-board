@@ -86,7 +86,7 @@ mcp.post('/', auth, async (req, res) => {
         const type = name.slice('propose_'.length);
         if (!ACTION_TYPES.includes(type)) return text({ error: 'unknown tool' }, true);
         if (!can(role, 'content:write')) return text({ error: 'insufficient permissions: viewers cannot propose changes' }, true);
-        const v = validateProposal(type, args, ws);
+        const v = validateProposal(type, args, ws, user);
         if (v.error) return text({ error: v.error }, true);
         // proposals made over MCP live in one private conversation per user so they appear in the app for approval
         let conv = db.prepare("SELECT id FROM ai_conversations WHERE workspace_id = ? AND user_id = ? AND title = 'External assistant (MCP)'").get(ws, user.id);

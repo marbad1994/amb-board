@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Layers, FolderKanban, StickyNote, Settings, Sun, ListChecks, Calendar, Landmark,
   NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus, Target, FileText, BarChart3,
+  Workflow,
 } from 'lucide-react';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import SearchBox from './SearchBox.jsx';
@@ -17,11 +18,12 @@ const NAV = [
     { to: '/life-areas', icon: Layers, text: 'Life Areas' },
   ] },
   { label: 'Manage', items: [
-    { to: '/projects', icon: FolderKanban, text: 'Projects Board' },
+    { to: '/projects', icon: FolderKanban, text: 'Projects' },
     { to: '/tasks', icon: ListChecks, text: 'Tasks' },
     { to: '/goals', icon: Target, text: 'Goals & Habits' },
     { to: '/ideas', icon: StickyNote, text: 'Idea Board' },
     { to: '/calendar', icon: Calendar, text: 'Calendar' },
+    { to: '/automations', icon: Workflow, text: 'Automations' },
   ] },
   { label: 'Personal', items: [
     { to: '/finance', icon: Landmark, text: 'Finance & Budget' },

@@ -144,3 +144,20 @@ test('tasks and subtasks cannot be reached across workspaces; viewers cannot wri
   assert.deepEqual((await other.c.get('/api/tasks?view=open')).json, []);
   assert.equal((await other.c.get(`/api/tasks?project=${(await u.c.get('/api/projects')).json[0].id}`)).json.length, 0);
 });
+
+test('column and status stay in step: dropping into Done completes, setting status moves the card', async () => {
+  const { u, project, mk } = await setup('ColSync');
+  const cols = (await u.c.get(`/api/projects/${project.id}/columns`)).json;
+  const [backlog, progress, done] = cols;
+  const t = await mk('Sync me');
+  const moved = (await u.c.post(`/api/cards/${t.id}/move`, { columnId: progress.id, order: [t.id] })).json;
+  assert.equal(moved.status, 'doing');
+  const fin = (await u.c.post(`/api/cards/${t.id}/move`, { columnId: done.id, order: [t.id] })).json;
+  assert.equal(fin.status, 'done'); assert.ok(fin.completed_at);
+  const back = (await u.c.patch(`/api/cards/${t.id}`, { status: 'todo' })).json;
+  assert.equal(back.column_id, backlog.id); assert.equal(back.completed_at, null);
+  // custom column names never change status
+  const custom = (await u.c.post(`/api/projects/${project.id}/columns`, { name: 'Waiting on supplier' })).json;
+  const kept = (await u.c.post(`/api/cards/${t.id}/move`, { columnId: custom.id, order: [t.id] })).json;
+  assert.equal(kept.status, 'todo');
+});

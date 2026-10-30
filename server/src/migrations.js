@@ -628,7 +628,28 @@ export const migrations = [
   { id: '008_depth', up: (db) => db.exec(depthTables) },
   { id: '009_budget_drafts', up: (db) => db.exec(budgetDrafts) },
   { id: '010_assistant_platform', up: (db) => db.exec(assistantPlatform) },
+  { id: '011_automations', up: (db) => db.exec(automationsTables) },
 ];
+
+const automationsTables = `
+CREATE TABLE automations (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1, trigger TEXT NOT NULL, steps TEXT NOT NULL,
+  next_run_at TEXT, last_run_at TEXT, last_status TEXT, created_via TEXT NOT NULL DEFAULT 'user',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_automations_ws ON automations (workspace_id);
+CREATE INDEX idx_automations_due ON automations (enabled, next_run_at);
+CREATE TABLE automation_runs (
+  id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, workspace_id TEXT NOT NULL, slot TEXT NOT NULL,
+  status TEXT NOT NULL, log TEXT NOT NULL DEFAULT '[]', started_at TEXT NOT NULL, finished_at TEXT,
+  UNIQUE (automation_id, slot),
+  FOREIGN KEY (automation_id) REFERENCES automations(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_automation_runs ON automation_runs (automation_id, started_at);
+`;
 
 function appliedIds(db) {
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');

@@ -128,7 +128,7 @@ test('S16 completing a recurring task creates exactly one next occurrence', asyn
   await u.c.patch(`/api/cards/${card.id}`, { status: 'done' });
   await u.c.patch(`/api/cards/${card.id}`, { status: 'todo' });
   await u.c.patch(`/api/cards/${card.id}`, { status: 'done' }); // re-completing must not spawn again
-  const cards = (await u.c.get(`/api/projects/${p.id}/columns`)).json[0].cards;
+  const cards = (await u.c.get(`/api/projects/${p.id}/columns`)).json.flatMap((c) => c.cards); // completed cards now sit in the Done column
   assert.equal(cards.length, 2);
   const next = cards.find((c) => c.id !== card.id);
   assert.equal(next.title, 'Water plants');

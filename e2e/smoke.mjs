@@ -25,6 +25,16 @@ const fakeAi = createServer((req, res) => {
     const msgs = JSON.parse(b).messages;
     if (msgs[0].content.includes('assistant inside AMB Board')) {
       const user = msgs[1].content;
+      const wantsPlan = /<question>[^<]*plan my move/i.test(user);
+      if (wantsPlan) {
+        // the whole-workspace snapshot must reach the model
+        const sawWorkspace = user.includes('"workspace":{') && user.includes('Apartment Renovation');
+        res.setHeader('content-type', 'application/json');
+        return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'final', answer: sawWorkspace ? 'Here is a setup for the move.' : 'NO WORKSPACE SNAPSHOT', proposals: [{ type: 'setup_plan', args: { title: 'Move plan', steps: [
+          { ref: 'p', type: 'create_project', args: { name: 'Move plan project' } },
+          { type: 'create_task', args: { project_id: '@p', title: 'Sign the lease', priority: 'high' } },
+          { type: 'create_task', args: { project_id: '@p', title: 'Book movers' } }] } }] }) } }], usage: {} }));
+      }
       const wantsReport = /<question>[^<]*report/i.test(user);
       const out = wantsReport
         ? (user.includes('"tool_results":[]') ? { type: 'tool', calls: [{ tool: 'generate_report', args: { kind: 'overview', title: 'E2E overview' } }] } : { type: 'final', answer: 'Report is ready under Reports.', proposals: [] })
@@ -119,7 +129,7 @@ try {
   });
 
   await step('create a project in a life area, open its board, add a task', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByLabel('New project name').fill('Apartment Renovation');
     await page.getByLabel('Life area for new project').selectOption({ label: 'Home & Living' });
     await page.getByRole('button', { name: 'Add', exact: true }).click();
@@ -159,9 +169,18 @@ try {
   });
 
   await step('project board by status: move a project to In Progress; progress shows', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByLabel('Show archived').uncheck();
-    await page.getByLabel('Status of Apartment Renovation').selectOption({ label: 'In Progress' });
+    // default view lists every project; each project opens its own board
+    await page.locator('.project-grid .project-card', { hasText: 'Apartment Renovation' }).getByText('Open board').waitFor();
+    await page.getByRole('button', { name: 'By status' }).click();
+    // drag the project card into the In Progress column
+    const src = await page.locator('.status-col .project-card', { hasText: 'Apartment Renovation' }).boundingBox();
+    const dst = await page.locator('section[aria-label="In Progress"]').boundingBox();
+    await page.mouse.move(src.x + 40, src.y + 20); await page.mouse.down();
+    await page.mouse.move(src.x + 60, src.y + 30, { steps: 5 });
+    await page.mouse.move(dst.x + dst.width / 2, dst.y + 80, { steps: 15 });
+    await page.mouse.up();
     await page.locator('section[aria-label="In Progress"]').getByText('Apartment Renovation').waitFor();
     assert.equal(await page.locator('section[aria-label="To Do"] .project-card').count(), 0);
     await page.getByRole('progressbar', { name: 'Apartment Renovation progress' }).waitFor();
@@ -222,7 +241,7 @@ try {
   });
 
   await step('project budget: set 12,000, add paid 2,500 and planned 10,000 -> remaining, forecast overrun, dashboard alert', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();
     await page.getByRole('button', { name: /Details/ }).click();
     await page.getByText('No budget set.').waitFor();
@@ -298,7 +317,7 @@ try {
   });
 
   await step('AI project summary and daily briefing (mocked provider) show facts and labelling', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();
     await page.getByRole('button', { name: /Details/ }).click();
     await page.getByText('Nothing generated yet.').waitFor();
@@ -527,7 +546,7 @@ try {
     assert.match(dl.suggestedFilename(), /^E2E[ -]overview\.html$/);
     await shot(page, '19-report');
     // the dock follows you: on a project board it knows which project you are looking at
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();
     await page.getByRole('button', { name: /Open assistant/ }).click();
     await page.getByRole('complementary', { name: 'AI assistant' }).getByText('Looking at: A project board').waitFor();
@@ -577,6 +596,45 @@ try {
     await page.getByRole('link', { name: 'Project created' }).waitFor();
   });
 
+  await step('assistant sees the whole workspace and proposes a multi-step plan; one approval creates it all', async () => {
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByLabel('Message').fill('Please plan my move');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByText('Here is a setup for the move.').waitFor();
+    await page.getByText('Setup plan: 3 steps, approved together').waitFor();
+    await page.getByText(/2\. Create task "Sign the lease" in project "Move plan project"/).waitFor();
+    await page.getByRole('button', { name: 'Approve' }).first().click();
+    await page.getByText('Applied.').waitFor();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    await page.locator('.project-card', { hasText: 'Move plan project' }).first().waitFor();
+    assert.match(await page.locator('.project-card', { hasText: 'Move plan project' }).first().innerText(), /2 tasks/);
+  });
+
+  await step('automations: build a scheduled flow, run it now, see the log; toggle it off', async () => {
+    await page.getByRole('link', { name: 'Automations' }).click();
+    await page.getByRole('button', { name: 'New automation' }).click();
+    await page.getByLabel('Automation name').fill('Weekly planning');
+    await page.getByLabel('Step 1 action').selectOption({ label: 'Create a task' });
+    await page.locator('.flow-step').first().getByLabel('Project').selectOption({ label: 'Move plan project' });
+    await page.locator('.flow-step').first().getByLabel('Title').fill('Plan the week of {{date}}');
+    await page.getByRole('button', { name: 'Add a step' }).click();
+    await page.getByLabel('Step 2 action').selectOption({ label: 'Send me a notification' });
+    await page.locator('.flow-step').nth(1).getByLabel('Title').fill('Weekly plan is ready');
+    await page.getByText(/Summary:.*create a task, then send me a notification/i).waitFor();
+    await shot(page, '21-automation-builder');
+    await page.getByRole('button', { name: 'Save automation' }).click();
+    const card = page.getByRole('article', { name: 'Weekly planning' });
+    await card.getByText(/Every Monday at 08:00/).waitFor();
+    await card.getByRole('button', { name: 'Run now' }).click();
+    await card.getByText('Last run: ok').waitFor();
+    await card.getByText(/Notification sent/).waitFor();
+    await card.getByRole('checkbox', { name: 'Weekly planning enabled' }).click();
+    await card.getByText('Off', { exact: true }).waitFor();
+    await shot(page, '22-automations');
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    assert.match(await page.locator('.project-card', { hasText: 'Move plan project' }).first().innerText(), /3 tasks/, 'the flow created a task');
+  });
+
   await step('sign out, then sign in again with the same credentials', async () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
@@ -586,8 +644,8 @@ try {
     await page.getByText('invalid email or password').waitFor();
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.getByRole('heading', { name: 'Idea board' }).waitFor(); // session restored on the page we left
-    assert.match(page.url(), /\/ideas$/);
+    await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor(); // session restored on the page we left
+    assert.match(page.url(), /\/projects$/);
   });
 
   await step('a second user cannot see the first user\'s project', async () => {
@@ -600,7 +658,7 @@ try {
     await p2.getByLabel('Password').fill(password);
     await p2.getByRole('button', { name: 'Create account' }).click();
     await p2.getByRole('heading', { name: 'Hello, Second' }).waitFor();
-    await p2.getByRole('link', { name: 'Projects Board' }).click();
+    await p2.getByRole('link', { name: 'Projects', exact: true }).click();
     await p2.getByText('No projects here yet.').waitFor();
     assert.equal(await p2.getByText('Apartment Renovation').count(), 0);
     await other.close();

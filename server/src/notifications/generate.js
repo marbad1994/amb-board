@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { occurrences } from '../calendar/recurrence.js';
 import { budgetAlerts } from '../finance/calc.js';
 import { addDays } from '../finance/money.js';
+import { runDue } from '../automations/engine.js';
 
 // Generates in-app notifications for one workspace. Safe to run any number of times and from several
 // processes: every notification has a dedupe key and UNIQUE(user_id, dedupe_key), so a repeat is a no-op.
@@ -64,8 +65,9 @@ export function generateAll(now = new Date()) {
 
 // Background loop for the real server. unref() so it never keeps a process (or a test) alive.
 export function startScheduler(intervalMs = 60_000) {
-  const timer = setInterval(() => generateAll(), intervalMs);
+  const tick = () => { generateAll(); runDue().catch((err) => console.error('automation scheduler failed', err)); };
+  const timer = setInterval(tick, intervalMs);
   timer.unref();
-  generateAll();
+  tick();
   return timer;
 }

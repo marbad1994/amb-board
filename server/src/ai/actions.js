@@ -7,12 +7,15 @@ import { readTransaction } from '../routes/finance.js';
 import { sanitizeLabels, spawnNextOccurrence } from '../routes/cards.js';
 import { goalInWs } from '../routes/goals.js';
 import { todayUtc } from '../validate.js';
+import { validateTrigger, validateSteps, describeTrigger, insertAutomation, automationCount, MAX_AUTOMATIONS, STEP_DOCS } from '../automations/spec.js';
 
 // The ONLY change types the assistant may propose. Anything else (budgets, deletes, members, roles,
 // permissions, external messages...) is dropped at proposal time and could not be executed anyway:
 // there is no executor for it.
 export const ACTION_TYPES = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_event', 'create_project', 'create_transaction',
-  'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit'];
+  'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit', 'create_automation', 'setup_plan'];
+const PLAN_MAX_STEPS = 20;
+class DryRun extends Error {}
 
 // What the model is told about each proposal type (kept next to the validators so they cannot drift apart).
 export const PROPOSAL_DOCS = {
@@ -29,6 +32,8 @@ export const PROPOSAL_DOCS = {
   add_milestone: '{"goal_id":"","title":"","due_date":"YYYY-MM-DD"}',
   create_note: '{"title":"","body":""} (shared with the workspace; journal entries are never writable)',
   create_habit: '{"title":"","frequency":"daily|weekly","target_per_week":3}',
+  create_automation: `{"name":"","trigger":{"type":"schedule","frequency":"daily|weekdays|weekly|monthly|once","time":"HH:mm","timezone":"IANA zone","weekday":1,"day":1,"date":"YYYY-MM-DD"} OR {"type":"event","event":"task_done|task_created|transaction_added","conditions":{"project_id":"","priority":"","type":"","currency":"","min_amount_minor":0}},"steps":[{"type":"<step type>","args":{}}]} step types: ${Object.entries(STEP_DOCS).map(([k, v]) => `${k} ${v}`).join(' | ')}; placeholders {{date}} {{trigger.title}} etc. A scheduled or triggered flow, run as the user; always needs approval`,
+  setup_plan: '{"title":"short name of the whole setup","steps":[{"ref":"p1 (optional label)","type":"<any proposal type except setup_plan>","args":{...}}]} up to 20 steps approved together; later steps may use "@p1" wherever an id of an earlier created project/goal/task is needed (e.g. {"type":"create_task","args":{"project_id":"@p1","title":"..."}})',
 };
 const catByName = (ws, name) => db.prepare('SELECT id, name FROM transaction_categories WHERE workspace_id = ? AND archived_at IS NULL AND lower(name) = lower(?)').get(ws, String(name ?? '').trim());
 const catById = (ws, id) => db.prepare('SELECT id, name FROM transaction_categories WHERE workspace_id = ? AND archived_at IS NULL AND id = ?').get(ws, String(id ?? ''));
@@ -40,8 +45,38 @@ const str = (v, n) => String(v ?? '').trim().slice(0, n);
 
 // Validates a model-supplied proposal against the CURRENT workspace data.
 // Returns { error } or { payload, target, description } where description is built here from validated values.
-export function validateProposal(type, args, ws) {
+export function validateProposal(type, args, ws, user = null) {
   const a = args && typeof args === 'object' ? args : {};
+  if (type === 'create_automation') {
+    const name = str(a.name, 80);
+    if (!name) return { error: 'name required' };
+    if (automationCount(ws) >= MAX_AUTOMATIONS) return { error: `a workspace can have at most ${MAX_AUTOMATIONS} automations` };
+    const t = validateTrigger(a.trigger);
+    if (t.error) return { error: t.error };
+    const st = validateSteps(a.steps, ws, t.trigger);
+    if (st.error) return { error: st.error };
+    return { payload: { name, trigger: t.trigger, steps: st.steps }, target: { entity: 'automation', id: null },
+      description: `Create automation "${name}": ${describeTrigger(t.trigger)}, then ${st.steps.length} step${st.steps.length === 1 ? '' : 's'} (${st.steps.map((x) => x.type.replace(/_/g, ' ')).join(', ')}), runs as you` };
+  }
+  if (type === 'setup_plan') {
+    const title = str(a.title, 100);
+    const steps = Array.isArray(a.steps) ? a.steps.slice(0, PLAN_MAX_STEPS + 1) : [];
+    if (!title) return { error: 'title required' };
+    if (steps.length === 0 || steps.length > PLAN_MAX_STEPS) return { error: `a plan has 1 to ${PLAN_MAX_STEPS} steps` };
+    if (!user) return { error: 'plans need a signed-in user' };
+    const clean = [];
+    for (const [i, s] of steps.entries()) {
+      const t = String(s?.type ?? '');
+      if (!ACTION_TYPES.includes(t) || t === 'setup_plan') return { error: `step ${i + 1}: action type not allowed in a plan` };
+      const ref = s.ref == null ? '' : str(s.ref, 20);
+      if (ref && !/^[a-z][a-z0-9_]*$/i.test(ref)) return { error: `step ${i + 1}: invalid ref` };
+      clean.push({ type: t, ref, args: s.args && typeof s.args === 'object' ? s.args : {} });
+    }
+    let outcome;
+    try { tx(() => { outcome = runPlan(clean, ws, user); throw new DryRun(); }); } catch (e) { if (!(e instanceof DryRun)) return { error: e.message }; }
+    return { payload: { title, steps: clean }, target: { entity: 'plan', id: null },
+      description: `Setup plan "${title}" (${clean.length} steps):\n${outcome.map((o, i) => `${i + 1}. ${o.description}`).join('\n')}` };
+  }
   if (type === 'create_task') {
     const project = projectInWs(a.project_id, ws);
     if (!project || project.archived_at) return { error: 'unknown project' };
@@ -165,89 +200,116 @@ export function validateProposal(type, args, ws) {
 
 // Executes an already-approved proposal. Re-validates against current data first, so a stale proposal
 // (task deleted, project archived, ...) fails safely instead of acting on something that changed.
+// Applies one validated payload. Must run inside a transaction opened by the caller.
+export function applyValidated(type, p, ws, actor, ts) {
+  if (type === 'create_task') {
+    const col = db.prepare('SELECT id FROM columns WHERE project_id = ? ORDER BY position LIMIT 1').get(p.project_id);
+    if (!col) throw new Error('project has no columns');
+    const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM cards WHERE column_id = ?').get(col.id).n;
+    const id = nanoid();
+    db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, labels, position, created_at, updated_at, due_date, priority)
+      VALUES (?, ?, ?, '', 'todo', '', ?, '[]', ?, ?, ?, ?, ?)`).run(id, col.id, p.title, actor.name, pos, ts, ts, p.due_date, p.priority);
+    return { entity: 'task', id, project_id: p.project_id };
+  }
+  if (type === 'reschedule_task') {
+    db.prepare('UPDATE cards SET due_date = ?, updated_at = ? WHERE id = ?').run(p.due_date, ts, p.task_id);
+    return { entity: 'task', id: p.task_id, from: p.from ?? null, to: p.due_date };
+  }
+  if (type === 'create_event') {
+    const id = nanoid();
+    db.prepare(`INSERT INTO calendar_events (id, workspace_id, title, description, kind, all_day, start_local, end_local, timezone, recurrence,
+        recurrence_interval, recurrence_until, project_id, card_id, reminder_minutes, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', 1, NULL, ?, NULL, ?, ?, ?, ?)`)
+      .run(id, ws, p.title, p.description, p.kind, p.all_day, p.start_local, p.end_local, p.timezone, p.project_id, p.reminder_minutes ?? null, actor.id, ts, ts);
+    return { entity: 'calendar_event', id };
+  }
+  if (type === 'update_task') {
+    const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(p.task_id);
+    const next = { title: p.title ?? card.title, status: p.status ?? card.status, priority: p.priority ?? card.priority, due_date: 'due_date' in p ? p.due_date : card.due_date,
+      owner: p.owner ?? card.owner, labels: p.labels ? JSON.stringify(p.labels) : card.labels };
+    const completedAt = next.status === 'done' ? (card.completed_at || ts) : null;
+    db.prepare('UPDATE cards SET title = ?, status = ?, priority = ?, due_date = ?, owner = ?, labels = ?, completed_at = ?, updated_at = ? WHERE id = ?')
+      .run(next.title, next.status, next.priority, next.due_date, next.owner, next.labels, completedAt, ts, card.id);
+    if (next.status === 'done' && card.status !== 'done') spawnNextOccurrence({ ...card, ...next }, ts);
+    return { entity: 'task', id: card.id };
+  }
+  if (type === 'add_subtask') {
+    const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM subtasks WHERE card_id = ?').get(p.task_id).n;
+    const id = nanoid();
+    db.prepare('INSERT INTO subtasks (id, card_id, title, done, position, created_at) VALUES (?, ?, ?, 0, ?, ?)').run(id, p.task_id, p.title, pos, ts);
+    return { entity: 'task', id: p.task_id, subtask_id: id };
+  }
+  if (type === 'add_comment') {
+    db.prepare('INSERT INTO comments (id, card_id, author, text, created_at) VALUES (?, ?, ?, ?, ?)').run(nanoid(), p.task_id, actor.name, p.text, ts);
+    return { entity: 'task', id: p.task_id };
+  }
+  if (type === 'create_transaction') {
+    const id = nanoid();
+    db.prepare(`INSERT INTO transactions (id, workspace_id, type, status, amount_minor, currency, date, description, category_id, project_id, source, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ai', ?, ?, ?)`).run(id, ws, p.type, p.status, p.amount_minor, p.currency, p.date, p.description, p.category_id, p.project_id, actor.id, ts, ts);
+    return { entity: 'transaction', id };
+  }
+  if (type === 'categorize_transaction') {
+    db.prepare('UPDATE transactions SET category_id = ?, updated_at = ? WHERE id = ?').run(p.category_id, ts, p.transaction_id);
+    return { entity: 'transaction', id: p.transaction_id };
+  }
+  if (type === 'create_goal') {
+    const id = nanoid();
+    db.prepare("INSERT INTO goals (id, workspace_id, title, description, life_area_id, target_date, status, created_by, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?, 'active', ?, ?, ?)").run(id, ws, p.title, p.life_area_id, p.target_date, actor.id, ts, ts);
+    return { entity: 'goal', id };
+  }
+  if (type === 'add_milestone') {
+    const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM goal_milestones WHERE goal_id = ?').get(p.goal_id).n;
+    const id = nanoid();
+    db.prepare('INSERT INTO goal_milestones (id, goal_id, title, due_date, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, p.goal_id, p.title, p.due_date, pos, ts);
+    return { entity: 'goal', id: p.goal_id, milestone_id: id };
+  }
+  if (type === 'create_note') {
+    const id = nanoid();
+    db.prepare("INSERT INTO notes (id, workspace_id, author_id, kind, title, body, privacy, created_at, updated_at) VALUES (?, ?, ?, 'note', ?, ?, 'workspace', ?, ?)").run(id, ws, actor.id, p.title, p.body, ts, ts);
+    return { entity: 'note', id };
+  }
+  if (type === 'create_habit') {
+    const id = nanoid();
+    db.prepare('INSERT INTO habits (id, workspace_id, user_id, title, description, frequency, target_per_week, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, ws, actor.id, p.title, '', p.frequency, p.target_per_week, ts);
+    return { entity: 'habit', id };
+  }
+  if (type === 'create_automation') return { entity: 'automation', id: insertAutomation(ws, actor.id, p, 'assistant') };
+  // create_project
+  const id = nanoid();
+  db.prepare(`INSERT INTO projects (id, name, color, description, workspace_id, life_area_id, status, target_date, created_at, updated_at)
+    VALUES (?, ?, '#0ea5e9', ?, ?, ?, 'todo', ?, ?, ?)`).run(id, p.name, p.description, ws, p.life_area_id, p.target_date, ts, ts);
+  ['Backlog', 'In Progress', 'Done'].forEach((c, i) => db.prepare('INSERT INTO columns (id, project_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)').run(nanoid(), id, c, i, ts));
+  return { entity: 'project', id };
+
+}
+
+// Runs plan steps in order inside the caller's transaction. "@ref" in any argument is replaced by the id the
+// referenced earlier step created. Every step is validated against current data (including what earlier steps made).
+export function runPlan(steps, ws, actor) {
+  const refs = new Map(); const out = []; const ts = nowIso();
+  const resolve = (v) => (typeof v === 'string' && v.startsWith('@') ? (refs.has(v.slice(1)) ? refs.get(v.slice(1)) : (() => { throw new Error(`unknown reference ${v}`); })())
+    : Array.isArray(v) ? v.map(resolve) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolve(x)])) : v);
+  steps.forEach((s, i) => {
+    let args;
+    try { args = resolve(s.args); } catch (e) { throw new Error(`step ${i + 1}: ${e.message}`); }
+    const v = validateProposal(s.type, args, ws, actor);
+    if (v.error) throw new Error(`step ${i + 1} (${s.type.replace(/_/g, ' ')}): ${v.error}`);
+    const res = applyValidated(s.type, v.payload, ws, actor, ts);
+    if (s.ref) refs.set(s.ref, res.id);
+    out.push({ type: s.type, id: res.id ?? null, description: v.description });
+  });
+  return out;
+}
+
+// Executes an already-approved proposal. Re-validates against current data first, so a stale proposal
+// (task deleted, project archived, ...) fails safely instead of acting on something that changed.
 export function executeProposal(proposal, actor) {
   const ws = proposal.workspace_id;
-  const check = validateProposal(proposal.type, JSON.parse(proposal.payload), ws);
+  const payload = JSON.parse(proposal.payload);
+  if (proposal.type === 'setup_plan') {
+    return tx(() => { const created = runPlan(payload.steps, ws, actor); return { entity: 'plan', id: null, created }; });
+  }
+  const check = validateProposal(proposal.type, payload, ws, actor);
   if (check.error) throw new Error(`no longer valid: ${check.error}`);
-  const p = check.payload;
-  const ts = nowIso();
-  return tx(() => {
-    if (proposal.type === 'create_task') {
-      const col = db.prepare('SELECT id FROM columns WHERE project_id = ? ORDER BY position LIMIT 1').get(p.project_id);
-      if (!col) throw new Error('project has no columns');
-      const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM cards WHERE column_id = ?').get(col.id).n;
-      const id = nanoid();
-      db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, labels, position, created_at, updated_at, due_date, priority)
-        VALUES (?, ?, ?, '', 'todo', '', ?, '[]', ?, ?, ?, ?, ?)`).run(id, col.id, p.title, actor.name, pos, ts, ts, p.due_date, p.priority);
-      return { entity: 'task', id, project_id: p.project_id };
-    }
-    if (proposal.type === 'reschedule_task') {
-      db.prepare('UPDATE cards SET due_date = ?, updated_at = ? WHERE id = ?').run(p.due_date, ts, p.task_id);
-      return { entity: 'task', id: p.task_id, from: p.from ?? null, to: p.due_date };
-    }
-    if (proposal.type === 'create_event') {
-      const id = nanoid();
-      db.prepare(`INSERT INTO calendar_events (id, workspace_id, title, description, kind, all_day, start_local, end_local, timezone, recurrence,
-          recurrence_interval, recurrence_until, project_id, card_id, reminder_minutes, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', 1, NULL, ?, NULL, ?, ?, ?, ?)`)
-        .run(id, ws, p.title, p.description, p.kind, p.all_day, p.start_local, p.end_local, p.timezone, p.project_id, p.reminder_minutes ?? null, actor.id, ts, ts);
-      return { entity: 'calendar_event', id };
-    }
-    if (proposal.type === 'update_task') {
-      const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(p.task_id);
-      const next = { title: p.title ?? card.title, status: p.status ?? card.status, priority: p.priority ?? card.priority, due_date: 'due_date' in p ? p.due_date : card.due_date,
-        owner: p.owner ?? card.owner, labels: p.labels ? JSON.stringify(p.labels) : card.labels };
-      const completedAt = next.status === 'done' ? (card.completed_at || ts) : null;
-      db.prepare('UPDATE cards SET title = ?, status = ?, priority = ?, due_date = ?, owner = ?, labels = ?, completed_at = ?, updated_at = ? WHERE id = ?')
-        .run(next.title, next.status, next.priority, next.due_date, next.owner, next.labels, completedAt, ts, card.id);
-      if (next.status === 'done' && card.status !== 'done') spawnNextOccurrence({ ...card, ...next }, ts);
-      return { entity: 'task', id: card.id };
-    }
-    if (proposal.type === 'add_subtask') {
-      const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM subtasks WHERE card_id = ?').get(p.task_id).n;
-      const id = nanoid();
-      db.prepare('INSERT INTO subtasks (id, card_id, title, done, position, created_at) VALUES (?, ?, ?, 0, ?, ?)').run(id, p.task_id, p.title, pos, ts);
-      return { entity: 'task', id: p.task_id, subtask_id: id };
-    }
-    if (proposal.type === 'add_comment') {
-      db.prepare('INSERT INTO comments (id, card_id, author, text, created_at) VALUES (?, ?, ?, ?, ?)').run(nanoid(), p.task_id, actor.name, p.text, ts);
-      return { entity: 'task', id: p.task_id };
-    }
-    if (proposal.type === 'create_transaction') {
-      const id = nanoid();
-      db.prepare(`INSERT INTO transactions (id, workspace_id, type, status, amount_minor, currency, date, description, category_id, project_id, source, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ai', ?, ?, ?)`).run(id, ws, p.type, p.status, p.amount_minor, p.currency, p.date, p.description, p.category_id, p.project_id, actor.id, ts, ts);
-      return { entity: 'transaction', id };
-    }
-    if (proposal.type === 'categorize_transaction') {
-      db.prepare('UPDATE transactions SET category_id = ?, updated_at = ? WHERE id = ?').run(p.category_id, ts, p.transaction_id);
-      return { entity: 'transaction', id: p.transaction_id };
-    }
-    if (proposal.type === 'create_goal') {
-      const id = nanoid();
-      db.prepare("INSERT INTO goals (id, workspace_id, title, description, life_area_id, target_date, status, created_by, created_at, updated_at) VALUES (?, ?, ?, '', ?, ?, 'active', ?, ?, ?)").run(id, ws, p.title, p.life_area_id, p.target_date, actor.id, ts, ts);
-      return { entity: 'goal', id };
-    }
-    if (proposal.type === 'add_milestone') {
-      const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS n FROM goal_milestones WHERE goal_id = ?').get(p.goal_id).n;
-      const id = nanoid();
-      db.prepare('INSERT INTO goal_milestones (id, goal_id, title, due_date, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, p.goal_id, p.title, p.due_date, pos, ts);
-      return { entity: 'goal', id: p.goal_id, milestone_id: id };
-    }
-    if (proposal.type === 'create_note') {
-      const id = nanoid();
-      db.prepare("INSERT INTO notes (id, workspace_id, author_id, kind, title, body, privacy, created_at, updated_at) VALUES (?, ?, ?, 'note', ?, ?, 'workspace', ?, ?)").run(id, ws, actor.id, p.title, p.body, ts, ts);
-      return { entity: 'note', id };
-    }
-    if (proposal.type === 'create_habit') {
-      const id = nanoid();
-      db.prepare('INSERT INTO habits (id, workspace_id, user_id, title, description, frequency, target_per_week, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, ws, actor.id, p.title, '', p.frequency, p.target_per_week, ts);
-      return { entity: 'habit', id };
-    }
-    // create_project
-    const id = nanoid();
-    db.prepare(`INSERT INTO projects (id, name, color, description, workspace_id, life_area_id, status, target_date, created_at, updated_at)
-      VALUES (?, ?, '#0ea5e9', ?, ?, ?, 'todo', ?, ?, ?)`).run(id, p.name, p.description, ws, p.life_area_id, p.target_date, ts, ts);
-    ['Backlog', 'In Progress', 'Done'].forEach((c, i) => db.prepare('INSERT INTO columns (id, project_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)').run(nanoid(), id, c, i, ts));
-    return { entity: 'project', id };
-  });
+  return tx(() => applyValidated(proposal.type, check.payload, ws, actor, nowIso()));
 }
