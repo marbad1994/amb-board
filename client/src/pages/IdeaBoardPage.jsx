@@ -19,6 +19,17 @@ export default function IdeaBoardPage() {
     api.listIdeas().then(setNotes).catch((err) => setError(err.message));
   }, []);
 
+  const [quick, setQuick] = useState('');
+  const addQuick = async (e) => {
+    e.preventDefault();
+    const text = quick.trim(); if (!text) return;
+    try {
+      const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      const note = await api.createIdea({ author: name, text, color });
+      setNotes((prev) => [note, ...(prev || [])]); setQuick('');
+    } catch (err) { setError(err.message); }
+  };
+
   const addNote = async () => {
     try {
       const color = COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -77,11 +88,15 @@ export default function IdeaBoardPage() {
         </div>
       </div>
 
-      {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--color-danger-text)' }}>{error}</p>}
+      <form className="idea-quick" onSubmit={addQuick} aria-label="Quick add idea">
+        <input type="text" aria-label="Quick add idea" placeholder="Type an idea and press Enter" maxLength={2000} value={quick} onChange={(e) => setQuick(e.target.value)} />
+        <button type="submit" className="btn btn-primary" disabled={!quick.trim()}><Plus size={16} aria-hidden="true" /> Add idea</button>
+      </form>
 
       {notes === null && <p>Loading…</p>}
 
-      {notes && notes.length === 0 && <div className="empty-state">No ideas yet. Tap + to add one.</div>}
+      {notes && notes.length === 0 && <div className="empty-state">No ideas yet. Type one above and press Enter.</div>}
 
       {notes && notes.length > 0 && (
         <div className="postit-grid">

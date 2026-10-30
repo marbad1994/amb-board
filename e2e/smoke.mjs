@@ -293,6 +293,7 @@ try {
     await eur.waitFor();
     assert.match(await eur.innerText(), /Expenses\s*€2,500\.00/);
     assert.match(await eur.innerText(), /Planned\s*€10,000\.00/);
+    await page.getByRole('button', { name: 'Add transaction' }).click();
     await page.getByLabel('Type').selectOption('income');
     await page.getByLabel('Amount', { exact: true }).fill('3000');
     await page.getByLabel('Description').first().fill('Salary');
@@ -404,6 +405,7 @@ try {
     await page.getByRole('textbox', { name: 'Entry' }).fill('Good day, finished the flooring plan.');
     await page.getByRole('button', { name: 'Save' }).click();
     await page.getByText('Good day, finished the flooring plan.').waitFor();
+    await page.getByRole('button', { name: 'New entry' }).click();
     await page.getByText('Private to you', { exact: true }).waitFor();
     await page.getByLabel('Search notes').fill('flooring');
     await page.getByText('Good day, finished').waitFor();
@@ -648,9 +650,9 @@ try {
 
   await step('idea converts to a project and stays linked', async () => {
     await page.getByRole('link', { name: 'Idea Board' }).click();
-    await page.getByRole('button', { name: 'Add idea' }).click();
-    await page.getByPlaceholder('Type or dictate an idea').fill('Reading tracker for books');
-    await page.waitForTimeout(700); // debounce save
+    await page.getByPlaceholder('Type an idea and press Enter').fill('Reading tracker for books');
+    await page.getByPlaceholder('Type an idea and press Enter').press('Enter');
+    await page.getByText('Reading tracker for books').first().waitFor();
     page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Convert idea to project' }).click();
     await page.waitForURL(/\/projects\//);

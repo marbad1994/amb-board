@@ -30,7 +30,7 @@ function GoalCard({ g, projects, writable, reload, onError }) {
         ))}
       </ul>
       {writable && (
-        <form className="inline-form inline-form--wide" onSubmit={(e) => { e.preventDefault(); act(async () => { await api.addMilestone(g.id, ms.title, ms.due); setMs({ title: '', due: '' }); }); }}>
+        <form className="inline-form ms-form" onSubmit={(e) => { e.preventDefault(); act(async () => { await api.addMilestone(g.id, ms.title, ms.due); setMs({ title: '', due: '' }); }); }}>
           <input type="text" aria-label={`New milestone for ${g.title}`} placeholder="Add milestone" maxLength={200} value={ms.title} onChange={(e) => setMs({ ...ms, title: e.target.value })} />
           <input type="date" aria-label="Milestone due date" value={ms.due} onChange={(e) => setMs({ ...ms, due: e.target.value })} />
           <button type="submit" className="btn btn-icon" aria-label="Add milestone" disabled={!ms.title.trim()}><Plus size={16} /></button>

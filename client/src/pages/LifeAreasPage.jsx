@@ -9,6 +9,7 @@ function AreaCard({ area, manage, onChange, onError }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ name: area.name, description: area.description });
   const [sub, setSub] = useState('');
+  const [subOpen, setSubOpen] = useState(false);
   const archived = !!area.archived_at;
 
   const run = async (fn) => {
@@ -86,10 +87,11 @@ function AreaCard({ area, manage, onChange, onError }) {
           ))}
         </ul>
       )}
-      {manage && !archived && (
-        <form className="inline-form" onSubmit={addSub}>
-          <input type="text" aria-label={`Add subcategory to ${area.name}`} placeholder="Add subcategory" maxLength={80}
-            value={sub} onChange={(e) => setSub(e.target.value)} />
+      {manage && !archived && !subOpen && <button type="button" className="btn btn-ghost btn-small" onClick={() => setSubOpen(true)}><Plus size={14} aria-hidden="true" /> Add subcategory</button>}
+      {manage && !archived && subOpen && (
+        <form className="inline-form inline-form--nowrap" onSubmit={(e) => { addSub(e); setSubOpen(false); }}>
+          <input type="text" autoFocus aria-label={`Add subcategory to ${area.name}`} placeholder="Subcategory name" maxLength={80}
+            value={sub} onChange={(e) => setSub(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setSubOpen(false)} />
           <button type="submit" className="btn btn-icon" aria-label="Add subcategory" disabled={!sub.trim()}><Plus size={16} /></button>
         </form>
       )}
