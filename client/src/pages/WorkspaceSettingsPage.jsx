@@ -207,7 +207,29 @@ function AssistantSettings() {
         <div style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-primary" disabled={busy}>Connect</button></div>
       </form>
       {msg && <p className="hint" role="status">{msg}</p>}
+      <AssistantQuality />
     </section>
+  );
+}
+
+function AssistantQuality() {
+  const [q, setQ] = useState(null);
+  useEffect(() => { api.assistantQuality().then(setQ).catch(() => setQ(false)); }, []);
+  if (q === false) return null;
+  const pct = (v) => (v == null ? 'no data yet' : `${v}%`);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <h3 style={{ fontSize: 14 }}>How the assistant is doing for you (last 30 days)</h3>
+      {!q ? <p className="muted">Loading...</p> : (
+        <ul className="plain-list" aria-label="Assistant quality">
+          <li><span>Answers given</span><b>{q.turns}</b></li>
+          <li><span>Could not answer (fallback rate)</span><b>{pct(q.fallback_rate_pct)}</b></li>
+          <li><span>Thumbs up / down</span><b>{q.thumbs.up} / {q.thumbs.down} ({pct(q.thumbs.satisfied_pct)} satisfied)</b></li>
+          <li><span>Proposed changes you approved</span><b>{q.proposals.approved} of {q.proposals.approved + q.proposals.rejected} decided ({pct(q.proposals.approval_rate_pct)})</b></li>
+        </ul>
+      )}
+      <p className="hint">Only your own conversations count. Use the thumbs under an answer to tell it what was good or poor.</p>
+    </div>
   );
 }
 

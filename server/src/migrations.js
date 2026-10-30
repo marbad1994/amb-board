@@ -635,6 +635,7 @@ export const migrations = [
   { id: '015_browser_assistant', up: (db) => db.exec(browserTables) },
   { id: '016_email_flows', up: (db) => db.exec(emailFlows) },
   { id: '017_assistant_skills', up: (db) => db.exec(assistantSkills) },
+  { id: '018_assistant_quality', up: (db) => db.exec(assistantQuality) },
 ];
 
 const automationsTables = `
@@ -697,6 +698,16 @@ CREATE TABLE browser_commands (
   kind TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', result TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, done_at TEXT
 );
 CREATE INDEX idx_browser_commands_pending ON browser_commands (pairing_id, status, created_at);
+`;
+
+const assistantQuality = `
+ALTER TABLE ai_messages ADD COLUMN feedback TEXT CHECK (feedback IN ('up','down'));
+CREATE TABLE ai_turns (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL, message_id TEXT NOT NULL, outcome TEXT NOT NULL, rounds INTEGER NOT NULL DEFAULT 0, tool_calls INTEGER NOT NULL DEFAULT 0,
+  proposals INTEGER NOT NULL DEFAULT 0, dropped INTEGER NOT NULL DEFAULT 0, skill TEXT, derived_suggestions INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+);
+CREATE INDEX idx_ai_turns_user ON ai_turns (user_id, created_at);
 `;
 
 const assistantSkills = `

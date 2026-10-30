@@ -102,6 +102,38 @@ router.get('/skills', (req, res) => {
   });
 });
 
+// ---- quality: thumbs on answers and a summary of how the assistant is doing for you ----
+router.post('/messages/:id/feedback', (req, res) => {
+  const value = req.body.value === 'up' ? 'up' : req.body.value === 'down' ? 'down' : req.body.value === '' || req.body.value === null ? null : undefined;
+  if (value === undefined) return res.status(400).json({ error: 'value must be "up", "down" or empty' });
+  const m = db.prepare(`SELECT m.id FROM ai_messages m JOIN ai_conversations c ON c.id = m.conversation_id
+    WHERE m.id = ? AND m.role = 'assistant' AND c.workspace_id = ? AND c.user_id = ?`).get(req.params.id, req.ws.id, req.user.id);
+  if (!m) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE ai_messages SET feedback = ? WHERE id = ?').run(value, m.id);
+  res.json({ feedback: value });
+});
+router.get('/quality', (req, res) => {
+  const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  const turns = db.prepare('SELECT outcome, COUNT(*) AS n FROM ai_turns WHERE workspace_id = ? AND user_id = ? AND created_at >= ? GROUP BY outcome').all(req.ws.id, req.user.id, since);
+  const total = turns.reduce((a, t) => a + t.n, 0);
+  const n = (o) => turns.filter((t) => o.includes(t.outcome)).reduce((a, t) => a + t.n, 0);
+  const fb = db.prepare(`SELECT m.feedback AS f, COUNT(*) AS n FROM ai_messages m JOIN ai_conversations c ON c.id = m.conversation_id
+    WHERE c.workspace_id = ? AND c.user_id = ? AND m.feedback IS NOT NULL AND m.created_at >= ? GROUP BY m.feedback`).all(req.ws.id, req.user.id, since);
+  const up = fb.find((x) => x.f === 'up')?.n ?? 0; const down = fb.find((x) => x.f === 'down')?.n ?? 0;
+  const props = db.prepare('SELECT status, COUNT(*) AS n FROM ai_action_proposals WHERE workspace_id = ? AND user_id = ? AND created_at >= ? GROUP BY status').all(req.ws.id, req.user.id, since);
+  const p = (s) => props.find((x) => x.status === s)?.n ?? 0;
+  const decided = p('approved') + p('rejected');
+  const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : null);
+  res.json({
+    days, turns: total,
+    fallback_rate_pct: pct(n(['parse_error', 'budget_exhausted']), total),
+    outcomes: Object.fromEntries(turns.map((t) => [t.outcome, t.n])),
+    thumbs: { up, down, satisfied_pct: pct(up, up + down) },
+    proposals: { approved: p('approved'), rejected: p('rejected'), failed: p('failed'), expired: p('expired'), approval_rate_pct: pct(p('approved'), decided) },
+  });
+});
+
 // ---- slash skills: built in plus the ones the user imported (private to them, per workspace) ----
 router.get('/skills/library', (req, res) => res.json(listSkills(req.ws.id, req.user.id)));
 router.post('/skills/import', (req, res) => {
