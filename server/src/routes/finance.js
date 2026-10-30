@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { emit } from '../automations/engine.js';
 import { nanoid } from 'nanoid';
 import { db, nowIso, tx } from '../db.js';
-import { projectInWs, requirePermission, audit } from '../access.js';
+import { projectInWs, requirePermission, audit, can } from '../access.js';
 import { parseDate, todayUtc, escapeLike } from '../validate.js';
 import { CURRENCY_RE, parseMinor, nextOccurrence } from '../finance/money.js';
 import { projectBudgetMetrics } from '../finance/calc.js';
+import { categoryUsage, removeCategory, planCategoryRemoval } from '../categories.js';
 
 const router = Router();
 export const projectFinanceRouter = Router(); // mounted under /api/projects
@@ -73,6 +74,18 @@ router.post('/categories', (req, res) => {
   const id = nanoid();
   db.prepare('INSERT INTO transaction_categories (id, workspace_id, name, parent_id, created_at) VALUES (?, ?, ?, ?, ?)').run(id, req.ws.id, name, parent?.id ?? null, nowIso());
   res.status(201).json({ id, name, parent_id: parent?.id ?? null });
+});
+router.get('/categories/:id/usage', (req, res) => {
+  if (!catInWs(req.params.id, req.ws.id)) return res.status(404).json({ error: 'category not found' });
+  res.json(categoryUsage(req.ws.id, req.params.id));
+});
+// Entries in the category move to ?move_to (or become uncategorised); sub-categories become top level; its budget limits go with it.
+router.delete('/categories/:id', (req, res) => {
+  const plan = planCategoryRemoval(req.ws.id, req.ws.role, can, req.params.id, req.query.move_to || req.body?.move_to);
+  if (plan.error) return res.status(plan.error === 'unknown category' ? 404 : plan.error.includes('only an owner') ? 403 : 400).json({ error: plan.error });
+  tx(() => removeCategory(req.ws.id, plan.cat.id, plan.moveTo?.id ?? null));
+  audit(req, 'category.delete', 'category', plan.cat.id, { name: plan.cat.name, moved_to: plan.moveTo?.id ?? null, ...plan.usage });
+  res.json({ ok: true, ...plan.usage });
 });
 
 // ---------- transactions ----------
