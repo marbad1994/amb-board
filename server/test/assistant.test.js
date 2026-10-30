@@ -201,7 +201,7 @@ test('S20 prompt injection: hostile task text is data only; unknown tools and en
   const res = await ask('summarise my tasks');
   assert.equal(res.status, 200);
   assert.equal(requests.length, 4, 'loop stops after the tool budget');
-  assert.match(res.json.message.content, /could not complete/i);
+  assert.match(res.json.message.content, /ran out of steps/i);
   const round2 = requests[1][1].content;
   assert.equal(round2.split('</data>').length, 2, 'hostile text cannot close the data block');
   assert.ok(!requests[0][0].content.includes('IGNORE PREVIOUS'));
@@ -216,11 +216,12 @@ test('input limits, empty message, unreadable model output, unconfigured provide
   const { u, ask } = await world('Lim');
   assert.equal((await ask('   ')).status, 400);
   assert.equal((await ask('x'.repeat(2001))).status, 400);
-  reset(['this is not json']);
-  assert.equal((await ask('hello')).status, 502);
-  assert.equal((await u.c.get('/api/ai/assistant/conversations')).json.length, 1, 'failed turn still leaves the new conversation empty, no messages stored');
-  const conv = (await u.c.get(`/api/ai/assistant/conversations/${(await u.c.get('/api/ai/assistant/conversations')).json[0].id}`)).json;
-  assert.equal(conv.messages.length, 0);
+  reset(['{"broken json', '{"still broken']);
+  const bad = await ask('hello');
+  assert.equal(bad.status, 200, 'unreadable output is a readable answer with options, not an error');
+  assert.match(bad.json.message.content, /could not read my own answer/);
+  assert.equal(bad.json.message.suggestions.length, 3);
+  assert.equal((await u.c.get('/api/ai/assistant/conversations')).json.length, 1);
   const k = process.env.DEEPSEEK_API_KEY; delete process.env.DEEPSEEK_API_KEY;
   assert.equal((await ask('hello')).status, 503);
   process.env.DEEPSEEK_API_KEY = k;

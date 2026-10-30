@@ -12,6 +12,7 @@ const MAX_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 3;
 const MAX_PROPOSALS = 5;
 const PROPOSAL_TTL_MS = 24 * 3600_000;
+const FALLBACK_CHIPS = ['Give me an overview', 'What is overdue?', 'What can you do?'];
 
 const SYSTEM = `You are the assistant inside AMB Board, a life-management app (projects, tasks, calendar, finance, goals, habits, notes). You are always available next to whatever page the user is on, and you help one signed-in user understand, plan and act on their own data.
 
@@ -73,7 +74,7 @@ export function getConversation(ws, userId, id) {
   if (!conv) return null;
   expireOld();
   const proposals = db.prepare('SELECT * FROM ai_action_proposals WHERE conversation_id = ? ORDER BY created_at').all(conv.id).map(presentProposal);
-  const messages = db.prepare('SELECT id, role, content, tool_trace, created_at FROM ai_messages WHERE conversation_id = ? ORDER BY created_at, rowid').all(conv.id)
+  const messages = db.prepare('SELECT id, role, content, tool_trace, feedback, created_at FROM ai_messages WHERE conversation_id = ? ORDER BY created_at, rowid').all(conv.id)
     .map((m) => { const t = JSON.parse(m.tool_trace); return { ...m, tool_trace: Array.isArray(t) ? t : t.calls || [], artifacts: Array.isArray(t) ? [] : t.artifacts || [], suggestions: Array.isArray(t) ? [] : t.suggestions || [], proposals: proposals.filter((p) => p.message_id === m.id) }; });
   return { id: conv.id, title: conv.title, skill: conv.active_skill ?? null, messages };
 }
@@ -126,14 +127,27 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
   const trace = [];
   const results = [];
   const artifacts = [];
+  let outcome = final ? 'command' : 'ok'; let rounds = 0;
   for (let round = 0; round <= MAX_ROUNDS && !final; round += 1) {
     const forceFinal = round === MAX_ROUNDS;
-    const { text } = await complete({ workspaceId, userId: user.id, purpose: 'assistant' }, {
-      system: (forceFinal ? `${SYSTEM}\n\nTool budget exhausted: reply now with {"type":"final",...} using only what you have.` : SYSTEM) + skillBlock,
-      user: `<question>${userText.replace(/</g, '\\u003c')}</question>\n<data>${esc({ today: todayUtc(), user: { name: user.name, role }, workspace: workspaceDigest(workspaceId, user.id), current_view: resolveContext(workspaceId, context), conversation: history, tool_results: results })}</data>`,
-    });
+    rounds = round + 1;
+    const ctxAi = { workspaceId, userId: user.id, purpose: 'assistant' };
+    const system = (forceFinal ? `${SYSTEM}\n\nTool budget exhausted: reply now with {"type":"final",...} using only what you have.` : SYSTEM) + skillBlock;
+    const prompt = `<question>${userText.replace(/</g, '\\u003c')}</question>\n<data>${esc({ today: todayUtc(), user: { name: user.name, role }, workspace: workspaceDigest(workspaceId, user.id), current_view: resolveContext(workspaceId, context), conversation: history, tool_results: results })}</data>`;
+    let raw = (await complete(ctxAi, { system, user: prompt })).text;
     let out;
-    try { out = parseJson(text); } catch { throw new AiFailureError('The AI service returned an unreadable answer. Try again.'); }
+    // an unreadable reply gets one more try; after that plain prose is shown as it is, never a dead error
+    for (let attempt = 0; attempt < 2 && out === undefined; attempt += 1) {
+      try { out = parseJson(raw); } catch {
+        if (attempt === 0) raw = (await complete(ctxAi, { system, user: `${prompt}\n<fix>Your previous reply was not valid JSON. Reply again with ONLY one valid JSON object in one of the two shapes.</fix>` })).text;
+      }
+    }
+    if (out === undefined) {
+      const prose = String(raw).trim();
+      if (prose && !/^[[{]/.test(prose)) { final = { answer: prose, proposals: [] }; outcome = 'plain_text'; }
+      else { final = { answer: 'I could not read my own answer just now. Try again, or pick one of these:', proposals: [] }; outcome = 'parse_error'; }
+      break;
+    }
     if (out?.type === 'tool' && Array.isArray(out.calls) && !forceFinal) {
       for (const call of out.calls.slice(0, MAX_CALLS_PER_ROUND)) {
         const name = String(call?.tool ?? '');
@@ -146,12 +160,13 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
     } else if (out?.type === 'final' && typeof out.answer === 'string') {
       final = out;
     } else if (forceFinal) {
-      final = { answer: 'I could not complete that request. Please try rephrasing it.', proposals: [] };
+      final = { answer: results.length ? 'I looked at your data but ran out of steps before I could answer. Ask a narrower question, or pick one of these:' : 'I am not sure what you want me to do. Pick one of these, or say it another way:', proposals: [] };
+      outcome = 'budget_exhausted';
     }
   }
 
   const answer = clip(final.answer.trim(), 4000) || 'No answer.';
-  const suggestions = (Array.isArray(final.suggestions) ? final.suggestions : []).map((x) => String(x?.label ?? x ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean).slice(0, 4);
+  let suggestions = (Array.isArray(final.suggestions) ? final.suggestions : []).map((x) => String(x?.label ?? x ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean).slice(0, 4);
   if (final.done === true) activeNow = null;
   db.prepare('UPDATE ai_conversations SET active_skill = ? WHERE id = ?').run(activeNow, conv.id);
   const dropped = [];
@@ -164,11 +179,22 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
     accepted.push({ type, ...v });
   }
 
+  // every answer leaves the user something to click: when the model gave no options, derive sensible ones
+  let derived = 0;
+  if (!suggestions.length && !accepted.length) {
+    suggestions = outcome === 'parse_error' || outcome === 'budget_exhausted' ? FALLBACK_CHIPS
+      : dropped.length ? ['Try again', 'Tell me what to change']
+        : activeNow ? ['Go on', '/stop']
+          : /\?\s*$/.test(answer) ? ['Yes', 'No', 'Something else'] : [];
+    derived = suggestions.length ? 1 : 0;
+  }
   const userMsgId = nanoid();
   const asstMsgId = nanoid();
   db.prepare('INSERT INTO ai_messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)').run(userMsgId, conv.id, 'user', message, nowIso());
   db.prepare('INSERT INTO ai_messages (id, conversation_id, role, content, tool_trace, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(asstMsgId, conv.id, 'assistant', answer, JSON.stringify({ calls: trace, artifacts, suggestions, skill: activeNow }), new Date(Date.now() + 1).toISOString());
+  db.prepare('INSERT INTO ai_turns (id, workspace_id, user_id, conversation_id, message_id, outcome, rounds, tool_calls, proposals, dropped, skill, derived_suggestions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(nanoid(), workspaceId, user.id, conv.id, asstMsgId, outcome, rounds, trace.length, accepted.length, dropped.length, skill?.name ?? null, derived, nowIso());
   const exp = new Date(Date.now() + PROPOSAL_TTL_MS).toISOString();
   const proposals = accepted.map((a) => {
     const id = nanoid();

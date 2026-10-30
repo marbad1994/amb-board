@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, FileBarChart, Loader2, Pencil, Send, Square, X } from 'lucide-react';
+import { Check, FileBarChart, Loader2, Pencil, Send, Square, ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { api } from '../api/client.js';
 
 // Proposals that can also be opened in the normal form to edit before saving.
@@ -86,6 +86,12 @@ export default function AssistantChat({ conversationId, onConversation, context,
   const slashMatches = /^\/[\w-]*$/.test(text) ? library.filter((s) => `/${s.name}`.startsWith(text.toLowerCase())).slice(0, 6) : [];
   const lastIdx = messages.length - 1;
 
+  const rate = async (m, value) => {
+    const next = m.feedback === value ? '' : value;
+    setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, feedback: next || null } : x)));
+    try { await api.rateMessage(m.id, next); } catch (err) { setError(err.message); setMessages((ms) => ms.map((x) => (x.id === m.id ? { ...x, feedback: m.feedback ?? null } : x))); }
+  };
+
   const update = (u) => setMessages((ms) => ms.map((m) => ({ ...m, proposals: (m.proposals || []).map((p) => (p.id === u.id ? { ...p, ...u } : p)) })));
 
   // "Edit first": open the real form with the proposed values filled in
@@ -117,6 +123,12 @@ export default function AssistantChat({ conversationId, onConversation, context,
             {m.role === 'assistant' && m.suggestions?.length > 0 && i === lastIdx && !busy && writable && (
               <div className="chat__suggest" role="group" aria-label="Suggested replies">
                 {m.suggestions.map((sg) => <button key={sg} type="button" className="chip" onClick={() => send(sg)}>{sg}</button>)}
+              </div>
+            )}
+            {m.role === 'assistant' && !String(m.id).startsWith('tmp-') && (
+              <div className="chat__rate" role="group" aria-label="Rate this answer">
+                <button type="button" className="btn btn-icon btn-ghost" aria-label="Good answer" aria-pressed={m.feedback === 'up'} onClick={() => rate(m, 'up')}><ThumbsUp size={14} aria-hidden="true" /></button>
+                <button type="button" className="btn btn-icon btn-ghost" aria-label="Poor answer" aria-pressed={m.feedback === 'down'} onClick={() => rate(m, 'down')}><ThumbsDown size={14} aria-hidden="true" /></button>
               </div>
             )}
             {m.role === 'assistant' && <small className="hint">AI-generated. It can be wrong; check figures in the app.</small>}
