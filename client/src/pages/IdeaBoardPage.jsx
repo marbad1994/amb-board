@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Trash2, FolderPlus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
@@ -7,6 +7,25 @@ import DictationButton from '../components/DictationButton.jsx';
 import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 
 const COLORS = ['#fde68a', '#fca5a5', '#a7f3d0', '#93c5fd', '#ddd6fe', '#fbcfe8'];
+const COLOR_NAMES = { '#fde68a': 'Yellow', '#fca5a5': 'Red', '#a7f3d0': 'Green', '#93c5fd': 'Blue', '#ddd6fe': 'Violet', '#fbcfe8': 'Pink' };
+
+const initials = (name) => (name || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+const shortDate = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); };
+
+// A textarea that grows with its text, so a whole idea is always readable without an inner scrollbar.
+function AutoTextarea({ value, ...props }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return undefined;
+    const fit = () => { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; };
+    fit();
+    const box = el.parentElement; let width = box.clientWidth;
+    const watch = new ResizeObserver(() => { if (box.clientWidth !== width) { width = box.clientWidth; fit(); } });
+    watch.observe(box);
+    return () => watch.disconnect();
+  }, [value]);
+  return <textarea ref={ref} rows={3} value={value} {...props} />;
+}
 
 export default function IdeaBoardPage() {
   const { name } = useIdentity();
@@ -99,50 +118,59 @@ export default function IdeaBoardPage() {
       {notes && notes.length === 0 && <div className="empty-state">No ideas yet. Type one above and press Enter.</div>}
 
       {notes && notes.length > 0 && (
-        <div className="postit-grid">
+        <div className="idea-grid">
           {notes.map((note) => (
-            <div key={note.id} className="postit" style={{ background: note.color }}>
-              <button
-                type="button"
-                className="postit__delete"
-                onClick={() => deleteNote(note.id)}
-                title="Delete note"
-              >
-                <Trash2 size={14} />
-              </button>
-              <div className="postit__row">
-                <textarea
+            <article key={note.id} className="idea" style={{ '--note': note.color }}>
+              <header className="idea__head">
+                <span className="idea__who">
+                  <span className="idea__avatar" aria-hidden="true">{initials(note.author)}</span>
+                  <span className="idea__name">{note.author || 'Anonymous'}</span>
+                  {shortDate(note.created_at) && <time className="idea__date" dateTime={note.created_at}>{shortDate(note.created_at)}</time>}
+                </span>
+                <button type="button" className="idea__icon idea__delete" onClick={() => deleteNote(note.id)} title="Delete idea" aria-label="Delete idea">
+                  <Trash2 size={16} aria-hidden="true" />
+                </button>
+              </header>
+              <div className="idea__body">
+                <AutoTextarea
+                  className="idea__text"
                   value={note.text}
+                  aria-label="Idea"
                   placeholder="Type or dictate an idea…"
                   onChange={(e) => updateLocalText(note.id, e.target.value)}
                 />
-                <DictationButton
-                  onText={(text) => updateLocalText(note.id, `${note.text ? note.text + ' ' : ''}${text}`)}
-                />
               </div>
-              <div className="postit__footer">
-                <span className="postit__author">{note.author || 'Anonymous'}</span>
-                {note.converted_project_id ? (
-                  <Link className="postit__convert" to={`/projects/${note.converted_project_id}`}>Project created</Link>
-                ) : (
-                  <button type="button" className="postit__convert" onClick={() => convert(note)} disabled={!note.text.trim()}
-                    aria-label="Convert idea to project"><FolderPlus size={14} aria-hidden="true" /> To project</button>
-                )}
-                {note.text.trim() && <CopyToWorkspace entity="idea" id={note.id} label="idea" className="postit__convert" iconOnly />}
-                <div className="color-swatches">
+              <footer className="idea__foot">
+                <div className="idea__actions">
+                  {note.converted_project_id ? (
+                    <Link className="idea__btn" to={`/projects/${note.converted_project_id}`}><FolderPlus size={16} aria-hidden="true" /> Project created</Link>
+                  ) : (
+                    <button type="button" className="idea__btn" onClick={() => convert(note)} disabled={!note.text.trim()} aria-label="Convert idea to project">
+                      <FolderPlus size={16} aria-hidden="true" /> To project
+                    </button>
+                  )}
+                  {note.text.trim() && <CopyToWorkspace entity="idea" id={note.id} label="idea" className="idea__icon" iconOnly />}
+                  <DictationButton
+                    className="idea__mic"
+                    onText={(text) => updateLocalText(note.id, `${note.text ? note.text + ' ' : ''}${text}`)}
+                  />
+                </div>
+                <div className="idea__swatches" role="group" aria-label="Idea color">
                   {COLORS.map((c) => (
                     <button
                       key={c}
                       type="button"
-                      className={`color-swatch ${note.color === c ? 'is-active' : ''}`}
+                      className={`idea__swatch ${note.color === c ? 'is-active' : ''}`}
                       style={{ background: c }}
+                      aria-pressed={note.color === c}
+                      aria-label={COLOR_NAMES[c]}
+                      title={COLOR_NAMES[c]}
                       onClick={() => updateColor(note.id, c)}
-                      title="Change color"
                     />
                   ))}
                 </div>
-              </div>
-            </div>
+              </footer>
+            </article>
           ))}
         </div>
       )}

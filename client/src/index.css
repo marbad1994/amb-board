@@ -821,90 +821,202 @@ textarea {
   box-shadow: var(--shadow-elevated);
 }
 
-.postit-grid {
+.idea-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 14px;
-  max-width: 1100px;
-  margin: 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+  align-items: start;
 }
 
-.postit {
-  border-radius: 6px;
-  padding: 14px;
-  padding-top: 34px;
-  min-height: 160px;
-  box-shadow: var(--shadow-card);
+/* One idea. The note colour tints a theme surface instead of filling the card, so the text keeps its normal contrast in both themes. */
+.idea {
+  --note-mix: 38%;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  position: relative;
+  padding: 12px 16px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--note) 60%, var(--color-border));
+  border-top: 4px solid var(--note);
+  background: color-mix(in srgb, var(--note) var(--note-mix), var(--color-surface));
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
-.postit__row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex: 1;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .idea { --note-mix: 12%; }
 }
 
-.postit textarea {
-  flex: 1;
-  border: none;
-  background: transparent;
-  resize: none;
-  font-size: 14px;
-  line-height: 1.4;
-  color: #1c1f26;
-  min-height: 60px;
+:root[data-theme='dark'] .idea { --note-mix: 12%; }
+
+.idea:focus-within {
+  border-color: var(--note);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--note) 55%, transparent), var(--shadow-card);
 }
 
-.postit textarea:focus {
-  outline: none;
-}
-
-.postit__footer {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.postit__author {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(28, 31, 38, 0.6);
-}
-
-.postit__delete {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.5);
+.idea__head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: rgba(28, 31, 38, 0.7);
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.color-swatches {
+.idea__who {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 
-.color-swatch {
-  width: 22px;
-  height: 22px;
+.idea__avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 2px solid transparent;
+  background: var(--note);
+  color: #1c1f26;
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.color-swatch.is-active {
-  border-color: var(--color-text);
+.idea__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.idea__date::before {
+  content: '\00b7';
+  margin-right: 8px;
+}
+
+.idea__text {
+  display: block;
+  width: 100%;
+  min-height: 4.6em;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.idea__text::placeholder { color: var(--color-text-muted); }
+
+.idea__text:focus { outline: none; }
+
+.idea__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+
+.idea__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.idea__btn,
+.idea__icon,
+.idea .dictation__mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.idea__btn {
+  padding: 0 12px;
+  margin-right: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-text) 25%, transparent);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.idea__btn:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary-text); }
+
+.idea__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.idea__icon,
+.idea .dictation__mic {
+  width: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.idea .dictation__mic.is-listening {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.idea__icon:hover,
+.idea .dictation__mic:hover:not(.is-listening) {
+  background: color-mix(in srgb, var(--color-text) 10%, transparent);
+  color: var(--color-text);
+}
+
+.idea__delete:hover {
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  color: var(--color-danger-text);
+}
+
+.idea__btn:focus-visible,
+.idea__icon:focus-visible,
+.idea .dictation__mic:focus-visible,
+.idea__swatch:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.idea__swatches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.idea__swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-text) 30%, transparent);
+}
+
+.idea__swatch.is-active {
+  box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-text);
+}
+
+@media (pointer: coarse) {
+  .idea__btn,
+  .idea__icon,
+  .idea .dictation__mic { min-height: 44px; }
+  .idea__icon,
+  .idea .dictation__mic { width: 44px; }
+  .idea__swatch { width: 24px; height: 24px; }
 }
 
 /* ---------- Identity modal ---------- */
@@ -1875,7 +1987,6 @@ input[type='password'] {
 .task-list__main a { font-size: 14px; font-weight: 600; text-decoration: none; }
 .task-list__main small { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--color-text-muted); font-size: 12px; }
 
-.postit__convert { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 12px; font-weight: 700; color: #1c1f26; background: #ffffffaa; border: 1px solid #00000022; border-radius: 6px; text-decoration: none; }
 
 /* ---------- AI summaries ---------- */
 .ai-card { margin: 16px 0; padding: 16px; border-radius: 14px; color: #e8f3fa; background: linear-gradient(120deg, #142c48, #163b4e); }
