@@ -58,7 +58,7 @@ router.post('/proposals/:id/approve', async (req, res) => {
   const claimed = db.prepare("UPDATE ai_action_proposals SET status = 'approved', decided_at = ?, decided_by = ? WHERE id = ? AND status = 'pending'").run(nowIso(), req.user.id, p.id);
   if (!Number(claimed.changes)) return res.status(409).json({ error: 'proposal is already decided' });
   try {
-    const result = await executeProposalAsync(p, req.user);
+    const result = await executeProposalAsync(p, req.user, { token: typeof req.body?.token === 'string' ? req.body.token : '' });
     db.prepare('UPDATE ai_action_proposals SET result = ? WHERE id = ?').run(JSON.stringify(result), p.id);
     audit(req, 'ai.action_executed', result.entity, result.id ?? '', { proposal: p.id, type: p.type, description: p.description });
     res.json(presentProposal(db.prepare('SELECT * FROM ai_action_proposals WHERE id = ?').get(p.id)));

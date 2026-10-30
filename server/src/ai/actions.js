@@ -9,22 +9,24 @@ import { goalInWs } from '../routes/goals.js';
 import { todayUtc } from '../validate.js';
 import { findServer, cachedTools } from './mcpServers.js';
 import { callTool } from './mcpClient.js';
+import { MORE_DOCS, MORE_TYPES, MORE_ASYNC, MORE_DESTRUCTIVE, MORE_PERSONAL, validateMore, applyMore, applyMoreAsync } from './actionsMore.js';
 import { validateTrigger, validateSteps, describeTrigger, insertAutomation, automationCount, MAX_AUTOMATIONS, STEP_DOCS } from '../automations/spec.js';
 
 // The ONLY change types the assistant may propose. Anything else (budgets, deletes, members, roles,
 // permissions, external messages...) is dropped at proposal time and could not be executed anyway:
 // there is no executor for it.
 export const ACTION_TYPES = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_event', 'create_project', 'create_transaction',
-  'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit', 'create_automation', 'setup_plan', 'call_external_tool'];
+  'categorize_transaction', 'create_goal', 'add_milestone', 'create_note', 'create_habit', 'create_automation', 'setup_plan', 'call_external_tool', ...MORE_TYPES];
 // Types that only make sense for the signed-in person's own assistant: never offered to MCP clients, never inside a plan, never auto-approved.
-export const PERSONAL_ONLY = new Set(['call_external_tool', 'setup_plan', 'create_automation']);
+export const PERSONAL_ONLY = new Set(['call_external_tool', 'setup_plan', 'create_automation', 'run_automation', 'copy_to_workspace', ...MORE_DESTRUCTIVE, ...MORE_PERSONAL]);
 // Routine, easily-undone changes a person may let the assistant apply without asking. Never money, projects, flows or external tools.
-export const AUTO_APPROVABLE = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_note', 'create_event', 'create_habit', 'add_milestone'];
+export const AUTO_APPROVABLE = ['create_task', 'update_task', 'reschedule_task', 'add_subtask', 'add_comment', 'create_note', 'create_event', 'create_habit', 'add_milestone', 'move_task', 'complete_subtask', 'complete_milestone', 'log_habit', 'create_idea'];
 const PLAN_MAX_STEPS = 20;
 class DryRun extends Error {}
 
 // What the model is told about each proposal type (kept next to the validators so they cannot drift apart).
 export const PROPOSAL_DOCS = {
+  ...MORE_DOCS,
   create_task: '{"project_id":"","title":"","due_date":"YYYY-MM-DD","priority":"low|medium|high|urgent"}',
   update_task: '{"task_id":"","title":"","status":"todo|doing|blocked|done","priority":"","due_date":"YYYY-MM-DD or null","owner":"","labels":[]} (only include fields to change)',
   reschedule_task: '{"task_id":"","due_date":"YYYY-MM-DD"}',
@@ -69,6 +71,7 @@ export function validateProposal(type, args, ws, user = null) {
     return { payload: { server: server.name, tool: tool.name, args: callArgs }, target: { entity: 'external_tool', id: server.id },
       description: `Call "${tool.name}" on your connected server "${server.name}" with ${shown.length > 200 ? `${shown.slice(0, 200)}...` : shown}. This may change things outside AMB Board.` };
   }
+  if (MORE_TYPES.includes(type)) return validateMore(type, a, ws, user);
   if (type === 'create_automation') {
     const name = str(a.name, 80);
     if (!name) return { error: 'name required' };
@@ -89,7 +92,7 @@ export function validateProposal(type, args, ws, user = null) {
     const clean = [];
     for (const [i, s] of steps.entries()) {
       const t = String(s?.type ?? '');
-      if (!ACTION_TYPES.includes(t) || t === 'setup_plan' || t === 'call_external_tool') return { error: `step ${i + 1}: action type not allowed in a plan` };
+      if (!ACTION_TYPES.includes(t) || t === 'setup_plan' || t === 'call_external_tool' || MORE_ASYNC.has(t) || MORE_PERSONAL.has(t)) return { error: `step ${i + 1}: action type not allowed in a plan` };
       const ref = s.ref == null ? '' : str(s.ref, 20);
       if (ref && !/^[a-z][a-z0-9_]*$/i.test(ref)) return { error: `step ${i + 1}: invalid ref` };
       clean.push({ type: t, ref, args: s.args && typeof s.args === 'object' ? s.args : {} });
@@ -224,6 +227,7 @@ export function validateProposal(type, args, ws, user = null) {
 // (task deleted, project archived, ...) fails safely instead of acting on something that changed.
 // Applies one validated payload. Must run inside a transaction opened by the caller.
 export function applyValidated(type, p, ws, actor, ts) {
+  if (MORE_TYPES.includes(type)) return applyMore(type, p, ws, actor, ts);
   if (type === 'create_task') {
     const col = db.prepare('SELECT id FROM columns WHERE project_id = ? ORDER BY position LIMIT 1').get(p.project_id);
     if (!col) throw new Error('project has no columns');
@@ -337,7 +341,12 @@ export function executeProposal(proposal, actor) {
 }
 
 // Approval path for proposals that must wait on the network (outside any database transaction).
-export async function executeProposalAsync(proposal, actor) {
+export async function executeProposalAsync(proposal, actor, extra = {}) {
+  if (MORE_ASYNC.has(proposal.type)) {
+    const check = validateProposal(proposal.type, JSON.parse(proposal.payload), proposal.workspace_id, actor);
+    if (check.error) throw new Error(`no longer valid: ${check.error}`);
+    return applyMoreAsync(proposal.type, check.payload, proposal.workspace_id, actor, extra);
+  }
   if (proposal.type !== 'call_external_tool') return executeProposal(proposal, actor);
   const ws = proposal.workspace_id; const payload = JSON.parse(proposal.payload);
   const check = validateProposal('call_external_tool', payload, ws, actor);

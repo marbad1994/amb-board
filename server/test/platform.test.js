@@ -330,7 +330,7 @@ test('skills catalogue lists every read/analysis/report skill and every approval
   assert.equal(c.read.find((s) => s.name === 'generate_report').kind, 'report');
   assert.ok(c.write.every((w) => w.requires_approval === true && w.arguments));
   assert.ok(c.write.length >= 13);
-  for (const forbidden of ['set_budget', 'delete_task', 'delete_project', 'change_role', 'create_journal_entry', 'send_email']) assert.ok(!c.write.some((w) => w.name === forbidden), forbidden);
+  for (const forbidden of ['set_budget', 'change_role', 'create_journal_entry', 'send_email', 'create_token', 'invite_member']) assert.ok(!c.write.some((w) => w.name === forbidden), forbidden);
 });
 
 // ---------------------------------------------------------------- MCP

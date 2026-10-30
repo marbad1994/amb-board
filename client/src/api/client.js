@@ -198,7 +198,7 @@ export const api = {
   listConversations: () => request('/ai/assistant/conversations'),
   getConversation: (id) => request(`/ai/assistant/conversations/${id}`),
   chat: (message, conversationId, context) => request('/ai/assistant/chat', json('POST', { message, conversationId, context })),
-  approveProposal: (id) => request(`/ai/assistant/proposals/${id}/approve`, { method: 'POST' }),
+  approveProposal: (id, body = {}) => request(`/ai/assistant/proposals/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
   rejectProposal: (id) => request(`/ai/assistant/proposals/${id}/reject`, { method: 'POST' }),
 
   // AI insights

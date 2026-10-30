@@ -11,6 +11,7 @@ import { workspaceDigest } from './digest.js';
 import { describeTrigger } from '../automations/spec.js';
 import { userServers, findServer, toolsOf } from './mcpServers.js';
 import { callTool } from './mcpClient.js';
+import { webSearch, readWebPage } from './web.js';
 
 // Read-only tools the model may call. Each runs with the CALLER's workspace and is scoped by workspace_id.
 // The model never sees SQL, never chooses a workspace, and cannot call anything not listed here.
@@ -32,6 +33,11 @@ export const TOOLS = {
       const r = await generateReport({ workspaceId: ws, user, params: a });
       return { report_id: r.id, title: r.title, kind: r.kind, open_in_app: `/reports/${r.id}`, artifact: { type: 'report', id: r.id, title: r.title } };
     } },
+  // ---- the web ----
+  web_search: { kind: 'read', async: true, doc: 'web_search {query} -> up to 8 results (title, url, snippet) from the web. The query is sent to an outside search service: never include private data (names of people, amounts, addresses, notes). Use it for facts, documentation, and to find the address of an MCP server',
+    run: (ws, a, user) => webSearch(a.query, user?.id) },
+  read_web_page: { kind: 'read', async: true, doc: 'read_web_page {url} -> the text of one public web page (https only). Use after web_search to read a result',
+    run: (ws, a, user) => readWebPage(a.url, user?.id) },
   // ---- connected tools (other MCP servers the user added) ----
   external_tools: { kind: 'read', async: true, doc: 'external_tools {} -> the tools of the MCP servers YOU connected (server, tool, description, read_only, argument names). Call this before using call_external_tool',
     run: async (ws, a, user) => {

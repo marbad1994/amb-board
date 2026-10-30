@@ -9,6 +9,7 @@ const EDITABLE = new Set(['create_task', 'create_event', 'create_transaction']);
 function Proposal({ p, onDecide, onEdit, disabled }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [token, setToken] = useState('');
   const run = async (fn) => { setBusy(true); setError(''); try { onDecide(await fn(p.id)); } catch (err) { setError(err.message); } finally { setBusy(false); } };
   const edit = async () => {
     setBusy(true); setError('');
@@ -17,14 +18,18 @@ function Proposal({ p, onDecide, onEdit, disabled }) {
   return (
     <div className={`proposal proposal--${p.status}`}>
       <div className="proposal__body">
-        <span className="proposal__label">{p.type === 'setup_plan' ? `Setup plan: ${p.payload?.steps?.length || 0} steps, approved together` : p.type === 'create_automation' ? 'Suggested automation' : 'Suggested change'}</span>
+        <span className={`proposal__label ${/^DELETE/.test(p.description) ? 'proposal__label--danger' : ''}`}>{/^DELETE/.test(p.description) ? 'Destructive change: cannot be undone' : p.type === 'connect_mcp_server' ? 'Connect a tool' : p.type === 'setup_plan' ? `Setup plan: ${p.payload?.steps?.length || 0} steps, approved together` : p.type === 'create_automation' ? 'Suggested automation' : 'Suggested change'}</span>
         <p className="proposal__text">{p.description}</p>
+        {p.status === 'pending' && p.type === 'connect_mcp_server' && (
+          <label className="field"><span className="field__label">Access token for this server (optional, stored encrypted, never shown to the assistant)</span>
+            <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} /></label>
+        )}
         {p.status !== 'pending' && <p className="hint">{{ approved: p.result?.auto ? 'Applied automatically (you allowed this type in Workspace & account).' : 'Applied.', rejected: 'Not applied.', failed: `Not applied: ${p.result?.error || 'it no longer matches your data'}`, expired: 'Expired, nothing changed.' }[p.status]}</p>}
         {error && <p className="form-error" role="alert">{error}</p>}
       </div>
       {p.status === 'pending' && (
         <div className="proposal__actions">
-          <button type="button" className="btn btn-primary" disabled={busy || disabled} onClick={() => run(api.approveProposal)}><Check size={14} aria-hidden="true" /> Approve</button>
+          <button type="button" className="btn btn-primary" disabled={busy || disabled} onClick={() => run((id) => api.approveProposal(id, p.type === 'connect_mcp_server' ? { token } : {}))}><Check size={14} aria-hidden="true" /> Approve</button>
           {EDITABLE.has(p.type) && <button type="button" className="btn" disabled={busy || disabled} onClick={edit}><Pencil size={14} aria-hidden="true" /> Edit first</button>}
           <button type="button" className="btn" disabled={busy || disabled} onClick={() => run(api.rejectProposal)}><X size={14} aria-hidden="true" /> Reject</button>
         </div>
