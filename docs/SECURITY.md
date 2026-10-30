@@ -28,3 +28,4 @@ MFA, email verification, password recovery, OAuth, per-session management UI, fi
 - Notes/journal: single visibility predicate on every query; journal never shared and never sent to AI; only authors edit.
 - Documents: type allow-list + magic bytes + size cap; filename sanitised; random storage names; authenticated download with `nosniff`, inline only for raster images; private uploads visible only to the uploader.
 - Known gap: no antivirus scanning; no encryption at rest for stored files/DB; free-text task owner is not a member reference.
+- AI budget: CSV upload type/size/NUL checks, parsed server-side only; model output is never trusted (ids validated against what was sent, names sanitised, numbers dropped); drafts private to their creator and expire; apply needs owner/admin and re-validates; imports are idempotent (external_ref).

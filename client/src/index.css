@@ -1968,3 +1968,23 @@ input[type='month'], input[type='date'], input[type='time'], input[type='number'
 /* sidebar: brand, workspace and menu scroll together; the user footer stays pinned */
 .sidebar__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .sidebar__nav { flex: none; overflow: visible; }
+
+/* ---------- Charts, AI budget wizard ---------- */
+.chart { margin: 0; }
+.chart svg { width: 100%; height: auto; max-height: 260px; display: block; }
+.chart--donut { display: grid; grid-template-columns: minmax(140px, 200px) 1fr; gap: 16px; align-items: center; }
+.chart__total-label { font-size: 9px; fill: var(--color-text-muted); }
+.chart__total { font-size: 11px; font-weight: 800; fill: var(--color-text); }
+.chart__label { font-size: 10px; fill: var(--color-text-muted); }
+.chart-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 12px; }
+@media (max-width: 900px) { .chart-row { grid-template-columns: minmax(0, 1fr); } .chart--donut { grid-template-columns: minmax(0, 1fr); } }
+.legend { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.legend li { display: grid; grid-template-columns: 12px 1fr auto 40px; gap: 8px; align-items: center; padding: 3px 0; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend small { color: var(--color-text-muted); text-align: right; }
+.legend--row { display: flex; gap: 16px; font-size: 12px; margin-top: 4px; }
+.legend--row span { display: inline-flex; align-items: center; gap: 6px; }
+.modal--wide { max-width: 860px; width: calc(100vw - 24px); }
+.table-wrap { overflow-x: auto; }
+.table input[type='text'] { min-height: 36px; padding: 4px 8px; }
+.table tr.is-off { opacity: 0.45; }

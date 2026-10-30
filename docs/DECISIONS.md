@@ -34,3 +34,7 @@
 | D30 | Monthly category budgets: per (currency, category); a parent category's budget covers its sub-categories; other-currency spending is reported as unbudgeted, never converted | Consistent with no silent currency mixing | Implemented |
 | D31 | Emergency-fund coverage = balance / average spending of the last 3 complete months in the same currency | Deterministic, explainable; no investment or advice claims | Implemented |
 | D32 | Weekly/monthly reviews are cached per user and period (habits are personal); journal and notes are never included | Privacy rule D25 | Implemented |
+| D33 | AI budget creation is draft -> human review -> apply. Numbers come from the user's file (code) or are labelled as user-stated/AI estimates; the model never sees amounts or dates | Spec 9/10: deterministic finance maths; AI proposes, human approves | Implemented |
+| D34 | Day-first date interpretation for ambiguous DD/MM/YYYY CSV dates (European default) unless the first number cannot be a day | Matches the owner's locale (RO/EU); documented | Implemented |
+| D35 | Bank CSV only (no XLSX/PDF/OFX); 2 MB / 5000 rows | Simple, auditable parsing; larger formats later | Implemented |
+| D36 | Charts are dependency-free SVG with text equivalents (legend, aria-label with all values) | No new libraries; not colour-only | Implemented |

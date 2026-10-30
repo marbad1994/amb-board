@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
-import { db, nowIso } from '../db.js';
+import { db, nowIso, tx } from '../db.js';
 import { requirePermission, audit } from '../access.js';
 import { parseDate, todayUtc } from '../validate.js';
 import { CURRENCY_RE, parseMinor, addMonths } from '../finance/money.js';
@@ -35,6 +35,45 @@ router.delete('/budget', requirePermission('budget:approve'), (req, res) => {
   db.prepare('DELETE FROM monthly_budgets WHERE workspace_id = ? AND month = ? AND category_id = ? AND currency = ?').run(req.ws.id, String(month), String(categoryId), String(currency || '').toUpperCase());
   audit(req, 'budget.monthly_remove', 'category', String(categoryId), { month });
   res.json(monthBudget(req.ws.id, String(month)));
+});
+
+// Replace the whole month's budget for one currency in one step (the budget builder). Lines with 0/blank are removed.
+router.put('/budget/bulk', requirePermission('budget:approve'), (req, res) => {
+  const { month } = req.body;
+  const currency = String(req.body.currency || '').toUpperCase();
+  const lines = Array.isArray(req.body.lines) ? req.body.lines.slice(0, 100) : null;
+  if (!MONTH_RE.test(String(month))) return res.status(400).json({ error: 'month must be YYYY-MM' });
+  if (!CURRENCY_RE.test(currency)) return res.status(400).json({ error: 'currency must be a 3-letter code' });
+  if (!lines) return res.status(400).json({ error: 'lines must be an array' });
+  const clean = [];
+  for (const l of lines) {
+    const amount = Number(l.amount_minor);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1e12) return res.status(400).json({ error: 'amount_minor must be a non-negative integer' });
+    if (!db.prepare('SELECT 1 FROM transaction_categories WHERE id = ? AND workspace_id = ?').get(String(l.categoryId), req.ws.id)) return res.status(400).json({ error: 'invalid category' });
+    clean.push({ categoryId: String(l.categoryId), amount });
+  }
+  tx(() => {
+    db.prepare('DELETE FROM monthly_budgets WHERE workspace_id = ? AND month = ? AND currency = ?').run(req.ws.id, month, currency);
+    for (const l of clean.filter((c) => c.amount > 0)) {
+      db.prepare('INSERT OR REPLACE INTO monthly_budgets (workspace_id, month, category_id, currency, amount_minor) VALUES (?, ?, ?, ?, ?)').run(req.ws.id, month, l.categoryId, currency, l.amount);
+    }
+  });
+  audit(req, 'budget.monthly_bulk', 'month', month, { currency, lines: clean.filter((c) => c.amount > 0).length });
+  res.json(monthBudget(req.ws.id, month));
+});
+
+// Income vs expenses for the last N months (default 6), per currency. For the trend chart.
+router.get('/trend', (req, res) => {
+  const n = Math.min(Math.max(Number(req.query.months) || 6, 1), 24);
+  const first = `${todayUtc().slice(0, 7)}-01`;
+  const months = Array.from({ length: n }, (_, i) => addMonths(first, -(n - 1 - i)).slice(0, 7));
+  const rows = db.prepare(`SELECT substr(date, 1, 7) AS month, currency, type, SUM(amount_minor) AS total FROM transactions
+    WHERE workspace_id = ? AND voided_at IS NULL AND status = 'posted' AND type <> 'transfer' AND substr(date, 1, 7) BETWEEN ? AND ? GROUP BY month, currency, type`).all(req.ws.id, months[0], months[n - 1]);
+  const currencies = [...new Set(rows.map((r) => r.currency))].sort();
+  res.json({ months, series: currencies.map((currency) => ({ currency, points: months.map((m) => {
+    const of = (t) => rows.filter((r) => r.month === m && r.currency === currency && r.type === t).reduce((a, r) => a + r.total, 0);
+    return { month: m, income_minor: of('income'), expenses_minor: of('expense') - of('refund') };
+  }) })) });
 });
 
 // ---------- savings goals / emergency fund ----------
