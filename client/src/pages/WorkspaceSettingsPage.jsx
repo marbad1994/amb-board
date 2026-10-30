@@ -135,7 +135,7 @@ function McpTokens() {
 }
 
 const AUTO_LABEL = { create_task: 'Create tasks', update_task: 'Change tasks', reschedule_task: 'Reschedule tasks', add_subtask: 'Add subtasks', add_comment: 'Add comments',
-  create_note: 'Write notes', create_event: 'Add calendar events', create_habit: 'Create habits', add_milestone: 'Add goal milestones' };
+  create_note: 'Write notes', create_event: 'Add calendar events', create_habit: 'Create habits', add_milestone: 'Add goal milestones', move_task: 'Move tasks between columns', complete_subtask: 'Tick off subtasks', complete_milestone: 'Complete goal milestones', log_habit: 'Log habits', create_idea: 'Add ideas' };
 
 function BrowserAssistant() {
   const [list, setList] = useState(null);
@@ -206,6 +206,44 @@ function AssistantSettings() {
         <label className="field"><span className="field__label">Access token (optional)</span><input type="password" autoComplete="off" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} /></label>
         <div style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-primary" disabled={busy}>Connect</button></div>
       </form>
+      {msg && <p className="hint" role="status">{msg}</p>}
+    </section>
+  );
+}
+
+function SkillsSettings() {
+  const [skills, setSkills] = useState(null);
+  const [paste, setPaste] = useState('');
+  const [msg, setMsg] = useState('');
+  const load = () => api.skillLibrary().then(setSkills).catch(() => setSkills([]));
+  useEffect(() => { load(); }, []);
+  const submit = async (data, label) => {
+    setMsg('');
+    try { const r = await api.importSkill(data); setMsg(`Added /${r.name}. Type /${r.name} in the assistant to use it.`); setPaste(''); load(); } catch (err) { setMsg(`${label}: ${err.message}`); }
+  };
+  const onFile = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    if (/\.(skill|zip)$/i.test(f.name)) {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      submit({ zip_base64: btoa(bin), filename: f.name }, f.name);
+    } else submit({ content: await f.text(), filename: f.name }, f.name);
+  };
+  return (
+    <section className="panel" aria-labelledby="sk-h" style={{ gridColumn: '1 / -1' }}>
+      <div className="panel__title"><h2 id="sk-h">Assistant skills (slash commands)</h2></div>
+      <p className="hint">A skill is a set of instructions the assistant follows when you type its name, for example <b>/create-automation</b>. Import a .skill or SKILL.md file, or paste the text. Skills guide how the assistant works; they cannot bypass approvals.</p>
+      {skills && <ul className="plain-list" aria-label="Skills">{skills.map((s) => (
+        <li key={s.id}><span><b>/{s.name}</b> {s.builtin && <small className="muted">built in</small>}<br /><small className="muted">{s.description}</small></span>
+          {!s.builtin && <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete skill ${s.name}`} onClick={async () => { await api.deleteSkill(s.id); load(); }}><Trash2 size={16} color="var(--color-danger)" /></button>}</li>
+      ))}</ul>}
+      <div className="flow-row">
+        <label className="field"><span className="field__label">Import a file (.skill, .zip or .md)</span><input type="file" accept=".skill,.zip,.md,text/markdown,text/plain" onChange={onFile} /></label>
+      </div>
+      <label className="field"><span className="field__label">Or paste a skill (SKILL.md text)</span>
+        <textarea rows={5} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'---\nname: my-skill\ndescription: what it is for\n---\nInstructions...'} /></label>
+      <button type="button" className="btn btn-primary" disabled={!paste.trim()} onClick={() => submit({ content: paste }, 'Paste')}>Add skill</button>
       {msg && <p className="hint" role="status">{msg}</p>}
     </section>
   );
@@ -309,6 +347,7 @@ export default function WorkspaceSettingsPage() {
 
         <McpTokens />
         <AssistantSettings />
+        <SkillsSettings />
         <BrowserAssistant />
 
         <section className="panel" aria-labelledby="sec-h">

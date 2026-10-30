@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, FileBarChart, Loader2, Pencil, Send, X } from 'lucide-react';
+import { Check, FileBarChart, Loader2, Pencil, Send, Square, X } from 'lucide-react';
 import { api } from '../api/client.js';
 
 // Proposals that can also be opened in the normal form to edit before saving.
@@ -46,18 +46,21 @@ export default function AssistantChat({ conversationId, onConversation, context,
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [skill, setSkill] = useState(null); // slash skill running in this conversation
+  const [library, setLibrary] = useState([]);
   const endRef = useRef(null);
   const convRef = useRef(conversationId);
 
   useEffect(() => { convRef.current = conversationId; }, [conversationId]);
   useEffect(() => {
     let stale = false;
-    if (!conversationId) { setMessages([]); return undefined; }
+    if (!conversationId) { setMessages([]); setSkill(null); return undefined; }
     if (messages.length && messages.some((m) => m.id?.startsWith?.('tmp-'))) return undefined;
-    api.getConversation(conversationId).then((c) => { if (!stale) setMessages(c.messages); }).catch((err) => { if (!stale) { setError(err.message); onConversation?.(null); } });
+    api.getConversation(conversationId).then((c) => { if (!stale) { setMessages(c.messages); setSkill(c.skill ?? null); } }).catch((err) => { if (!stale) { setError(err.message); onConversation?.(null); } });
     return () => { stale = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+  useEffect(() => { if (writable) api.skillLibrary().then(setLibrary).catch(() => {}); }, [writable]);
   useEffect(() => { endRef.current?.scrollIntoView?.({ block: 'end' }); }, [messages, busy]);
 
   const send = useCallback(async (preset) => {
@@ -68,12 +71,20 @@ export default function AssistantChat({ conversationId, onConversation, context,
     try {
       const res = await api.chat(message, convRef.current, context);
       convRef.current = res.conversationId;
+      setSkill(res.skill ?? null);
       onConversation?.(res.conversationId);
       setMessages((m) => [...m, { ...res.message, dropped: res.dropped?.length || 0, droppedList: (res.dropped || []).slice(0, 6) }]);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }, [text, busy, context, onConversation]);
 
   useEffect(() => { if (autoSend && writable) { onAutoSent?.(); send(autoSend); } }, [autoSend]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stop = async () => {
+    setError('');
+    try { if (convRef.current) await api.stopSkill(convRef.current); setSkill(null); } catch (err) { setError(err.message); }
+  };
+  const slashMatches = /^\/[\w-]*$/.test(text) ? library.filter((s) => `/${s.name}`.startsWith(text.toLowerCase())).slice(0, 6) : [];
+  const lastIdx = messages.length - 1;
 
   const update = (u) => setMessages((ms) => ms.map((m) => ({ ...m, proposals: (m.proposals || []).map((p) => (p.id === u.id ? { ...p, ...u } : p)) })));
 
@@ -90,7 +101,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
     <div className={`chat-wrap ${compact ? 'chat-wrap--compact' : ''}`}>
       {messages.length === 0 && !busy && emptyHint}
       <ul className="chat__list" aria-live="polite">
-        {messages.map((m) => (
+        {messages.map((m, i) => (
           <li key={m.id} className={`bubble bubble--${m.role}`}>
             <span className="sr-only">{m.role === 'user' ? 'You' : 'Assistant'}:</span>
             <p>{m.content}</p>
@@ -103,6 +114,11 @@ export default function AssistantChat({ conversationId, onConversation, context,
               <small className="hint">{m.dropped} suggested change{m.dropped > 1 ? 's were' : ' was'} discarded because {m.dropped > 1 ? 'they' : 'it'} did not match your data
                 {m.droppedList?.length > 0 && <> ({m.droppedList.map((d) => `${String(d.type).replace(/_/g, ' ')}: ${d.reason}`).join('; ')})</>}. Tell me what to correct and I will try again.</small>
             )}
+            {m.role === 'assistant' && m.suggestions?.length > 0 && i === lastIdx && !busy && writable && (
+              <div className="chat__suggest" role="group" aria-label="Suggested replies">
+                {m.suggestions.map((sg) => <button key={sg} type="button" className="chip" onClick={() => send(sg)}>{sg}</button>)}
+              </div>
+            )}
             {m.role === 'assistant' && <small className="hint">AI-generated. It can be wrong; check figures in the app.</small>}
           </li>
         ))}
@@ -110,8 +126,19 @@ export default function AssistantChat({ conversationId, onConversation, context,
       </ul>
       <div ref={endRef} />
       {error && <p className="form-error" role="alert">{error}</p>}
+      {skill && (
+        <div className="chat__skill" role="status">
+          <span>Running <b>/{skill}</b>. I will keep going until it is done.</span>
+          <button type="button" className="btn btn-ghost" onClick={stop}><Square size={14} aria-hidden="true" /> Stop</button>
+        </div>
+      )}
+      {slashMatches.length > 0 && (
+        <ul className="chat__slash" role="listbox" aria-label="Skills">
+          {slashMatches.map((s) => <li key={s.id}><button type="button" role="option" aria-selected="false" onClick={() => setText(`/${s.name} `)}><b>/{s.name}</b> <small className="muted">{s.description}</small></button></li>)}
+        </ul>
+      )}
       <form className="chat__form" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <input type="text" aria-label="Message" placeholder={writable ? 'Ask, or tell me what to do' : 'Viewers cannot use the assistant'} maxLength={2000}
+        <input type="text" aria-label="Message" placeholder={writable ? (skill ? 'Type your own answer, or click a suggestion' : 'Ask, or tell me what to do. Type / for skills') : 'Viewers cannot use the assistant'} maxLength={2000}
           value={text} onChange={(e) => setText(e.target.value)} disabled={!writable || busy} />
         <button type="submit" className="btn btn-primary" disabled={!writable || busy || !text.trim()}><Send size={16} aria-hidden="true" /> Send</button>
       </form>

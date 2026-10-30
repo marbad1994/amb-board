@@ -10,6 +10,7 @@ import { assertSafeUrl } from '../ai/mcpClient.js';
 import { encryptSecret } from '../secrets.js';
 import { computeSuggestions, dismiss } from '../ai/suggestions.js';
 import { TOOLS } from '../ai/tools.js';
+import { importSkill, listSkills, SkillError } from '../ai/skills.js';
 import { ACTION_TYPES, PROPOSAL_DOCS } from '../ai/actions.js';
 
 const router = Router();
@@ -99,6 +100,30 @@ router.get('/skills', (req, res) => {
     read: Object.entries(TOOLS).map(([name, t]) => ({ name, kind: t.kind || 'read', description: t.doc })),
     write: ACTION_TYPES.map((name) => ({ name, kind: 'write', requires_approval: true, arguments: PROPOSAL_DOCS[name] })),
   });
+});
+
+// ---- slash skills: built in plus the ones the user imported (private to them, per workspace) ----
+router.get('/skills/library', (req, res) => res.json(listSkills(req.ws.id, req.user.id)));
+router.post('/skills/import', (req, res) => {
+  try {
+    const out = importSkill(req.ws.id, req.user.id, { content: typeof req.body.content === 'string' ? req.body.content : '', zipBase64: typeof req.body.zip_base64 === 'string' ? req.body.zip_base64 : '', filename: req.body.filename });
+    audit(req, 'ai.skill_imported', 'skill', out.id, { name: out.name });
+    res.status(201).json(out);
+  } catch (e) { if (e instanceof SkillError) return res.status(e.status).json({ error: e.message }); throw e; }
+});
+router.delete('/skills/:id', (req, res) => {
+  const row = db.prepare('SELECT id, name FROM ai_skills WHERE id = ? AND workspace_id = ? AND user_id = ?').get(req.params.id, req.ws.id, req.user.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  db.prepare('DELETE FROM ai_skills WHERE id = ?').run(row.id);
+  db.prepare('UPDATE ai_conversations SET active_skill = NULL WHERE active_skill = ? AND user_id = ? AND workspace_id = ?').run(row.name, req.user.id, req.ws.id);
+  audit(req, 'ai.skill_deleted', 'skill', row.id, { name: row.name });
+  res.status(204).end();
+});
+// The Stop button: ends the running skill without an AI call.
+router.post('/conversations/:id/skill/stop', (req, res) => {
+  const r = db.prepare('UPDATE ai_conversations SET active_skill = NULL WHERE id = ? AND workspace_id = ? AND user_id = ?').run(req.params.id, req.ws.id, req.user.id);
+  if (!Number(r.changes)) return res.status(404).json({ error: 'not found' });
+  res.json({ skill: null });
 });
 
 // ---- what the assistant may do without asking ----

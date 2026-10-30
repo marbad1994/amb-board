@@ -634,6 +634,7 @@ export const migrations = [
   { id: '014_assistant_connections', up: (db) => db.exec(assistantConnections) },
   { id: '015_browser_assistant', up: (db) => db.exec(browserTables) },
   { id: '016_email_flows', up: (db) => db.exec(emailFlows) },
+  { id: '017_assistant_skills', up: (db) => db.exec(assistantSkills) },
 ];
 
 const automationsTables = `
@@ -696,6 +697,15 @@ CREATE TABLE browser_commands (
   kind TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', result TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, done_at TEXT
 );
 CREATE INDEX idx_browser_commands_pending ON browser_commands (pairing_id, status, created_at);
+`;
+
+const assistantSkills = `
+CREATE TABLE ai_skills (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', body TEXT NOT NULL, created_at TEXT NOT NULL,
+  UNIQUE (workspace_id, user_id, name)
+);
+ALTER TABLE ai_conversations ADD COLUMN active_skill TEXT;
 `;
 
 const emailFlows = `
