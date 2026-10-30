@@ -106,6 +106,8 @@ sudo bash deploy.sh
 ```
 
 Options (environment variables): `GIT_USER`, `SRC_DIR`, `DEST_DIR`, `BRANCH`, `PORT`, `RUN_AS` (run npm and the server as another user), `KEEP_BACKUPS`, `HEALTH_TIMEOUT`. Logs go to `/opt/amb-board3/amb-board.log`.
+The deploy also maps `amb.makketing.com` to the app with an nginx reverse proxy (`/etc/nginx/conf.d/amb-board.conf`, or `sites-available` if that directory exists). The DNS record for the domain must already point at the server. Use `DOMAIN=other.example.com` to change it or `DOMAIN=` to skip it. For HTTPS run `sudo CERTBOT_EMAIL=you@example.com bash deploy.sh` (needs `certbot` and `certbot-nginx`); once a certificate exists later deploys keep the session cookie `Secure` automatically.
+
 Do not set `NODE_ENV=production` unless the site is served over HTTPS: production mode makes the session cookie `Secure`, so logins fail over plain HTTP.
 
 ## Tests
