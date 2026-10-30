@@ -243,8 +243,8 @@ export default function AssistantChat({ conversationId, onConversation, context,
                   ))}
                   {m.proposals?.map((p) => <Proposal key={p.id} p={p} onDecide={update} onEdit={edit} disabled={!writable} />)}
                   {m.dropped > 0 && (
-                    <div className="ac-sys"><Info size={13} aria-hidden="true" /> {m.dropped} suggested change{m.dropped > 1 ? 's were' : ' was'} discarded because {m.dropped > 1 ? 'they' : 'it'} did not match your data
-                      {m.droppedList?.length > 0 && <> ({m.droppedList.map((d) => `${String(d.type).replace(/_/g, ' ')}: ${d.reason}`).join('; ')})</>}. Tell me what to correct and I will try again.</div>
+                    <div className="ac-sys"><Info size={13} aria-hidden="true" /> I tried to fix {m.dropped} suggested change{m.dropped > 1 ? 's' : ''} that did not match your data and could not
+                      {m.droppedList?.length > 0 && <> ({m.droppedList.map((d) => `${String(d.type).replace(/_/g, ' ')}: ${d.reason}`).join('; ')})</>}. Tell me what to change and I will try again.</div>
                   )}
                   {m.incomplete && (
                     <div className="ac-sys ac-sys--warn"><AlertTriangle size={13} aria-hidden="true" /> Incomplete: it was stopped or the connection dropped.</div>

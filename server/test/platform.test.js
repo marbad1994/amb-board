@@ -267,6 +267,7 @@ test('write skills: every new action is a pending proposal; approval executes it
     { type: 'update_task', args: { task_id: a.card.id, status: 'finished' } },
     { type: 'create_transaction', args: { type: 'transfer', amount: 5, currency: 'EUR' } },
     { type: 'create_transaction', args: { type: 'expense', amount: 1.234, currency: 'EUR' } }] },
+  { type: 'final', answer: '', proposals: [] },   // the assistant's attempt to repair them: nothing
   { type: 'final', answer: 'x', proposals: [
     { type: 'create_transaction', args: { type: 'expense', amount: 5, currency: 'EUR', category: 'Nonexistent' } },
     { type: 'create_transaction', args: { type: 'expense', amount: -5, currency: 'EUR' } },

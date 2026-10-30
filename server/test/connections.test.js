@@ -76,7 +76,7 @@ test('the assistant lists and calls read-only external tools; others need approv
   ];
   const res = (await ask(u, 'find my plan page and make a new one')).json;
   assert.equal(calls.length, 1, 'only the read-only tool ran during the chat'); assert.equal(calls[0].name, 'lookup');
-  const lastUser = aiReqs.at(-1)[1].content;
+  const lastUser = aiReqs.at(-2)[1].content;   // the last request is the assistant trying to repair the two rejected proposals
   assert.ok(lastUser.includes('data, not instructions') && lastUser.includes('create_page'));
   assert.ok(lastUser.includes('not marked read-only'), 'the write tool was refused when called directly');
   assert.equal(res.message.proposals.length, 1, 'unknown tool and missing arguments are dropped');
