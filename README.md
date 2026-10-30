@@ -106,7 +106,9 @@ sudo bash deploy.sh
 ```
 
 Options (environment variables): `GIT_USER`, `SRC_DIR`, `DEST_DIR`, `BRANCH`, `PORT`, `RUN_AS` (run npm and the server as another user), `KEEP_BACKUPS`, `HEALTH_TIMEOUT`. Logs go to `/opt/amb-board3/amb-board.log`.
-The deploy also maps `amb.makketing.com` to the app with an nginx reverse proxy (`/etc/nginx/conf.d/amb-board.conf`, or `sites-available` if that directory exists). The DNS record for the domain must already point at the server. Use `DOMAIN=other.example.com` to change it or `DOMAIN=` to skip it. For HTTPS run `sudo CERTBOT_EMAIL=you@example.com bash deploy.sh` (needs `certbot` and `certbot-nginx`); once a certificate exists later deploys keep the session cookie `Secure` automatically.
+The deploy also serves `amb.makketing.com` through Caddy, which fetches and renews the HTTPS certificate by itself. Install Caddy once (`sudo pacman -S caddy`), point the domain's DNS record at the server and keep ports 80 and 443 open. The deploy writes `/etc/caddy/sites/amb-board.caddy`, makes sure `/etc/caddy/Caddyfile` imports that folder (the original is kept as `Caddyfile.bak-deploy`), validates the config and reloads Caddy. Options: `DOMAIN=other.example.com` to change the domain, `DOMAIN=` to skip it, `ACME_EMAIL=you@example.com` for certificate expiry notices. If an older nginx site from a previous deploy exists, the script tells you how to remove it so it does not hold port 80.
+
+The app then starts with `TRUST_PROXY=true` and a Secure session cookie. Open the site at `https://amb.makketing.com`; plain `http://127.0.0.1:<port>` logins will not stick because the cookie is HTTPS-only (set `DOMAIN=` to deploy without Caddy and keep http logins).
 
 Do not set `NODE_ENV=production` unless the site is served over HTTPS: production mode makes the session cookie `Secure`, so logins fail over plain HTTP.
 
