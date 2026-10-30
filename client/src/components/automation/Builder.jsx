@@ -80,7 +80,7 @@ function ResultPanel({ t }) {
   );
 }
 
-export default function Builder({ initial, enabledInitial = true, projects, categories, meta, tools, templates, onSave, onCancel, openStep }) {
+export default function Builder({ initial, enabledInitial = true, projects, categories, meta, tools, templates, onSave, onCancel, onDelete, openStep }) {
   const [f, setF] = useState(() => { const b = initial || blank(); return { ...b, steps: withIds(b.steps) }; });
   const [enabled, setEnabled] = useState(enabledInitial);
   const [sel, setSel] = useState(() => (openStep != null && initial?.steps?.[openStep] ? String(openStep) : initial?.steps?.length ? '0' : 'trigger'));
@@ -241,6 +241,7 @@ export default function Builder({ initial, enabledInitial = true, projects, cate
         <input className="ab-name" aria-label="Automation name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} maxLength={80} placeholder="Name this automation" />
         <span className="ab-grow" />
         <label className="ab-switch"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /><span className="ab-switch__t" aria-hidden="true" />{enabled ? 'On' : 'Off'}<span className="sr-only"> (automation enabled)</span></label>
+        {onDelete && <button type="button" className="ab-btn ab-btn--danger" onClick={onDelete}><Trash2 size={14} aria-hidden="true" /> Delete automation</button>}
         <button type="button" className="ab-btn" onClick={testAll} disabled={allBusy || !f.steps.length}><FlaskConical size={16} aria-hidden="true" /> {allBusy ? 'Testing...' : 'Test all steps'}</button>
         <button type="submit" className="ab-btn ab-btn--primary" disabled={busy}>Save automation</button>
       </div>

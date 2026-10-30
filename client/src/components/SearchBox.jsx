@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { api } from '../api/client.js';
 
@@ -9,6 +9,9 @@ export default function SearchBox() {
   const [open, setOpen] = useState(false);
   const wrap = useRef(null);
   const navigate = useNavigate();
+  const loc = useLocation();
+  // a search belongs to the page it was typed on
+  useEffect(() => { setQ(''); setResults(null); setOpen(false); }, [loc.pathname]);
 
   useEffect(() => {
     const term = q.trim();
