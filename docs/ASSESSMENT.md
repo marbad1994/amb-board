@@ -26,7 +26,7 @@ Weak: intent routing is unmeasured; slot filling exists only in `/create-automat
 | Pattern | State |
 |---|---|
 | Single-turn Q and A | Good (digest means few clarifying questions) |
-| Multi-turn slot filling | Only `/create-automation`; transaction, task-with-date and event are candidates for built-in skills |
+| Multi-turn slot filling | `/create-automation`, `/add-transaction`, `/add-task`, `/add-event` |
 | Confirmation | Excellent (approval cards state the exact effect; red warning on deletes) |
 | Branching | Suggestion chips; now guaranteed server-side (see below) |
 | Handoff | Not applicable (single user). The analogue is "I cannot do that, here is where to click" and it is not designed yet |
@@ -52,7 +52,7 @@ The summary is under Workspace and account, "How the assistant is doing for you"
 
 1. Record outcomes and feedback. DONE (thumbs, `ai_turns`, quality summary).
 2. Fix the fallbacks. DONE (retry, prose fallback, option chips, no dead 502).
-3. Golden set: about 60 utterances with the expected skill or proposal type, run against the live model on demand, accuracy per group. OPEN.
+3. Golden set: 64 utterances with the expected skill or proposal type in `server/eval/golden.json`; `server/eval/run.mjs` runs them against the real model and prints accuracy per group and every miss. BUILT, NOT YET RUN (needs a model key; run `cd server; and env DEEPSEEK_API_KEY=... node --experimental-sqlite eval/run.mjs --out eval/last.json`). The harness itself was checked against a fake model only.
 4. Guarantee next steps. DONE (derived chips).
-5. Slot filling for the top write flows (transaction, task with due date, event) as built-in guided skills. OPEN.
-6. Raise limits: attach long pasted documents instead of the 2000-character message cap; summarise old turns instead of dropping them (memory is 6 messages of 800 characters, 12 of 1600 inside a skill). OPEN.
+5. Slot filling for the top write flows: built-in guided skills `/add-transaction`, `/add-task`, `/add-event` (ask only for missing slots, with clickable options). DONE; they start from the slash menu, not from plain words.
+6. Raise limits: the message cap is now 12000 characters (was 2000) and memory is 8 messages of 1000 characters (12 of 1600 inside a skill). PARTLY DONE: old turns are still dropped, not summarised, and there is no file attachment.

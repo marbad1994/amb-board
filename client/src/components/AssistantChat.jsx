@@ -150,7 +150,7 @@ export default function AssistantChat({ conversationId, onConversation, context,
         </ul>
       )}
       <form className="chat__form" onSubmit={(e) => { e.preventDefault(); send(); }}>
-        <input type="text" aria-label="Message" placeholder={writable ? (skill ? 'Type your own answer, or click a suggestion' : 'Ask, or tell me what to do. Type / for skills') : 'Viewers cannot use the assistant'} maxLength={2000}
+        <input type="text" aria-label="Message" placeholder={writable ? (skill ? 'Type your own answer, or click a suggestion' : 'Ask, or tell me what to do. Type / for skills') : 'Viewers cannot use the assistant'} maxLength={12000}
           value={text} onChange={(e) => setText(e.target.value)} disabled={!writable || busy} />
         <button type="submit" className="btn btn-primary" disabled={!writable || busy || !text.trim()}><Send size={16} aria-hidden="true" /> Send</button>
       </form>

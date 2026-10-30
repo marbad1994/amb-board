@@ -107,3 +107,17 @@ test('a skill cannot close its own block to inject instructions', async () => {
   await chat(u, '/sneaky');
   assert.equal((prompts[0].match(/<\/skill>/g) || []).length, 1);
 });
+
+test('built-in guided entry skills: /add-transaction, /add-task, /add-event carry the rest of the message as the request', async () => {
+  const u = await signUp(srv.base, 'SkG');
+  for (const [name, phrase] of [['add-transaction', /record ONE transaction/], ['add-task', /create ONE task/], ['add-event', /put ONE event on the calendar/]]) {
+    prompts = []; script = [{ type: 'final', answer: 'Which one?', suggestions: ['A', 'B'] }];
+    const r = (await chat(u, `/${name} something specific`)).json;
+    assert.equal(r.skill, name); assert.match(prompts[0], phrase); assert.match(prompts[0], /<question>something specific<\/question>/);
+    assert.deepEqual(r.message.suggestions, ['A', 'B']);
+  }
+  assert.ok((await u.c.get('/api/ai/assistant/skills/library')).json.filter((s) => s.builtin).length >= 5);
+  // long pasted text (documentation) is accepted up to 12000 characters
+  script = [{ type: 'final', answer: 'ok' }];
+  assert.equal((await chat(u, 'x'.repeat(11000))).status, 200);
+});
