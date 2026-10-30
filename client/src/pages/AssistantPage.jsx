@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import AiSummaryCard from '../components/AiSummaryCard.jsx';
 import AssistantChat from '../components/AssistantChat.jsx';
 import { useAssistantContext } from '../lib/assistantContext.js';
 
-const SUGGESTIONS = [
-  'What should I focus on today?', 'Which projects are at risk and why?', 'Analyse my spending this month.',
-  'Find gaps in my data that I should fix.', 'Create an overview report.', 'What appointments do I have next week?',
-];
 
 export default function AssistantPage() {
   const { active } = useAuth();
@@ -51,14 +46,7 @@ export default function AssistantPage() {
 
       {tab === 'chat' && (
         <section className="panel chat" aria-label="Conversation">
-          <AssistantChat conversationId={convId} onConversation={(id) => { setConvId(id); refresh(); }} context={ctx.context} writable={writable} autoSend={auto} onAutoSent={() => setAuto(null)}
-            emptyHint={(
-              <div className="chat__empty">
-                <Sparkles size={28} aria-hidden="true" />
-                <p>Try one of these:</p>
-                <div className="chat__suggestions">{SUGGESTIONS.map((s) => <button key={s} type="button" className="btn" disabled={!writable} onClick={() => setAuto(s)}>{s}</button>)}</div>
-              </div>
-            )} />
+          <AssistantChat conversationId={convId} onConversation={(id) => { setConvId(id); refresh(); }} context={ctx.context} writable={writable} autoSend={auto} onAutoSent={() => setAuto(null)} />
         </section>
       )}
 

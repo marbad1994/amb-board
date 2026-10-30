@@ -1,6 +1,8 @@
 import { nanoid } from 'nanoid';
 import { db, nowIso } from '../db.js';
-import { complete, parseJson, AiFailureError } from './gateway.js';
+import { complete, completeStream, parseJson, AiFailureError, StreamAbortedError } from './gateway.js';
+import { AnswerStream } from './answerStream.js';
+import { stepLabel } from './stepLabels.js';
 import { TOOLS, runSkill } from './tools.js';
 import { ACTION_TYPES, PROPOSAL_DOCS, validateProposal, executeProposal, AUTO_APPROVABLE } from './actions.js';
 import { can } from '../access.js';
@@ -33,6 +35,7 @@ Hard rules:
 - Drive the conversation. When you need something from the user, ask ONE question and give 2-4 "suggestions": short, complete replies the user can click (they can always type something else instead). End answers with next-step suggestions rather than "let me know". Never ask two questions at once and never ask what the data already tells you.
 - Money, dates and people: amounts are minor units and never mixed across currencies; convert relative dates to YYYY-MM-DD and say which date you chose; act by id, and if a name matches several items say which one you mean (status, task count) or ask; an empty project is "no data", not "healthy".
 - Slash skills: the user can run installed skills with /name (built in: /create-automation guided flow builder, /add-transaction, /add-task, /add-event guided entry, /amb-workflow review and planning practices). While a skill is active you keep driving it until it is finished or the user stops it.
+- Write for a chat: short paragraphs of one idea each, separated by blank lines; lead with the answer. Say how sure you are in the first person ("I am fairly sure...", "I am not sure whether...") instead of vague hedging, and say when you cannot tell from the data.
 - Proactively end answers with 1-3 concrete next steps when useful, as proposals the user can approve.
 - You can propose only these types, nothing else: ${ACTION_TYPES.join(', ')}. You can do anything the user can do on the screens of this app: create, change, move, archive, delete, copy to another workspace, set budgets, run automations. Destructive changes (deletes, voiding) are shown with a clear warning and always need approval. You cannot change members, roles, passwords, sessions, access tokens or connected-tool credentials, edit journal entries, or send messages to other people; tell the user to do those in Workspace & account.
 
@@ -41,7 +44,7 @@ ${Object.entries(TOOLS).map(([, t]) => `- [${t.kind || 'read'}] ${t.doc}`).join(
 
 Reply with ONE JSON object and nothing else, in one of two shapes:
 {"type":"tool","calls":[{"tool":"<name>","args":{...}}]}   (at most ${MAX_CALLS_PER_ROUND} calls)
-{"type":"final","answer":"<plain text, concise>","suggestions":["<short clickable reply>", ...],"proposals":[{"type":"<proposal type>","args":{...}}],"done":false}   (at most ${MAX_PROPOSALS} proposals; use ids returned by skills; 0-4 suggestions of at most 80 characters each; "done":true only when an active skill has finished its job)
+{"type":"final","answer":"<plain text, concise>","suggestions":["<short clickable reply>", ...],"proposals":[{"type":"<proposal type>","args":{...}}],"done":false,"progress":{"step":1,"of":4}}   (at most ${MAX_PROPOSALS} proposals; use ids returned by skills; 0-4 suggestions of at most 80 characters each; "done":true only when an active skill has finished its job; "progress" only while a skill is active: which step of how many you are on)
 Proposal argument shapes:
 ${Object.entries(PROPOSAL_DOCS).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`;
 
@@ -75,7 +78,7 @@ export function getConversation(ws, userId, id) {
   expireOld();
   const proposals = db.prepare('SELECT * FROM ai_action_proposals WHERE conversation_id = ? ORDER BY created_at').all(conv.id).map(presentProposal);
   const messages = db.prepare('SELECT id, role, content, tool_trace, feedback, created_at FROM ai_messages WHERE conversation_id = ? ORDER BY created_at, rowid').all(conv.id)
-    .map((m) => { const t = JSON.parse(m.tool_trace); return { ...m, tool_trace: Array.isArray(t) ? t : t.calls || [], artifacts: Array.isArray(t) ? [] : t.artifacts || [], suggestions: Array.isArray(t) ? [] : t.suggestions || [], proposals: proposals.filter((p) => p.message_id === m.id) }; });
+    .map((m) => { const t = JSON.parse(m.tool_trace); return { ...m, tool_trace: Array.isArray(t) ? t : t.calls || [], artifacts: Array.isArray(t) ? [] : t.artifacts || [], suggestions: Array.isArray(t) ? [] : t.suggestions || [], progress: Array.isArray(t) ? null : t.progress ?? null, incomplete: !Array.isArray(t) && !!t.incomplete, proposals: proposals.filter((p) => p.message_id === m.id) }; });
   return { id: conv.id, title: conv.title, skill: conv.active_skill ?? null, messages };
 }
 
@@ -89,7 +92,8 @@ export function expireOld() {
 }
 
 // Runs one user turn: up to MAX_ROUNDS of read-tool calls, then a final answer with optional proposals.
-export async function chat({ workspaceId, user, role, conversationId, message, context = null }) {
+// emit({type:'step'|'delta'|'reset', ...}) turns on streaming; signal stops it (the person pressed Stop or left).
+export async function chat({ workspaceId, user, role, conversationId, message, context = null, emit = null, signal = null }) {
   let conv = conversationId
     ? db.prepare('SELECT * FROM ai_conversations WHERE id = ? AND workspace_id = ? AND user_id = ?').get(String(conversationId), workspaceId, user.id)
     : null;
@@ -128,46 +132,70 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
   const results = [];
   const artifacts = [];
   let outcome = final ? 'command' : 'ok'; let rounds = 0;
-  for (let round = 0; round <= MAX_ROUNDS && !final; round += 1) {
-    const forceFinal = round === MAX_ROUNDS;
-    rounds = round + 1;
-    const ctxAi = { workspaceId, userId: user.id, purpose: 'assistant' };
-    const system = (forceFinal ? `${SYSTEM}\n\nTool budget exhausted: reply now with {"type":"final",...} using only what you have.` : SYSTEM) + skillBlock;
-    const prompt = `<question>${userText.replace(/</g, '\\u003c')}</question>\n<data>${esc({ today: todayUtc(), user: { name: user.name, role }, workspace: workspaceDigest(workspaceId, user.id), current_view: resolveContext(workspaceId, context), conversation: history, tool_results: results })}</data>`;
-    let raw = (await complete(ctxAi, { system, user: prompt })).text;
-    let out;
-    // an unreadable reply gets one more try; after that plain prose is shown as it is, never a dead error
-    for (let attempt = 0; attempt < 2 && out === undefined; attempt += 1) {
-      try { out = parseJson(raw); } catch {
-        if (attempt === 0) raw = (await complete(ctxAi, { system, user: `${prompt}\n<fix>Your previous reply was not valid JSON. Reply again with ONLY one valid JSON object in one of the two shapes.</fix>` })).text;
+  let live = null; let incomplete = false; let droppedError = null;
+  try {
+    for (let round = 0; round <= MAX_ROUNDS && !final; round += 1) {
+      const forceFinal = round === MAX_ROUNDS;
+      rounds = round + 1;
+      const ctxAi = { workspaceId, userId: user.id, purpose: 'assistant' };
+      const system = (forceFinal ? `${SYSTEM}\n\nTool budget exhausted: reply now with {"type":"final",...} using only what you have.` : SYSTEM) + skillBlock;
+      const prompt = `<question>${userText.replace(/</g, '\\u003c')}</question>\n<data>${esc({ today: todayUtc(), user: { name: user.name, role }, workspace: workspaceDigest(workspaceId, user.id), current_view: resolveContext(workspaceId, context), conversation: history, tool_results: results })}</data>`;
+      const ask = async (userPrompt) => {
+        if (!emit) return (await complete(ctxAi, { system, user: userPrompt })).text;
+        if (signal?.aborted) throw new StreamAbortedError('');
+      live = new AnswerStream((t) => emit({ type: 'delta', text: t }));
+        const stream = live;
+        return (await completeStream(ctxAi, { system, user: userPrompt }, { signal, onDelta: (c) => stream.push(c) })).text;
+      };
+      let raw = await ask(prompt);
+      let out;
+      // an unreadable reply gets one more try; after that plain prose is shown as it is, never a dead error
+      for (let attempt = 0; attempt < 2 && out === undefined; attempt += 1) {
+        try { out = parseJson(raw); } catch {
+          if (attempt === 0) { emit?.({ type: 'reset' }); raw = await ask(`${prompt}\n<fix>Your previous reply was not valid JSON. Reply again with ONLY one valid JSON object in one of the two shapes.</fix>`); }
+        }
+      }
+      if (out === undefined) {
+        const prose = String(raw).trim();
+        if (prose && !/^[[{]/.test(prose)) { final = { answer: prose, proposals: [] }; outcome = 'plain_text'; }
+        else { final = { answer: 'I could not read my own answer just now. Try again, or pick one of these:', proposals: [] }; outcome = 'parse_error'; }
+        break;
+      }
+      if (out?.type === 'tool' && Array.isArray(out.calls) && !forceFinal) {
+        for (const call of out.calls.slice(0, MAX_CALLS_PER_ROUND)) {
+          const name = String(call?.tool ?? '');
+          const args = call?.args && typeof call.args === 'object' ? call.args : {};
+          const lab = stepLabel(name);
+          const entry = { tool: name.slice(0, 40), args, label: lab.past, source: lab.source };
+          trace.push(entry);
+          emit?.({ type: 'step', id: trace.length, label: lab.run, state: 'running' });
+          const t0 = Date.now();
+          const result = await runSkill(name, args, workspaceId, user);
+          entry.ms = Date.now() - t0;
+          if (result?.error) entry.failed = true;
+          if (name === 'test_automation_step') entry.summary = { ok: !result?.error, message: String(result?.message ?? result?.error ?? '').slice(0, 300), output: String(result?.output ?? '').slice(0, 600) };
+          emit?.({ type: 'step', id: trace.length, label: lab.past, state: entry.failed ? 'failed' : 'done', ms: entry.ms });
+          if (result?.artifact) artifacts.push(result.artifact);
+          results.push({ tool: name.slice(0, 40), args, result: bounded(result, TOOLS[name]?.maxChars) });
+        }
+      } else if (out?.type === 'final' && typeof out.answer === 'string') {
+        final = out;
+      } else if (forceFinal) {
+        final = { answer: results.length ? 'I looked at your data but ran out of steps before I could answer. Ask a narrower question, or pick one of these:' : 'I am not sure what you want me to do. Pick one of these, or say it another way:', proposals: [] };
+        outcome = 'budget_exhausted';
       }
     }
-    if (out === undefined) {
-      const prose = String(raw).trim();
-      if (prose && !/^[[{]/.test(prose)) { final = { answer: prose, proposals: [] }; outcome = 'plain_text'; }
-      else { final = { answer: 'I could not read my own answer just now. Try again, or pick one of these:', proposals: [] }; outcome = 'parse_error'; }
-      break;
-    }
-    if (out?.type === 'tool' && Array.isArray(out.calls) && !forceFinal) {
-      for (const call of out.calls.slice(0, MAX_CALLS_PER_ROUND)) {
-        const name = String(call?.tool ?? '');
-        const args = call?.args && typeof call.args === 'object' ? call.args : {};
-        trace.push({ tool: name.slice(0, 40), args });
-        const result = await runSkill(name, args, workspaceId, user);
-        if (result?.artifact) artifacts.push(result.artifact);
-        results.push({ tool: name.slice(0, 40), args, result: bounded(result, TOOLS[name]?.maxChars) });
-      }
-    } else if (out?.type === 'final' && typeof out.answer === 'string') {
-      final = out;
-    } else if (forceFinal) {
-      final = { answer: results.length ? 'I looked at your data but ran out of steps before I could answer. Ask a narrower question, or pick one of these:' : 'I am not sure what you want me to do. Pick one of these, or say it another way:', proposals: [] };
-      outcome = 'budget_exhausted';
-    }
+  } catch (err) {
+    if (!(err instanceof StreamAbortedError) && !err.dropped) throw err;
+    incomplete = true; outcome = 'interrupted';
+    final = { answer: live?.text?.trim() || (err instanceof StreamAbortedError ? 'Stopped before I wrote anything.' : 'The connection dropped before I wrote anything.'), proposals: [] };
+    if (err.dropped) droppedError = err;
   }
 
   const answer = clip(final.answer.trim(), 4000) || 'No answer.';
   let suggestions = (Array.isArray(final.suggestions) ? final.suggestions : []).map((x) => String(x?.label ?? x ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)).filter(Boolean).slice(0, 4);
   if (final.done === true) activeNow = null;
+  const pr = final.progress; const progress = activeNow && pr && Number.isInteger(pr.step) && Number.isInteger(pr.of) && pr.of >= 1 && pr.of <= 20 && pr.step >= 1 && pr.step <= pr.of ? { step: pr.step, of: pr.of } : null;
   db.prepare('UPDATE ai_conversations SET active_skill = ? WHERE id = ?').run(activeNow, conv.id);
   const dropped = [];
   const accepted = [];
@@ -181,18 +209,20 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
 
   // every answer leaves the user something to click: when the model gave no options, derive sensible ones
   let derived = 0;
-  if (!suggestions.length && !accepted.length) {
+  if (incomplete) suggestions = [];
+  if (!incomplete && !suggestions.length && !accepted.length) {
     suggestions = outcome === 'parse_error' || outcome === 'budget_exhausted' ? FALLBACK_CHIPS
       : dropped.length ? ['Try again', 'Tell me what to change']
         : activeNow ? ['Go on', '/stop']
           : /\?\s*$/.test(answer) ? ['Yes', 'No', 'Something else'] : [];
     derived = suggestions.length ? 1 : 0;
   }
+  const createdAt = new Date(Date.now() + 1).toISOString();
   const userMsgId = nanoid();
   const asstMsgId = nanoid();
   db.prepare('INSERT INTO ai_messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)').run(userMsgId, conv.id, 'user', message, nowIso());
   db.prepare('INSERT INTO ai_messages (id, conversation_id, role, content, tool_trace, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(asstMsgId, conv.id, 'assistant', answer, JSON.stringify({ calls: trace, artifacts, suggestions, skill: activeNow }), new Date(Date.now() + 1).toISOString());
+    .run(asstMsgId, conv.id, 'assistant', answer, JSON.stringify({ calls: trace, artifacts, suggestions, skill: activeNow, progress, incomplete }), createdAt);
   db.prepare('INSERT INTO ai_turns (id, workspace_id, user_id, conversation_id, message_id, outcome, rounds, tool_calls, proposals, dropped, skill, derived_suggestions, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(nanoid(), workspaceId, user.id, conv.id, asstMsgId, outcome, rounds, trace.length, accepted.length, dropped.length, skill?.name ?? null, derived, nowIso());
   const exp = new Date(Date.now() + PROPOSAL_TTL_MS).toISOString();
@@ -220,5 +250,5 @@ export async function chat({ workspaceId, user, role, conversationId, message, c
     }
   }
   db.prepare('UPDATE ai_conversations SET updated_at = ? WHERE id = ?').run(nowIso(), conv.id);
-  return { conversationId: conv.id, message: { id: asstMsgId, role: 'assistant', content: answer, tool_trace: trace, artifacts, suggestions, proposals }, skill: activeNow, dropped };
+  return { conversationId: conv.id, message: { id: asstMsgId, role: 'assistant', content: answer, tool_trace: trace, artifacts, suggestions, proposals, progress, incomplete, created_at: createdAt }, skill: activeNow, dropped, droppedError: droppedError ? droppedError.message : null };
 }

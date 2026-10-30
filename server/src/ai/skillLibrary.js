@@ -41,10 +41,12 @@ Slots: title, date, start time, end time or duration, time zone (default: the us
 3. Restate in one line and propose create_event with a reminder of 30 minutes unless told otherwise. Suggestions: "Yes, add it", "Change the time", "Add another".
 4. Set "done": true when the user is finished.`;
 
+const PROGRESS = '\n\nIn every answer include "progress":{"step":n,"of":N}: which step of how many (for example question 2 of 4) you are on, so the user sees how far along they are.';
+
 export const BUILTIN_SKILLS = [
-  { name: 'add-transaction', description: 'Record an expense or income, asking only for what is missing', body: ADD_TRANSACTION },
-  { name: 'add-task', description: 'Create a task with the right project, date and priority', body: ADD_TASK },
-  { name: 'add-event', description: 'Put an event on the calendar with the right time', body: ADD_EVENT },
-  { name: 'create-automation', description: 'Guided interview that designs and creates an automation, step by step, until it is done', body: CREATE_AUTOMATION },
+  { name: 'add-transaction', description: 'Record an expense or income, asking only for what is missing', body: ADD_TRANSACTION + PROGRESS },
+  { name: 'add-task', description: 'Create a task with the right project, date and priority', body: ADD_TASK + PROGRESS },
+  { name: 'add-event', description: 'Put an event on the calendar with the right time', body: ADD_EVENT + PROGRESS },
+  { name: 'create-automation', description: 'Guided interview that designs and creates an automation, step by step, until it is done', body: CREATE_AUTOMATION + PROGRESS },
   { name: 'amb-workflow', description: 'How to review, plan and change the workspace: reviews, finance, projects, automations, careful money handling', body: AMB_WORKFLOW },
 ];

@@ -59,10 +59,10 @@ export default function AssistantDock() {
       {open && (
         <aside className="dock" role="complementary" aria-label="AI assistant">
           <header className="dock__head">
-            <div><strong><Sparkles size={14} aria-hidden="true" /> Assistant</strong><small>Looking at: {ctx.label}</small></div>
+            <div><strong><Sparkles size={14} aria-hidden="true" /> Assistant</strong><small>{active?.name ? `${active.name} workspace \u00b7 ` : ''}<span>Looking at: {ctx.label}</span></small></div>
             <button type="button" className="btn btn-ghost" onClick={() => { setConversation(null); setAuto(null); }}><Plus size={14} aria-hidden="true" /> New chat</button>
           </header>
-          {top.length > 0 && (
+          {top.length > 0 && !convId && (
             <section className="dock__suggest" aria-label="Suggested next steps">
               <h3><Lightbulb size={14} aria-hidden="true" /> Suggested next steps</h3>
               <ul>
@@ -80,8 +80,7 @@ export default function AssistantDock() {
           )}
           <div className="dock__chat">
             <AssistantChat compact conversationId={convId} onConversation={setConversation} context={ctx.context} writable={writable}
-              autoSend={auto} onAutoSent={() => setAuto(null)} onNavigate={() => setOpen(false)}
-              emptyHint={<p className="muted">Ask about this page, or tell me what to set up. I can read your data, analyse it, write reports and propose changes for you to approve.</p>} />
+              autoSend={auto} onAutoSent={() => setAuto(null)} onNavigate={() => setOpen(false)} />
           </div>
         </aside>
       )}

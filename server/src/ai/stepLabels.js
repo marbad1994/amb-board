@@ -1,0 +1,36 @@
+// Plain-language names for what the assistant is doing, shown while it works and kept in the history.
+// run = while it happens, past = afterwards, source = the short name shown on source chips (null = not a data source).
+const L = (run, past, source = null) => ({ run, past, source });
+export const STEP_LABELS = {
+  workspace_overview: L('Looking over your workspace', 'Looked over your workspace', 'Workspace'),
+  list_projects: L('Reading your projects', 'Read your projects', 'Projects'),
+  get_project: L('Reading the project', 'Read the project', 'Project'),
+  list_tasks: L('Reading your tasks', 'Read your tasks', 'Tasks'),
+  list_events: L('Checking your calendar', 'Checked your calendar', 'Calendar'),
+  list_goals: L('Reading your goals', 'Read your goals', 'Goals'),
+  list_habits: L('Reading your habits', 'Read your habits', 'Habits'),
+  list_automations: L('Reading your automations', 'Read your automations', 'Automations'),
+  list_savings_and_debts: L('Checking savings and debts', 'Checked savings and debts', 'Savings and debts'),
+  list_workspaces: L('Listing your workspaces', 'Listed your workspaces', 'Workspaces'),
+  budget_metrics: L('Checking the project budget', 'Checked the project budget', 'Budget metrics'),
+  month_summary: L('Adding up the month', 'Added up the month', 'Month summary'),
+  month_budget: L('Checking your category budgets', 'Checked your category budgets', 'Month budget'),
+  analyze_spending: L('Comparing with your usual spending', 'Compared with your usual spending', 'Spending analysis'),
+  analyze_workload: L('Measuring your workload', 'Measured your workload', 'Workload analysis'),
+  project_health: L('Checking project health', 'Checked project health', 'Project health'),
+  find_gaps: L('Looking for gaps in your data', 'Looked for gaps in your data', 'Gap check'),
+  cross_reference: L('Collecting everything linked to it', 'Collected everything linked to it', 'Linked items'),
+  search: L('Searching your workspace', 'Searched your workspace', 'Search'),
+  generate_report: L('Building the report', 'Built the report', null),
+  automation_guide: L('Reading the automation guide', 'Read the automation guide', null),
+  test_automation_step: L('Testing the step', 'Tested the step', null),
+  web_search: L('Searching the web', 'Searched the web', null),
+  read_web_page: L('Reading the web page', 'Read the web page', null),
+  external_tools: L('Looking at your connected tools', 'Looked at your connected tools', null),
+  call_external_tool: L('Asking a connected tool', 'Asked a connected tool', null),
+  browser_status: L('Checking your shared tab', 'Checked your shared tab', null),
+  browser_snapshot: L('Reading your shared tab', 'Read your shared tab', null),
+  browser_fill: L('Filling in the form', 'Filled in the form', null),
+  browser_click: L('Asking to click', 'Asked to click', null),
+};
+export const stepLabel = (tool) => STEP_LABELS[tool] || L(`Using ${String(tool).replace(/_/g, ' ')}`, `Used ${String(tool).replace(/_/g, ' ')}`);
