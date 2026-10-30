@@ -110,3 +110,90 @@ export async function readWebPage(rawUrl, userId) {
     return { error: clip(err.message, 140) };
   }
 }
+
+// ---------------------------------------------------------------- scraper (automation step)
+// Fetches one public page and returns it in the shape the next step needs. Same safety rules as readWebPage
+// (https, public addresses only, redirects re-checked), a larger size cap, and its own daily quota.
+const SCRAPE_MAX_BYTES = 1500 * 1024; const SCRAPE_OUT = 200_000;
+const scrapeUsed = new Map();
+function takeScrapeQuota(userId) {
+  const day = new Date().toISOString().slice(0, 10); const key = `${userId}:${day}`;
+  const n = (scrapeUsed.get(key) || 0) + 1;
+  if (n > Number(process.env.SCRAPE_DAILY_LIMIT || 300)) return false;
+  scrapeUsed.set(key, n);
+  for (const k of scrapeUsed.keys()) if (!k.endsWith(day)) scrapeUsed.delete(k);
+  return true;
+}
+export const SCRAPE_FORMATS = ['text', 'html', 'links', 'json', 'feed', 'meta'];
+
+export const cleanHtml = (html) => String(html).replace(/<(script|style|noscript|svg|template|iframe)[\s\S]*?<\/\1>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ').replace(/[ \t\r\f]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+const attr = (tag, name) => decodeEntities(new RegExp(`${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(tag)?.slice(1).find((x) => x != null) ?? '');
+
+export function extractLinks(html, base, { contains = '', max = 200 } = {}) {
+  const out = []; const seen = new Set();
+  for (const m of html.matchAll(/<a\s[^>]*?href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi)) {
+    let url;
+    try { const u = new URL(decodeEntities(m[1] ?? m[2]), base); if (!/^https?:$/.test(u.protocol)) continue; u.hash = ''; url = u.toString(); } catch { continue; }
+    if (contains && !url.includes(contains)) continue;
+    if (seen.has(url)) continue; seen.add(url);
+    out.push({ text: clip(stripTags(m[3]), 120), url: url.slice(0, 500) });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export function extractFeed(xml, max = 50) {
+  const items = [];
+  for (const m of xml.matchAll(/<(item|entry)[\s>][\s\S]*?<\/\1>/gi)) {
+    const b = m[0];
+    const tag = (n) => { const r = new RegExp(`<${n}[^>]*>([\\s\\S]*?)</${n}>`, 'i').exec(b); return r ? clip(stripTags(r[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')), 600) : ''; };
+    const link = /<link[^>]*href\s*=\s*["']([^"']+)["']/i.exec(b)?.[1] || tag('link');
+    items.push({ title: tag('title'), link: decodeEntities(link).slice(0, 500), date: tag('pubDate') || tag('updated') || tag('published'), summary: tag('description') || tag('summary') });
+    if (items.length >= max) break;
+  }
+  return items;
+}
+
+export function extractMeta(html) {
+  const metaTag = (re) => { for (const m of html.matchAll(/<meta\s[^>]*>/gi)) if (re.test(m[0])) return attr(m[0], 'content'); return ''; };
+  const heads = [...html.matchAll(/<(h[1-3])[^>]*>([\s\S]*?)<\/\1>/gi)].map((m) => ({ level: m[1], text: clip(stripTags(m[2]), 160) })).filter((h) => h.text).slice(0, 30);
+  return {
+    title: clip(stripTags(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ''), 200),
+    description: clip(metaTag(/name\s*=\s*["']description["']/i) || metaTag(/property\s*=\s*["']og:description["']/i), 400),
+    image: metaTag(/property\s*=\s*["']og:image["']/i).slice(0, 500),
+    canonical: attr(/<link[^>]*rel\s*=\s*["']canonical["'][^>]*>/i.exec(html)?.[0] ?? '', 'href').slice(0, 500),
+    headings: heads,
+  };
+}
+
+// -> { url, value } where value is text or JSON-able data; or { error }
+export async function scrapePage(rawUrl, userId, { format = 'text', contains = '', max = 200 } = {}) {
+  if (!SCRAPE_FORMATS.includes(format)) return { error: `format must be one of ${SCRAPE_FORMATS.join(', ')}` };
+  if (!takeScrapeQuota(userId)) return { error: 'daily scraping limit reached' };
+  let url = String(rawUrl || '').trim();
+  try {
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+      const u = await assertSafeUrl(url);
+      const r = await fetch(u, { redirect: 'manual', headers: { accept: 'text/html,application/xhtml+xml,application/xml,application/rss+xml,application/json;q=0.9,text/plain;q=0.8', 'user-agent': 'AMB-Board-Automation/1.0' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (r.status >= 300 && r.status < 400 && r.headers.get('location')) { url = new URL(r.headers.get('location'), u).toString(); continue; }
+      if (!r.ok) return { error: `the page answered ${r.status}` };
+      const type = r.headers.get('content-type') || '';
+      if (!/text\/|json|xml/.test(type)) return { error: `cannot read this kind of file (${type.split(';')[0] || 'unknown'})` };
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > SCRAPE_MAX_BYTES) return { error: 'the page is too large (1.5 MB max)' };
+      const raw = buf.toString('utf8');
+      const final = u.toString();
+      let value;
+      if (format === 'json') { try { value = JSON.parse(raw); } catch { return { error: 'the page is not valid JSON' }; } }
+      else if (format === 'feed') { value = extractFeed(raw, Math.min(100, Math.max(1, Number(max) || 50))); if (!value.length) return { error: 'no feed items found (is this an RSS or Atom address?)' }; }
+      else if (format === 'links') value = extractLinks(raw, final, { contains: String(contains || ''), max: Math.min(300, Math.max(1, Number(max) || 200)) });
+      else if (format === 'meta') value = extractMeta(raw);
+      else if (format === 'html') value = cleanHtml(raw).slice(0, SCRAPE_OUT);
+      else value = (/html/.test(type) ? htmlToText(raw).text : raw.replace(/\s+\n/g, '\n').trim()).slice(0, SCRAPE_OUT);
+      return { url: final, value };
+    }
+    return { error: 'too many redirects' };
+  } catch (err) {
+    return { error: clip(err.message, 140) };
+  }
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowUp, Play, Plus, Sparkles, Trash2, Workflow, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, FlaskConical, Play, Plus, Sparkles, Trash2, Workflow, X } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 
@@ -10,7 +10,8 @@ const FREQ = [['daily', 'Every day'], ['weekdays', 'Every weekday (Mon to Fri)']
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const LABEL = { create_task: 'Create a task', update_task: 'Change the triggering task', add_comment: 'Comment on the triggering task', create_transaction: 'Record a transaction',
   create_note: 'Write a note', create_event: 'Add a calendar event', notify: 'Send me a notification', generate_report: 'Generate a report',
-  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI', send_email: 'Send an email' };
+  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI', send_email: 'Send an email',
+  scrape: 'Scrape a web page', parse: 'Parse data (JSON, HTML, CSV or your own prompt)', loop: 'Repeat for every item in a list' };
 const REPORTS = [['overview', 'Overview'], ['monthly_finance', 'Monthly finance'], ['workload', 'Workload'], ['project_status', 'Project status']];
 
 const DEFAULT_ARGS = {
@@ -18,6 +19,9 @@ const DEFAULT_ARGS = {
   create_transaction: { type: 'expense', amount: '', currency: 'EUR', description: '', category: '', status: 'planned' }, create_note: { title: '', body: '' },
   send_email: { to: ['me'], toText: 'me', template: '', subject: '', body: '' },
   use_tool: { tool: 'web_search', args: { query: '' }, save_as: '' }, ai_text: { instruction: '', input: '', save_as: '' },
+  scrape: { url: '', format: 'text', contains: '', max: 50, save_as: '' },
+  parse: { input: '', parser: 'json', prompt: '', fieldsText: '', output_format: 'json', save_as: '' },
+  loop: { over: '', max_items: 20, on_error: 'stop', steps: [{ type: 'use_tool', args: { tool: 'web_search', args: { query: '{{item}}' }, save_as: '' } }], collect: '', save_as: '' },
   create_event: { title: '', in_days: 1, time: '09:00', timezone: TZ, reminder_minutes: 30 }, notify: { title: '', body: '', link: '/tasks' }, generate_report: { kind: 'overview', project_id: '' },
 };
 
@@ -94,7 +98,104 @@ function EmailFields({ a, set, templates, before, meta, trigger }) {
   );
 }
 
-function StepFields({ step, set, projects, categories, trigger, tools, templates, before, meta }) {
+const SCRAPE_FORMATS = [['text', 'Readable text'], ['links', 'Links (text and address)'], ['feed', 'RSS or Atom feed items'], ['json', 'JSON from an address'], ['meta', 'Title, description, headings'], ['html', 'Cleaned HTML']];
+const PARSERS = [['json', 'JSON (default)'], ['html', 'HTML page'], ['xml', 'XML or RSS'], ['csv', 'CSV or table text'], ['markdown', 'Markdown'], ['text', 'Plain text'], ['custom', 'Custom: write my own parsing prompt']];
+const OUTPUTS = [['json', 'JSON (default)'], ['csv', 'CSV'], ['markdown_table', 'Markdown table'], ['bullets', 'Bullet list'], ['text', 'Plain text']];
+const slug = (v) => v.toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+function ScrapeFields({ a, set }) {
+  return (
+    <div className="flow-row">
+      <Field label="Page address (https)" wide><input value={a.url} onChange={(e) => set({ ...a, url: e.target.value })} placeholder="https://example.com/news  (inside a loop: {{item.url}})" /></Field>
+      <Field label="Get"><select value={a.format} onChange={(e) => set({ ...a, format: e.target.value })}>{SCRAPE_FORMATS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+      {a.format === 'links' && <Field label="Only links containing"><input value={a.contains || ''} onChange={(e) => set({ ...a, contains: e.target.value })} placeholder="e.g. /article/" /></Field>}
+      {(a.format === 'links' || a.format === 'feed') && <Field label="At most (items)"><input type="number" min="1" max="300" value={a.max} onChange={(e) => set({ ...a, max: e.target.value })} /></Field>}
+      <Field label="Save the result as"><input value={a.save_as} maxLength={20} onChange={(e) => set({ ...a, save_as: slug(e.target.value) })} placeholder="e.g. page" /></Field>
+      <p className="hint" style={{ gridColumn: '1 / -1' }}>Fetches one public page. Use it next as {'{{result.' + (a.save_as || 'name') + '}}'}: give it to a Parse step, or to a loop when you chose links or feed items.</p>
+    </div>
+  );
+}
+
+function ParseFields({ a, set, before }) {
+  const custom = a.parser === 'custom';
+  return (
+    <div className="flow-row">
+      <Field label="Data to parse" wide><textarea rows={2} value={a.input} onChange={(e) => set({ ...a, input: e.target.value })} placeholder={before.length ? `e.g. {{result.${before[before.length - 1]}}}` : 'e.g. {{result.page}}'} /></Field>
+      <Field label="The data is"><select value={a.parser} onChange={(e) => set({ ...a, parser: e.target.value })}>{PARSERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+      <Field label="Give me (output format, optional)"><select value={a.output_format} onChange={(e) => set({ ...a, output_format: e.target.value })}>{OUTPUTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+      <Field label="Which data do you want? (comma separated, optional)" wide><input value={a.fieldsText ?? (a.fields || []).join(', ')} onChange={(e) => set({ ...a, fieldsText: e.target.value })} placeholder="e.g. title, price, url  (empty = everything useful)" /></Field>
+      {custom && <Field label="Your parsing prompt" wide><textarea rows={4} maxLength={2000} value={a.prompt || ''} onChange={(e) => set({ ...a, prompt: e.target.value })} placeholder="Describe exactly what to extract and how to shape it. Example: List every product with its price in EUR as a number; skip sold-out items." /></Field>}
+      {!custom && <Field label="Extra guidance (optional)" wide><input value={a.prompt || ''} maxLength={2000} onChange={(e) => set({ ...a, prompt: e.target.value })} placeholder="e.g. only items released this year" /></Field>}
+      <Field label="Save the result as"><input value={a.save_as} maxLength={20} onChange={(e) => set({ ...a, save_as: slug(e.target.value) })} placeholder="e.g. items" /></Field>
+      <p className="hint" style={{ alignSelf: 'end' }}>A fixed, hardened AI prompt does the parsing: text in the data is never obeyed, values are never invented, JSON is checked. JSON that needs no change costs no AI call.</p>
+    </div>
+  );
+}
+
+// formatted output of a test run
+function TestOutput({ r }) {
+  if (!r) return null;
+  let shown = r.output || '';
+  try { shown = JSON.stringify(JSON.parse(shown), null, 2); } catch { /* not JSON */ }
+  return (
+    <div className="flow-test" aria-label="Test result" role="status">
+      {r.error ? <p className="form-error">Test failed: {r.error}</p> : <p><b>Test result:</b> {r.message}</p>}
+      {shown && <pre className="flow-test__out" tabIndex={0}>{shown.length > 6000 ? `${shown.slice(0, 6000)}\n... (${shown.length - 6000} more characters)` : shown}</pre>}
+      {r.log?.length > 0 && <ul className="flow-log" aria-label="Items">{r.log.map((l, i) => <li key={i} className={l.ok ? '' : 'flow-run--failed'}>Step {l.step}: {l.message}{l.output && <pre className="flow-test__out">{l.output.slice(0, 600)}</pre>}</li>)}</ul>}
+    </div>
+  );
+}
+
+function LoopFields({ a, set, projects, categories, trigger, tools, templates, meta, before, tester }) {
+  const body = a.steps || [];
+  const setInner = (j, args) => set({ ...a, steps: body.map((s, k) => (k === j ? { ...s, args } : s)) });
+  const types = (meta?.steps || Object.keys(LABEL)).filter((s) => s !== 'loop' && (trigger.type === 'event' && trigger.event !== 'transaction_added' ? true : !['update_task', 'add_comment'].includes(s)));
+  const names = body.map((s) => s.args?.save_as).filter(Boolean);
+  return (
+    <div className="flow-row">
+      <Field label="Go through this list" wide><input value={a.over} onChange={(e) => set({ ...a, over: e.target.value })} placeholder={before.length ? `e.g. {{result.${before[before.length - 1]}}}  (a JSON list from a Parse or Scrape step)` : '{{result.items}}'} /></Field>
+      <Field label="At most (items, max 50)"><input type="number" min="1" max="50" value={a.max_items} onChange={(e) => set({ ...a, max_items: e.target.value })} /></Field>
+      <Field label="If an item fails"><select value={a.on_error} onChange={(e) => set({ ...a, on_error: e.target.value })}><option value="stop">Stop the flow</option><option value="continue">Skip it and continue</option></select></Field>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <p className="hint">For every item run these steps. Use <code>{'{{item}}'}</code>, <code>{'{{item.field}}'}</code>, <code>{'{{index}}'}</code> and <code>{'{{total}}'}</code>. Put a placeholder as the whole value of a tool argument to pass the item as JSON.</p>
+        {body.map((s, j) => (
+          <div className="flow-step flow-step--inner" key={j}>
+            <div className="flow-step__head">
+              <span className="num">{j + 1}</span>
+              <select aria-label={`Loop step ${j + 1} action`} value={s.type} onChange={(e) => set({ ...a, steps: body.map((y, k) => (k === j ? { type: e.target.value, args: { ...DEFAULT_ARGS[e.target.value] } } : y)) })}>{types.map((st) => <option key={st} value={st}>{LABEL[st]}</option>)}</select>
+              <button type="button" className="btn btn-icon btn-ghost" disabled={body.length === 1} onClick={() => set({ ...a, steps: body.filter((_, k) => k !== j) })} aria-label={`Remove loop step ${j + 1}`}><X size={16} /></button>
+            </div>
+            <StepFields step={s} set={(args) => setInner(j, args)} projects={projects} categories={categories} trigger={trigger} tools={tools} templates={templates} meta={meta} tester={tester} before={[...before, ...body.slice(0, j).map((x) => x.args?.save_as).filter(Boolean)]} />
+            {tester && <StepTester step={s} fn={(st) => tester(st, a.over)} label={`Test loop step ${j + 1}`} />}
+          </div>
+        ))}
+        {body.length < 5 && <button type="button" className="btn" onClick={() => set({ ...a, steps: [...body, { type: 'use_tool', args: { ...DEFAULT_ARGS.use_tool } }] })}><Plus size={16} aria-hidden="true" /> Add a step to the loop</button>}
+      </div>
+      {names.length > 0 && (<>
+        <Field label="Collect the result of"><select value={a.collect || ''} onChange={(e) => set({ ...a, collect: e.target.value })}><option value="">Nothing (just run the steps)</option>{names.map((n) => <option key={n} value={n}>{n}</option>)}</select></Field>
+        {a.collect && <Field label="Save the collected list as"><input value={a.save_as || ''} maxLength={20} onChange={(e) => set({ ...a, save_as: slug(e.target.value) })} placeholder="e.g. details" /></Field>}
+      </>)}
+    </div>
+  );
+}
+
+// "Test this step": runs it (reading steps for real, changes only described) and prints the output
+function StepTester({ step, fn, label = 'Test this step' }) {
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try { setRes(await fn(step)); } catch (err) { setRes({ ok: false, error: err.message }); } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button type="button" className="btn" onClick={run} disabled={busy}><FlaskConical size={14} aria-hidden="true" /> {busy ? 'Testing...' : label}</button>
+      <TestOutput r={res} />
+    </div>
+  );
+}
+
+function StepFields({ step, set, projects, categories, trigger, tools, templates, before, meta, tester }) {
   const a = step.args; const up = (k) => (e) => set({ ...a, [k]: e.target.value });
   const projectSelect = (k) => <select value={a[k]} onChange={up(k)}><option value="">Choose a project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>;
   const days = (k, label) => <Field label={label}><input type="number" min="0" max="3650" value={a[k] ?? ''} onChange={up(k)} placeholder="no date" /></Field>;
@@ -126,10 +227,25 @@ function StepFields({ step, set, projects, categories, trigger, tools, templates
       <Field label="Material to use" wide><textarea rows={2} value={a.input} onChange={up('input')} placeholder="e.g. {{result.news}}" /></Field>
       <Field label="Save the text as"><input value={a.save_as} maxLength={20} onChange={(e) => set({ ...a, save_as: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="e.g. summary" /></Field>
       <p className="hint" style={{ alignSelf: 'end' }}>Counts against the daily AI limit. Use it later as {'{{result.' + (a.save_as || 'name') + '}}'}</p></div>);
+    case 'scrape': return <ScrapeFields a={a} set={set} />;
+    case 'parse': return <ParseFields a={a} set={set} before={before || []} />;
+    case 'loop': return <LoopFields a={a} set={set} projects={projects} categories={categories} trigger={trigger} tools={tools} templates={templates} meta={meta} before={before || []} tester={tester} />;
     case 'generate_report': return (<div className="flow-row"><Field label="Report"><select value={a.kind} onChange={up('kind')}>{REPORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
       {a.kind === 'project_status' && <Field label="Project">{projectSelect('project_id')}</Field>}</div>);
     default: return trigger && null;
   }
+}
+
+const clean = (a) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, v === '' ? (k.endsWith('_days') || k === 'reminder_minutes' ? null : v) : v]));
+// what the server expects for one step (also used for tests); throws a readable error for bad JSON arguments
+function cleanStep(s, label) {
+  const args = clean(s.args);
+  if (s.type === 'use_tool' && args.argsText !== undefined) { try { args.args = args.argsText.trim() ? JSON.parse(args.argsText) : {}; } catch { throw new Error(`Step ${label}: the arguments are not valid JSON`); } }
+  delete args.argsText;
+  if (s.type === 'send_email') { args.to = String(args.toText ?? (args.to || []).join(',')).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean); delete args.toText; }
+  if (s.type === 'parse') { args.fields = String(args.fieldsText ?? (args.fields || []).join(',')).split(/[,\n]/).map((x) => x.trim()).filter(Boolean); delete args.fieldsText; }
+  if (s.type === 'loop') args.steps = (args.steps || []).map((x, j) => cleanStep(x, `${label}.${j + 1}`));
+  return { type: s.type, args };
 }
 
 function Builder({ initial, projects, categories, meta, tools, templates, onSave, onCancel }) {
@@ -140,6 +256,26 @@ function Builder({ initial, projects, categories, meta, tools, templates, onSave
   const setTrigger = (patch) => setF((x) => ({ ...x, trigger: { ...x.trigger, ...patch } }));
   const setStep = (i, args) => setF((x) => ({ ...x, steps: x.steps.map((s, j) => (j === i ? { ...s, args } : s)) }));
   const move = (i, d) => setF((x) => { const s = [...x.steps]; const [it] = s.splice(i, 1); s.splice(i + d, 0, it); return { ...x, steps: s }; });
+  // results of earlier tests are passed on, so a step is tested with real output of the steps before it
+  const [vars, setVars] = useState({});
+  const tester = async (step, itemFrom) => {
+    const r = await api.testAutomationStep({ step: cleanStep(step, '?'), trigger: t.type === 'event' ? { type: 'event', event: t.event || 'task_done', conditions: t.conditions || {} } : t, vars, item_from: itemFrom || undefined });
+    setVars((v) => ({ ...v, ...(r.vars || {}) }));
+    return r;
+  };
+  const [allRes, setAllRes] = useState(null);
+  const testAll = async () => {
+    setAllRes({ busy: true, lines: [] });
+    const lines = []; let local = {};
+    for (const [i, s] of f.steps.entries()) {
+      try {
+        const r = await api.testAutomationStep({ step: cleanStep(s, i + 1), trigger: t.type === 'event' ? { type: 'event', event: t.event || 'task_done', conditions: t.conditions || {} } : t, vars: local });
+        local = { ...local, ...(r.vars || {}) }; lines.push({ i, ok: true, r });
+      } catch (err) { lines.push({ i, ok: false, r: { ok: false, error: err.message } }); break; }
+      setAllRes({ busy: true, lines: [...lines] });
+    }
+    setVars(local); setAllRes({ busy: false, lines });
+  };
   const taskTrigger = t.type === 'event' && t.event !== 'transaction_added';
   const stepTypes = (meta?.steps || Object.keys(LABEL)).filter((s) => taskTrigger || !['update_task', 'add_comment'].includes(s));
 
@@ -152,16 +288,9 @@ function Builder({ initial, projects, categories, meta, tools, templates, onSave
 
   const save = async (e) => {
     e.preventDefault(); setBusy(true); setError('');
-    const clean = (a) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, v === '' ? (k.endsWith('_days') || k === 'reminder_minutes' ? null : v) : v]));
     const trigger = t.type === 'event' ? { type: 'event', event: t.event || 'task_done', conditions: t.conditions || {} } : t;
     try {
-      const steps = f.steps.map((s, i) => {
-        const args = clean(s.args);
-        if (s.type === 'use_tool' && args.argsText !== undefined) { try { args.args = args.argsText.trim() ? JSON.parse(args.argsText) : {}; } catch { throw new Error(`Step ${i + 1}: the arguments are not valid JSON`); } }
-        delete args.argsText;
-        if (s.type === 'send_email') { args.to = String(args.toText ?? (args.to || []).join(',')).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean); delete args.toText; }
-        return { type: s.type, args };
-      });
+      const steps = f.steps.map((s, i) => cleanStep(s, i + 1));
       await onSave({ name: f.name, trigger, steps });
     } catch (err) { setError(err.message); setBusy(false); }
   };
@@ -214,10 +343,17 @@ function Builder({ initial, projects, categories, meta, tools, templates, onSave
               <button type="button" className="btn btn-icon btn-ghost" disabled={i === f.steps.length - 1} onClick={() => move(i, 1)} aria-label={`Move step ${i + 1} down`}><ArrowDown size={16} /></button>
               <button type="button" className="btn btn-icon btn-ghost" disabled={f.steps.length === 1} onClick={() => setF((x) => ({ ...x, steps: x.steps.filter((_, j) => j !== i) }))} aria-label={`Remove step ${i + 1}`}><X size={16} /></button>
             </div>
-            <StepFields step={s} set={(args) => setStep(i, args)} projects={projects} categories={categories} trigger={t} tools={tools} templates={templates} meta={meta} before={f.steps.slice(0, i).map((x) => x.args?.save_as).filter(Boolean)} />
+            <StepFields step={s} set={(args) => setStep(i, args)} projects={projects} categories={categories} trigger={t} tools={tools} templates={templates} meta={meta} tester={tester} before={f.steps.slice(0, i).map((x) => x.args?.save_as).filter(Boolean)} />
+            {s.type !== 'loop' && <StepTester step={s} fn={tester} />}
+            {s.type === 'loop' && <StepTester step={s} fn={tester} label="Test the whole loop (first 3 items)" />}
           </div>
         ))}
         {f.steps.length < 10 && <button type="button" className="btn" onClick={() => setF((x) => ({ ...x, steps: [...x.steps, { type: 'notify', args: { ...DEFAULT_ARGS.notify } }] }))}><Plus size={16} aria-hidden="true" /> Add a step</button>}
+        <div style={{ margin: '10px 0' }}>
+          <button type="button" className="btn" onClick={testAll} disabled={allRes?.busy}><FlaskConical size={14} aria-hidden="true" /> {allRes?.busy ? 'Testing...' : 'Test all steps in order'}</button>
+          <small className="muted"> Reading steps really run; steps that create, notify or email only show what they would do. Nothing is saved.</small>
+          {allRes?.lines.map((l) => <div key={l.i}><b>Step {l.i + 1}</b><TestOutput r={l.r} /></div>)}
+        </div>
         <p className="hint">Text fields can use placeholders: {(meta?.placeholders || []).filter((p) => taskTrigger || !p.startsWith('trigger.') || t.event === 'transaction_added' || true).map((p) => `{{${p}}}`).join('  ')}</p>
       </div>
       <div className="flow-preview" aria-live="polite"><b>Summary:</b> {preview}</div>

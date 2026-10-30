@@ -41,12 +41,49 @@ export const FILTER_DOCS = {
 const TOKEN = /\{\{([^{}]{1,300})\}\}/g;
 const NAME = /^[a-z0-9_.]+$/;
 const parseArg = (s) => { const t = s.trim(); return /^".*"$/.test(t) ? t.slice(1, -1) : t; };
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+const looksJson = (v) => typeof v === 'string' && /^\s*[[{]/.test(v);
+const tryJson = (v) => { if (!looksJson(v)) return undefined; try { return JSON.parse(v); } catch { return undefined; } };
+export const asText = (v) => (v == null ? '' : typeof v === 'string' ? v : JSON.stringify(v));
+
+// Finds a value for a dotted path. A whole name in the context wins ("result.news"); otherwise the longest known prefix is
+// read as JSON and the rest walks into it: result.news.0.title, item.price, result.rows.length.
+export function lookup(path, ctx) {
+  if (Object.hasOwn(ctx, path)) return { found: true, value: ctx[path] };
+  const parts = path.split('.');
+  for (let n = parts.length - 1; n >= 1; n -= 1) {
+    const base = parts.slice(0, n).join('.');
+    if (!Object.hasOwn(ctx, base)) continue;
+    let v = tryJson(ctx[base]);
+    if (v === undefined) return { found: false };
+    for (const k of parts.slice(n)) {
+      if (BAD_KEYS.has(k) || v == null) return { found: false };
+      if (Array.isArray(v) && k === 'length') { v = v.length; continue; }
+      if (typeof v !== 'object' || !Object.hasOwn(v, k)) return { found: false };
+      v = v[k];
+    }
+    return { found: true, value: v };
+  }
+  return { found: false };
+}
+
+const FILTERS2 = {
+  json: (v) => { const j = tryJson(v); return j === undefined ? v : JSON.stringify(j, null, 2); },
+  join: (v, sep) => { const j = tryJson(v); return Array.isArray(j) ? j.map((x) => asText(x)).join(sep ?? ', ') : v; },
+  count: (v) => { const j = tryJson(v); return String(Array.isArray(j) ? j.length : j && typeof j === 'object' ? Object.keys(j).length : v.trim() ? v.split('\n').filter((l) => l.trim()).length : 0); },
+};
+Object.assign(FILTERS, FILTERS2);
+FILTER_NAMES.push(...Object.keys(FILTERS2));
+Object.assign(FILTER_DOCS, {
+  json: 'pretty-prints JSON', join: 'join:", " joins a JSON list into one line', count: 'number of items in a JSON list (or lines)',
+});
 
 // value for ONE token body such as `result.news | pretty | truncate:300`
 function evaluate(body, ctx) {
   const [path, ...filters] = body.split('|').map((p) => p.trim());
   if (!NAME.test(path)) return null;           // not ours: leave the text as it was
-  let v = String(ctx[path] ?? '');
+  let v = asText(lookup(path, ctx).value);
   for (const f of filters) {
     const i = f.indexOf(':');
     const name = (i < 0 ? f : f.slice(0, i)).trim();
@@ -58,6 +95,17 @@ function evaluate(body, ctx) {
 
 export function render(text, ctx) {
   return String(text ?? '').replace(TOKEN, (m, body) => { const v = evaluate(body, ctx); return v === null ? m : v; });
+}
+
+// A value that is EXACTLY one placeholder keeps its type, so a list or object from an earlier step reaches the next
+// tool as real JSON ("items": "{{result.rows}}" becomes an array). Anything else is text.
+export function renderTyped(text, ctx) {
+  const m = /^\s*\{\{\s*([a-z0-9_.]+)\s*\}\}\s*$/.exec(String(text ?? ''));
+  if (m) {
+    const { found, value } = lookup(m[1], ctx);
+    if (found) { const j = tryJson(value); if (j !== undefined) return j; if (typeof value !== 'string') return value; }
+  }
+  return render(text, ctx);
 }
 
 // names used in a text, for the UI and for validation hints

@@ -7,19 +7,22 @@ import { TOOLS } from '../ai/tools.js';
 import { BUILTIN_TEMPLATES, render as renderText, emailDocument, placeholdersIn, FILTER_DOCS } from '../automations/template.js';
 import { nanoid } from 'nanoid';
 import { mailConfigured } from '../notifications/mailer.js';
-import { listAutomations, readAutomation, listRuns, runNow } from '../automations/engine.js';
+import { listAutomations, readAutomation, listRuns, runNow, testStep } from '../automations/engine.js';
+import { PARSERS, OUTPUT_FORMATS } from '../automations/parser.js';
+import { SCRAPE_FORMATS } from '../ai/web.js';
 
 const router = Router();
 const name80 = (v) => String(v ?? '').trim().slice(0, 80);
 
 // What the builder UI needs to render: step kinds, trigger kinds and the placeholders a text field may use.
-router.get('/meta', (req, res) => res.json({ steps: Object.keys(STEP_DOCS), events: EVENT_TRIGGERS, placeholders: PLACEHOLDERS, max_automations: MAX_AUTOMATIONS, email_configured: mailConfigured(), filters: FILTER_DOCS }));
+router.get('/meta', (req, res) => res.json({ steps: Object.keys(STEP_DOCS), events: EVENT_TRIGGERS, placeholders: PLACEHOLDERS, max_automations: MAX_AUTOMATIONS, email_configured: mailConfigured(), filters: FILTER_DOCS, parsers: PARSERS, output_formats: OUTPUT_FORMATS, scrape_formats: SCRAPE_FORMATS }));
 
 router.get('/', (req, res) => res.json(listAutomations(req.ws.id).map((a) => ({ ...a, runs: listRuns(a.id, 3) }))));
 
 // The tool lists of connected servers are fetched first so save-time validation can tell read-only tools from the rest.
 async function warmExternal(req, steps = req.body.steps) {
-  for (const s of Array.isArray(steps) ? steps : []) {
+  const flat = (list) => (Array.isArray(list) ? list : []).flatMap((s) => [s, ...(s?.type === 'loop' ? flat(s.args?.steps) : [])]);
+  for (const s of flat(steps)) {
     if (s?.type === 'use_tool' && s.args?.tool === 'external') { const srv = findServer(req.ws.id, req.user.id, s.args.server); if (srv) await toolsOf(srv).catch(() => {}); }
   }
 }
@@ -76,6 +79,21 @@ router.get('/tools', async (req, res) => {
   const internal = Object.entries(TOOLS).filter(([n]) => !['call_external_tool', 'external_tools', 'generate_report', 'browser_status', 'browser_snapshot', 'browser_fill', 'browser_click'].includes(n)).map(([name, t]) => ({ name, kind: t.kind || 'read', doc: t.doc.slice(0, 160) }));
   const servers = await Promise.all(userServers(req.ws.id, req.user.id).map(async (s) => { try { return { name: s.name, tools: (await toolsOf(s)).map((t) => ({ name: t.name, read_only: t.read_only, description: t.description })) }; } catch (e) { return { name: s.name, tools: [], error: String(e.message).slice(0, 100) }; } }));
   res.json({ internal, servers });
+});
+
+// Test ONE step with the results of earlier steps (`vars`, name -> text). Reading steps really run (tools, scrape, parse, AI text);
+// steps that would change something only describe what they would do. Nothing is saved.
+const testHits = new Map();
+router.post('/test-step', async (req, res) => {
+  const now = Date.now(); const hits = (testHits.get(req.user.id) || []).filter((t) => now - t < 5 * 60_000);
+  if (hits.length >= 40) return res.status(429).json({ error: 'too many tests; wait a few minutes' });
+  testHits.set(req.user.id, [...hits, now]);
+  const step = req.body.step;
+  if (!step || typeof step !== 'object') return res.status(400).json({ error: 'step is required' });
+  const trigger = req.body.trigger ? validateTrigger(req.body.trigger) : { trigger: null };
+  await warmExternal(req, [step]);
+  const out = await testStep({ ws: req.ws.id, user: req.user, step, vars: req.body.vars, trigger: trigger.trigger ?? null, itemFrom: typeof req.body.item_from === 'string' ? req.body.item_from : '' });
+  res.status(out.ok ? 200 : 422).json(out);
 });
 
 function parseBody(req) {

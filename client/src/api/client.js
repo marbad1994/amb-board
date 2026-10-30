@@ -152,6 +152,7 @@ export const api = {
   notificationPrefs: () => request('/notifications/preferences'),
   assistantSettings: () => request('/ai/assistant/settings'),
   setAssistantSettings: (data) => request('/ai/assistant/settings', json('PUT', data)),
+  testAutomationStep: (data) => request('/automations/test-step', json('POST', data)),
   skillLibrary: () => request('/ai/assistant/skills/library'),
   importSkill: (data) => request('/ai/assistant/skills/import', json('POST', data)),
   deleteSkill: (id) => request(`/ai/assistant/skills/${id}`, { method: 'DELETE' }),

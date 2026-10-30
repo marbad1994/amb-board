@@ -733,6 +733,31 @@ try {
     await shot(page, '24-email-flow');
   });
 
+  await step('automation builder: parse a JSON list, test the step, loop over it and test the whole flow without saving anything', async () => {
+    await page.getByRole('button', { name: 'New automation' }).click();
+    await page.getByLabel('Automation name').fill('Pipeline demo');
+    await page.getByLabel('Step 1 action').selectOption({ label: 'Parse data (JSON, HTML, CSV or your own prompt)' });
+    await page.getByLabel('Data to parse').fill('[{"t":"alpha","n":1},{"t":"beta","n":2}]');
+    await page.getByLabel('Which data do you want? (comma separated, optional)').fill('t');
+    await page.getByLabel('Save the result as').fill('list');
+    await page.locator('.flow-step').first().getByRole('button', { name: 'Test this step' }).click();
+    await page.getByText('Test result:').first().waitFor();
+    await page.locator('.flow-test__out').first().getByText('"alpha"').waitFor();
+    await page.getByRole('button', { name: 'Add a step' }).click();
+    await page.getByLabel('Step 2 action').selectOption({ label: 'Repeat for every item in a list' });
+    await page.getByLabel('Go through this list').fill('{{result.list}}');
+    await page.getByLabel('Loop step 1 action').selectOption({ label: 'Write a note' });
+    await page.locator('.flow-step--inner').getByLabel('Title').fill('Note for {{item.t}}');
+    await page.getByRole('button', { name: 'Test the whole loop (first 3 items)' }).click();
+    await page.getByText(/Looped over 2 items/).waitFor();
+    await page.getByText(/Would: .*Note for beta/).first().waitFor();
+    await page.getByRole('button', { name: 'Test all steps in order' }).click();
+    await page.getByText('Step 2').first().waitFor();
+    await shot(page, '25-pipeline');
+    await page.getByRole('button', { name: 'Save automation' }).click();
+    await page.getByRole('article', { name: 'Pipeline demo' }).getByText('2. Repeat for every item in a list').waitFor();
+  });
+
   await step('settings: let the assistant auto-apply routine changes; connect a tool (private addresses refused)', async () => {
     await page.getByRole('link', { name: 'Workspace', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Create tasks' }).check();
