@@ -185,6 +185,15 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
             </div>
 
             <div className="field">
+              <label htmlFor="card-rec">Repeats</label>
+              <select id="card-rec" value={card.recurrence || 'none'} onChange={(e) => patch({ recurrence: e.target.value })}>
+                <option value="none">Does not repeat</option><option value="daily">Daily</option>
+                <option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+              </select>
+              {card.recurrence && card.recurrence !== 'none' && <small className="hint">A new copy is created when this task is marked done.</small>}
+            </div>
+
+            <div className="field">
               <label>Subtasks {card.subtasks?.length > 0 && `(${card.subtasks.filter((s) => s.done).length}/${card.subtasks.length})`}</label>
               <ul className="subtasks">
                 {(card.subtasks || []).map((s) => (

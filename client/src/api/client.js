@@ -75,6 +75,30 @@ export const api = {
   updateProject: (id, data) => request(`/projects/${id}`, json('PATCH', data)),
   deleteProject: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
 
+  // finance
+  financeSummary: (month) => request(`/finance/summary?month=${month}`),
+  listTransactions: (params = {}) => request(`/finance/transactions?${new URLSearchParams(params)}`),
+  createTransaction: (data) => request('/finance/transactions', json('POST', data)),
+  voidTransaction: (id) => request(`/finance/transactions/${id}`, { method: 'DELETE' }),
+  updateTransaction: (id, data) => request(`/finance/transactions/${id}`, json('PATCH', data)),
+  listCategories: () => request('/finance/categories'),
+  listRecurring: () => request('/finance/recurring'),
+  createRecurring: (data) => request('/finance/recurring', json('POST', data)),
+  deleteRecurring: (id) => request(`/finance/recurring/${id}`, { method: 'DELETE' }),
+  projectFinance: (id) => request(`/projects/${id}/finance`),
+  setProjectBudget: (id, data) => request(`/projects/${id}/budget`, json('PUT', data)),
+  downloadTransactionsCsv: async () => {
+    const res = await fetch(`${BASE}/finance/transactions/export.csv`, { headers: workspaceId ? { 'x-workspace-id': workspaceId } : {} });
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    return res.blob();
+  },
+
+  // calendar
+  calendar: (from, to) => request(`/calendar?from=${from}&to=${to}`),
+  createEvent: (data) => request('/calendar/events', json('POST', data)),
+  updateEvent: (id, data) => request(`/calendar/events/${id}`, json('PATCH', data)),
+  deleteEvent: (id) => request(`/calendar/events/${id}`, { method: 'DELETE' }),
+
   // AI insights
   aiStatus: () => request('/ai/status'),
   getProjectSummary: (id) => request(`/ai/projects/${id}/summary`),

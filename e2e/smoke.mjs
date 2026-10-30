@@ -194,6 +194,82 @@ try {
     assert.ok(over <= 0, `page scrolls vertically by ${over}px on an empty page`);
   });
 
+  await step('project budget: set 12,000, add paid 2,500 and planned 10,000 -> remaining, forecast overrun, dashboard alert', async () => {
+    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: /Apartment Renovation/ }).click();
+    await page.getByRole('button', { name: /Details/ }).click();
+    await page.getByText('No budget set.').waitFor();
+    await page.getByLabel('Approved budget amount').fill('12000');
+    await page.getByLabel('Budget currency').fill('EUR');
+    await page.getByRole('button', { name: 'Set budget' }).click();
+    await page.getByText('Within budget').waitFor();
+    await page.getByLabel('Expense amount').fill('2500');
+    await page.getByLabel('Expense description').fill('Sofa');
+    await page.getByRole('button', { name: 'Add expense' }).click();
+    await page.getByText('Sofa').waitFor();
+    const card = page.getByRole('region', { name: 'Project budget' });
+    assert.match(await card.innerText(), /Remaining\s*€9,500\.00/);
+    await page.getByLabel('Expense amount').fill('10000');
+    await page.getByLabel('Expense description').fill('Contractor (committed)');
+    await page.getByLabel('Expense status').selectOption('planned');
+    await page.getByRole('button', { name: 'Add expense' }).click();
+    await page.getByText('Forecast to exceed budget').waitFor();
+    assert.match(await card.innerText(), /Forecast overrun\s*€500\.00/);
+    assert.match(await card.innerText(), /Approved\s*€12,000\.00/);
+    await shot(page, '08-budget');
+    await page.getByRole('button', { name: 'Close' }).click();
+    await page.getByRole('link', { name: 'Dashboard' }).click();
+    await page.getByRole('heading', { name: 'Budget alerts' }).waitFor();
+    await page.getByText(/Forecast over budget: €2,500\.00 of €12,000\.00 spent, forecast overrun €500\.00/).waitFor();
+  });
+
+  await step('finance page: month summary per currency, income, CSV export', async () => {
+    await page.getByRole('link', { name: 'Finance & Budget' }).click();
+    const eur = page.getByRole('region', { name: 'EUR summary' });
+    await eur.waitFor();
+    assert.match(await eur.innerText(), /Expenses\s*€2,500\.00/);
+    assert.match(await eur.innerText(), /Planned\s*€10,000\.00/);
+    await page.getByLabel('Type').selectOption('income');
+    await page.getByLabel('Amount', { exact: true }).fill('3000');
+    await page.getByLabel('Description').first().fill('Salary');
+    await page.getByLabel('Category').selectOption({ label: 'Salary' });
+    await page.getByRole('button', { name: 'Add', exact: true }).first().click();
+    await eur.getByText('€3,000.00').first().waitFor();
+    assert.match(await eur.innerText(), /Net cash flow\s*€500\.00/);
+    // a second currency is shown separately, never merged
+    await page.getByLabel('Type').selectOption('expense');
+    await page.getByLabel('Amount', { exact: true }).fill('100');
+    await page.getByLabel('Currency', { exact: true }).fill('RON');
+    await page.getByRole('button', { name: 'Add', exact: true }).first().click();
+    await page.getByRole('region', { name: 'RON summary' }).waitFor();
+    assert.match(await eur.innerText(), /Expenses\s*€2,500\.00/, 'EUR total unchanged by RON expense');
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export CSV' }).click()]);
+    assert.equal(download.suggestedFilename(), 'transactions.csv');
+    await shot(page, '09-finance');
+  });
+
+  await step('calendar: project deadline shows, new weekly event repeats, agenda lists it', async () => {
+    await page.getByRole('link', { name: 'Calendar' }).click();
+    await page.getByRole('heading', { name: 'Calendar', level: 1 }).waitFor();
+    await page.getByRole('button', { name: 'Next month' }).click();
+    await page.getByRole('button', { name: 'Next month' }).click();
+    await page.getByText('Apartment Renovation deadline').waitFor();
+    await page.getByRole('button', { name: 'Today' }).click();
+    await page.getByRole('button', { name: 'New event' }).click();
+    await page.getByLabel('Title').fill('Team sync');
+    await page.getByLabel('Repeats').selectOption('weekly');
+    await page.getByLabel('Time zone').fill('Europe/Bucharest');
+    await page.getByRole('button', { name: 'Add event' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: /Team sync \(repeats\)/ }).first().waitFor();
+    assert.ok((await page.getByRole('button', { name: /Team sync \(repeats\)/ }).count()) >= 2, 'weekly event repeats in the month grid (today and next week are both in view)');
+    await page.getByRole('button', { name: 'Agenda' }).click();
+    await page.getByRole('button', { name: /Team sync/ }).first().waitFor();
+    await page.getByLabel('Filter calendar').selectOption('project_deadline');
+    assert.equal(await page.getByRole('button', { name: /Team sync/ }).count(), 0, 'filter hides other kinds');
+    await shot(page, '10-calendar');
+  });
+
   await step('AI project summary and daily briefing (mocked provider) show facts and labelling', async () => {
     await page.getByRole('link', { name: 'Projects Board' }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();

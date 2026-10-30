@@ -18,10 +18,10 @@ const NAV = [
     { to: '/projects', icon: FolderKanban, text: 'Projects Board' },
     { to: '/tasks', icon: ListChecks, text: 'Tasks' },
     { to: '/ideas', icon: StickyNote, text: 'Idea Board' },
-    { icon: Calendar, text: 'Calendar' },
+    { to: '/calendar', icon: Calendar, text: 'Calendar' },
   ] },
   { label: 'Personal', items: [
-    { icon: Landmark, text: 'Finance & Budget' },
+    { to: '/finance', icon: Landmark, text: 'Finance & Budget' },
     { icon: NotebookPen, text: 'Notes & Journal' },
     { icon: Sparkles, text: 'AI Assistant' },
   ] },

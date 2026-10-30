@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { db, nowIso } from './db.js';
 import { DEFAULT_LIFE_AREAS } from './lifeAreaDefaults.js';
+import { DEFAULT_CATEGORIES } from './finance/defaults.js';
 
 // Caller is responsible for wrapping in a transaction when combined with other writes.
 export function createWorkspace({ userId, name, kind }) {
@@ -11,6 +12,8 @@ export function createWorkspace({ userId, name, kind }) {
   db.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)')
     .run(id, userId, 'owner', ts);
   seedLifeAreas(id);
+  const cat = db.prepare('INSERT INTO transaction_categories (id, workspace_id, name, created_at) VALUES (?, ?, ?, ?)');
+  for (const c of DEFAULT_CATEGORIES) cat.run(nanoid(), id, c, ts);
   return id;
 }
 

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { todayUtc } from '../validate.js';
+import { budgetAlerts } from '../finance/calc.js';
+import { occurrences } from '../calendar/recurrence.js';
 
 const router = Router();
 
@@ -21,6 +23,16 @@ router.get('/', (req, res) => {
       ideas: one('SELECT COUNT(*) AS n FROM idea_notes WHERE workspace_id = ?'),
       lifeAreas: one('SELECT COUNT(*) AS n FROM life_areas WHERE workspace_id = ? AND archived_at IS NULL'),
     },
+    budgetAlerts: budgetAlerts(ws),
+    upcomingEvents: (() => {
+      const from = todayUtc();
+      const to = new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10);
+      const out = [];
+      for (const e of db.prepare('SELECT * FROM calendar_events WHERE workspace_id = ?').all(ws)) {
+        for (const o of occurrences(e, from, to)) out.push({ id: `${e.id}:${o.date}`, title: e.title, start_local: o.start_local, all_day: !!e.all_day, timezone: e.timezone, kind: e.kind });
+      }
+      return out.sort((a, b) => a.start_local.localeCompare(b.start_local)).slice(0, 6);
+    })(),
     lifeAreas: db.prepare(`SELECT la.id, la.name, la.icon,
         (SELECT COUNT(*) FROM projects p WHERE p.life_area_id = la.id AND p.archived_at IS NULL) AS project_count
       FROM life_areas la WHERE la.workspace_id = ? AND la.archived_at IS NULL ORDER BY la.position ASC`).all(ws),

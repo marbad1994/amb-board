@@ -3,8 +3,11 @@ import { X } from 'lucide-react';
 import { api } from '../api/client.js';
 import { PROJECT_STATUSES, PRIORITIES } from '../lib/labels.js';
 import AiSummaryCard from './AiSummaryCard.jsx';
+import ProjectBudgetCard from './ProjectBudgetCard.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 
 export default function ProjectDetailsModal({ project, writable, onClose, onSaved }) {
+  const { active } = useAuth();
   const [areas, setAreas] = useState([]);
   const [form, setForm] = useState({
     name: project.name, description: project.description || '', lifeAreaId: project.life_area_id || '',
@@ -40,7 +43,7 @@ export default function ProjectDetailsModal({ project, writable, onClose, onSave
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <form className="modal" role="dialog" aria-modal="true" aria-label="Project details" onClick={(e) => e.stopPropagation()} onSubmit={save}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Project details" onClick={(e) => e.stopPropagation()}>
         <div className="modal__header">
           <h2>Project details</h2>
           <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Close"><X size={18} /></button>
@@ -53,7 +56,9 @@ export default function ProjectDetailsModal({ project, writable, onClose, onSave
             </div>
             <small className="hint">{project.done_count} of {project.card_count} tasks done{project.overdue_count ? `, ${project.overdue_count} overdue` : ''}. Calculated from task status.</small>
           </div>
+          <ProjectBudgetCard projectId={project.id} role={active?.role} writable={writable} />
           <AiSummaryCard kind="project" projectId={project.id} writable={writable} title="AI project summary" />
+          <form onSubmit={save}>
           <fieldset disabled={!writable} className="plain-fieldset">
             <div className="field"><label htmlFor="pd-name">Name</label>
               <input id="pd-name" type="text" required maxLength={120} value={form.name} onChange={set('name')} /></div>
@@ -80,8 +85,9 @@ export default function ProjectDetailsModal({ project, writable, onClose, onSave
           </fieldset>
           {error && <p className="form-error" role="alert">{error}</p>}
           {writable && <button type="submit" className="btn btn-primary btn-block" disabled={busy || !form.name.trim()}>Save</button>}
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

@@ -164,7 +164,8 @@ test('S14 daily briefing uses only today\'s real tasks and lists unavailable mod
   assert.equal(res.json.summary.content.headline, 'Hello from deepseek');
   assert.deepEqual(res.json.summary.facts.overdue.map((t) => t.title), ['late task']);
   assert.deepEqual(res.json.summary.facts.due_today.map((t) => t.title), ['today task']);
-  assert.ok(res.json.summary.facts.not_available.some((s) => /calendar/.test(s)));
+  assert.ok(res.json.summary.facts.not_available.some((s) => /habits/.test(s)));
+  assert.deepEqual(res.json.summary.facts.appointments_today, []);
 });
 
 test('S20 viewers can read stored summaries but cannot trigger AI calls', async () => {

@@ -13,6 +13,7 @@ const PERMISSIONS = {
   'content:write': ['owner', 'admin', 'member'],
   'lifearea:manage': ['owner', 'admin'],
   'members:manage': ['owner', 'admin'],
+  'budget:approve': ['owner', 'admin'],
   'workspace:manage': ['owner'],
 };
 
