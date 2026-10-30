@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
 import { emit } from '../automations/engine.js';
+import { columnRoom, fullMessage, columnForStatus } from '../boards.js';
 
 const taskEvent = (card, ws, stamp) => {
   const p = db.prepare('SELECT p.id, p.name FROM projects p JOIN columns c ON c.project_id = p.id WHERE c.id = ?').get(card.column_id);
@@ -75,6 +76,9 @@ router.post('/columns/:columnId/cards', (req, res) => {
   if (dueDate === undefined) return res.status(400).json({ error: 'due_date must be a valid YYYY-MM-DD date' });
   if (req.body.priority !== undefined && !PRIORITIES.includes(req.body.priority)) return res.status(400).json({ error: 'invalid priority' });
   if (!title || !title.trim()) return res.status(400).json({ error: 'title is required' });
+  const room = columnRoom(req.params.columnId);
+  if (!room.ok) return res.status(409).json({ error: fullMessage(room.col) });
+  const colStatus = room.col?.status || null;
   const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM cards WHERE column_id = ?')
     .get(req.params.columnId).m;
   const id = nanoid();
@@ -86,7 +90,7 @@ router.post('/columns/:columnId/cards', (req, res) => {
       req.params.columnId,
       title.trim(),
       description || '',
-      status || 'todo',
+      colStatus || status || 'todo',
       owner || '',
       creator,
       JSON.stringify(sanitizeLabels(labels)),
@@ -95,22 +99,13 @@ router.post('/columns/:columnId/cards', (req, res) => {
       ts,
       dueDate,
       req.body.priority || 'medium',
-      (status || 'todo') === 'done' ? ts : null
+      (colStatus || status || 'todo') === 'done' ? ts : null
     );
   const created = fullCard(id);
   emit(req.ws.id, 'task_created', taskEvent(created, req.ws.id, ts));
   if (created.status === 'done') emit(req.ws.id, 'task_done', taskEvent(created, req.ws.id, ts));
   res.status(201).json(created);
 });
-
-// A column named like a status keeps card status and column in step (both directions). Custom column names change nothing.
-const COLUMN_STATUS = [['done', /^(done|complete[d]?|finished|closed|gata|terminat)/i], ['blocked', /^block/i], ['doing', /^(in progress|doing|working|ongoing|in curs)/i], ['todo', /^(backlog|to ?do|planned|open|de facut)/i]];
-const statusForColumn = (name) => COLUMN_STATUS.find(([, re]) => re.test(String(name).trim()))?.[0] ?? null;
-function columnForStatus(card, status) {
-  const cols = db.prepare('SELECT c.id, c.name FROM columns c JOIN columns cur ON cur.project_id = c.project_id WHERE cur.id = ? ORDER BY c.position').all(card.column_id);
-  if (statusForColumn(cols.find((c) => c.id === card.column_id)?.name) === status) return null; // already in a matching column
-  return cols.find((c) => statusForColumn(c.name) === status)?.id ?? null;
-}
 
 router.patch('/:id', (req, res) => {
   const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id);
@@ -139,14 +134,20 @@ router.patch('/:id', (req, res) => {
     if (!RECURRENCES.includes(req.body.recurrence)) return res.status(400).json({ error: 'invalid recurrence' });
     recurrence = req.body.recurrence;
   }
+  let targetColumn = null;
+  if (updated.status !== card.status) {
+    const t = columnForStatus(card, updated.status);
+    if (t.full) return res.status(409).json({ error: `${fullMessage(t.full)} (needed for status "${updated.status}")` });
+    targetColumn = t.column?.id ?? null;
+  }
   const ts = nowIso();
   const completedAt = updated.status === 'done' ? (card.completed_at || ts) : null;
   db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, due_date = ?, priority = ?, completed_at = ?, recurrence = ?, updated_at = ? WHERE id = ?`)
     .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), dueDate, priority, completedAt, recurrence, ts, req.params.id);
   if (updated.status === 'done' && card.status !== 'done') spawnNextOccurrence({ ...card, recurrence, due_date: dueDate, title: updated.title, description: updated.description, owner: updated.owner, labels: JSON.stringify(labels), priority }, ts);
-  if (updated.status !== card.status) {
-    const target = columnForStatus(card, updated.status);
-    if (target) db.prepare('UPDATE cards SET column_id = ?, position = (SELECT COALESCE(MAX(position), -1) + 1 FROM cards WHERE column_id = ?) WHERE id = ?').run(target, target, req.params.id);
+  if (targetColumn) {
+    const target = targetColumn;
+    db.prepare('UPDATE cards SET column_id = ?, position = (SELECT COALESCE(MAX(position), -1) + 1 FROM cards WHERE column_id = ?) WHERE id = ?').run(target, target, req.params.id);
   }
   const after = fullCard(req.params.id);
   if (updated.status === 'done' && card.status !== 'done') emit(req.ws.id, 'task_done', taskEvent(after, req.ws.id, after.completed_at));
@@ -160,10 +161,12 @@ router.post('/:id/move', (req, res) => {
   const { columnId, order } = req.body;
   if (columnId && !columnInWs(columnId, req.ws.id)) return res.status(404).json({ error: 'not found' });
   const targetColumn = columnId || card.column_id;
+  const room = targetColumn === card.column_id ? { ok: true } : columnRoom(targetColumn, card.id);
+  if (!room.ok) return res.status(409).json({ error: fullMessage(room.col) });
 
   db.prepare('UPDATE cards SET column_id = ? WHERE id = ?').run(targetColumn, req.params.id);
-  // dropping a card into "In Progress" / "Done" ... updates its status too
-  const newStatus = statusForColumn(db.prepare('SELECT name FROM columns WHERE id = ?').get(targetColumn)?.name);
+  // a column that holds a status gives its cards that status (several columns may hold the same one)
+  const newStatus = db.prepare('SELECT status FROM columns WHERE id = ?').get(targetColumn)?.status;
   if (newStatus && newStatus !== card.status) {
     const ts = nowIso();
     db.prepare('UPDATE cards SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?').run(newStatus, newStatus === 'done' ? (card.completed_at || ts) : null, ts, req.params.id);

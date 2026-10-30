@@ -80,9 +80,9 @@ router.post('/', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, String(name).trim().slice(0, 120), color || '#6366f1', String(description || '').slice(0, 5000), req.ws.id, lifeAreaId,
         d.status, d.priority, d.start_date, d.target_date, ts, ts);
-    ['Backlog', 'In Progress', 'Done'].forEach((colName, i) => {
-      db.prepare('INSERT INTO columns (id, project_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(nanoid(), id, colName, i, ts);
+    [['Backlog', 'todo'], ['In Progress', 'doing'], ['Done', 'done']].forEach(([colName, st], i) => {
+      db.prepare('INSERT INTO columns (id, project_id, name, position, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(nanoid(), id, colName, i, st, ts);
     });
     audit(req, 'project.create', 'project', id, { name: String(name).trim() });
   });

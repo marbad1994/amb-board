@@ -5,6 +5,7 @@ import { DndContext, MouseSensor, TouchSensor, useSensor, useSensors, useDraggab
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import { PROJECT_STATUSES, priorityLabel, formatDate } from '../lib/labels.js';
+import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 
 const COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6'];
 
@@ -115,6 +116,7 @@ export default function ProjectsPage() {
       )}
       {writable && (
         <div className="project-card__actions">
+          <CopyToWorkspace entity="project" id={project.id} label={project.name} className="btn btn-icon btn-ghost" iconOnly />
           <button type="button" className="btn btn-icon btn-ghost" onClick={() => toggleArchive(project)}
             title={project.archived_at ? 'Restore project' : 'Archive project'}
             aria-label={project.archived_at ? `Restore ${project.name}` : `Archive ${project.name}`}>

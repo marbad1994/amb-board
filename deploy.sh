@@ -8,6 +8,10 @@
 # Settings can be overridden with environment variables, e.g.:
 #   sudo GIT_USER=marcus DEST_DIR=/opt/amb-board3 PORT=3417 bash deploy.sh
 #
+# Public address: DOMAIN (default amb.makketing.com) is mapped to the app with an nginx reverse proxy. Set DOMAIN= (empty) to skip.
+# For HTTPS set CERTBOT_EMAIL=you@example.com (certbot obtains and installs a certificate) or HTTPS=true if TLS is handled elsewhere.
+# The DNS A/AAAA record for the domain must already point at this server.
+#
 # Never overwritten or deleted in the destination: server/.env, server/data (your database),
 # server/uploads (attachments and documents), node_modules. The database is also copied to a
 # timestamped backup before every deploy (the app additionally backs it up before any migration).
@@ -21,6 +25,9 @@ BRANCH="${BRANCH:-}"                 # empty = whatever branch is checked out in
 RUN_AS="${RUN_AS:-}"                 # optional: run npm and the server as this user instead of the current one
 KEEP_BACKUPS="${KEEP_BACKUPS:-5}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
+DOMAIN="${DOMAIN-amb.makketing.com}"   # "-" not ":-": an explicitly empty DOMAIN disables the mapping
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
+HTTPS="${HTTPS:-}"
 
 PID_FILE="${DEST_DIR}/.amb-board.pid"
 LOG_FILE="${DEST_DIR}/amb-board.log"
@@ -112,12 +119,63 @@ in_dest "npm run build"
 PORT="${PORT:-$(grep -E '^PORT=' "${DEST_DIR}/server/.env" 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d '"' | tr -d "'" || true)}"
 PORT="${PORT:-3417}"
 
+# ---------------------------------------------------------------- map the domain to the app (nginx reverse proxy)
+SECURE=false; BEHIND_PROXY=false
+if [ -n "$DOMAIN" ]; then
+  [ -n "$CERTBOT_EMAIL" ] || [ "$HTTPS" = "true" ] || [ -d "/etc/letsencrypt/live/${DOMAIN}" ] && SECURE=true
+  if command -v nginx >/dev/null; then
+    CONF_DIR="/etc/nginx/conf.d"; [ -d /etc/nginx/sites-available ] && CONF_DIR="/etc/nginx/sites-available"
+    CONF="${CONF_DIR}/amb-board.conf"
+    log "Mapping ${DOMAIN} -> 127.0.0.1:${PORT} in ${CONF}"
+    # Host must reach the app unchanged: its cross-origin check compares the browser's Origin with Host.
+    cat > "$CONF" <<NGINX
+# Managed by deploy.sh: regenerated on every deploy. Certbot adds the HTTPS server block next to this one.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    client_max_body_size 12m;
+    location / {
+        proxy_pass http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 120s;
+    }
+}
+NGINX
+    [ "$CONF_DIR" = "/etc/nginx/sites-available" ] && ln -sf "$CONF" /etc/nginx/sites-enabled/amb-board.conf
+    if nginx -t >/dev/null 2>&1; then
+      systemctl reload nginx 2>/dev/null || nginx -s reload || warn "could not reload nginx; reload it manually"
+      BEHIND_PROXY=true
+      if [ -n "$CERTBOT_EMAIL" ]; then
+        if command -v certbot >/dev/null; then
+          certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect || warn "certbot failed (is the DNS record for ${DOMAIN} pointing here?); the site stays on plain HTTP"
+        else warn "CERTBOT_EMAIL is set but certbot is not installed (sudo pacman -S certbot certbot-nginx)"; fi
+      fi
+    else
+      nginx -t || true
+      warn "the generated nginx config is invalid, so ${DOMAIN} is NOT mapped. The app itself is unaffected."
+    fi
+  else
+    warn "nginx is not installed, so ${DOMAIN} is not mapped. Install it (sudo pacman -S nginx) and deploy again, or point your own proxy at 127.0.0.1:${PORT} and keep the Host header."
+  fi
+fi
+
 log "npm start (port ${PORT}, log: ${LOG_FILE})"
 : > "$LOG_FILE"
 # The server is started through a tiny launcher that writes its OWN pid and then exec's npm. `setsid` makes it the
 # leader of a new process group, so the next deploy can stop npm and node together with one signal.
 START_SCRIPT="${DEST_DIR}/.start.sh"
-printf '#!/usr/bin/env bash\necho $$ > %q\ncd %q\nexec npm start\n' "$PID_FILE" "$DEST_DIR" > "$START_SCRIPT"
+{
+  printf '#!/usr/bin/env bash\necho $$ > %q\ncd %q\n' "$PID_FILE" "$DEST_DIR"
+  # behind the proxy: trust X-Forwarded-For for rate limiting; over HTTPS: Secure session cookie (it would break plain-HTTP logins)
+  [ "$BEHIND_PROXY" = true ] && printf 'export TRUST_PROXY=true\n'
+  [ "$SECURE" = true ] && printf 'export COOKIE_SECURE=true\n'
+  printf 'exec npm start\n'
+} > "$START_SCRIPT"
 chmod +x "$START_SCRIPT"
 if [ -n "$RUN_AS" ]; then
   chown "$RUN_AS": "$LOG_FILE" "$START_SCRIPT"
@@ -141,3 +199,4 @@ if [ "$ok" -ne 1 ]; then
   die "deploy of commit ${COMMIT} failed to start. Your data is untouched (backup in ${BACKUP_ROOT})."
 fi
 log "Deployed commit ${COMMIT} to ${DEST_DIR}; running at http://127.0.0.1:${PORT} (pid $(cat "$PID_FILE"))"
+[ "$BEHIND_PROXY" = true ] && log "Public address: $([ "$SECURE" = true ] && echo https || echo http)://${DOMAIN}"

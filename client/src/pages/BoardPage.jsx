@@ -19,6 +19,7 @@ import Column from '../components/Column.jsx';
 import CardItem from '../components/CardItem.jsx';
 import CardModal from '../components/CardModal.jsx';
 import AITaskModal from '../components/AITaskModal.jsx';
+import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 
 function findColumnOfCard(columns, cardId) {
   return columns.find((col) => col.cards.some((c) => c.id === cardId));
@@ -87,6 +88,15 @@ export default function BoardPage() {
     }
   };
 
+  const saveColumnSettings = async (columnId, data) => {
+    try {
+      await api.updateColumn(columnId, data);
+      setColumns(await api.listColumns(projectId));   // cards in the column may have taken its status
+      api.getProject(projectId).then(setProject).catch(() => {});
+      setError('');
+    } catch (err) { setError(err.message); }
+  };
+
   const handleDragOver = ({ active, over }) => {
     if (!over || active.data.current?.type !== 'card') return;
     const activeId = active.id;
@@ -104,6 +114,8 @@ export default function BoardPage() {
         targetColId = targetCol?.id;
       }
       if (!targetColId || sourceCol.id === targetColId) return prev;
+      const target = prev.find((c) => c.id === targetColId);
+      if (target?.card_limit != null && target.cards.length >= target.card_limit) return prev;   // full: the card cannot enter
 
       const card = sourceCol.cards.find((c) => c.id === activeId);
       const next = prev.map((col) => {
@@ -158,7 +170,7 @@ export default function BoardPage() {
           setColumns((cur) => cur.map((c) => ({ ...c, cards: c.cards.map((x) => (x.id === moved.id ? { ...x, status: moved.status, completed_at: moved.completed_at } : x)) })));
           api.getProject(projectId).then(setProject).catch(() => {});
         })
-        .catch((err) => setError(err.message));
+        .catch((err) => { setError(err.message); api.listColumns(projectId).then(setColumns).catch(() => {}); });   // refused (e.g. column full): put the card back
 
       return next;
     });
@@ -260,6 +272,7 @@ export default function BoardPage() {
         {project && canWrite(active?.role) && (
           <button type="button" className="btn" onClick={async () => { try { const r = await api.createReport({ kind: 'project_status', project_id: projectId }); navigate(`/reports/${r.id}`); } catch (err) { setError(err.message); } }}>Report</button>
         )}
+        {project && canWrite(active?.role) && <CopyToWorkspace entity="project" id={projectId} label={project.name} />}
         {project && (
           <button type="button" className="btn" onClick={() => setDetailsOpen(true)}>
             Details · {project.progress}%
@@ -298,6 +311,8 @@ export default function BoardPage() {
                   onAddCard={addCard}
                   onRename={renameColumn}
                   onDelete={deleteColumn}
+                  onSettings={saveColumnSettings}
+                  writable={canWrite(active?.role)}
                 />
               ))}
             </SortableContext>

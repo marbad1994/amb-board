@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
 import { projectInWs, columnInWs } from '../access.js';
+import { COLUMN_STATUSES } from '../boards.js';
 
 const router = Router();
 
@@ -49,7 +50,23 @@ router.patch('/columns/:id', (req, res) => {
   const column = db.prepare('SELECT * FROM columns WHERE id = ?').get(req.params.id);
   if (!column) return res.status(404).json({ error: 'not found' });
   const { name } = req.body;
-  db.prepare('UPDATE columns SET name = ? WHERE id = ?').run(name?.trim() || column.name, req.params.id);
+  // status: which task status this column holds (null = none, cards keep their own); card_limit: most cards it may hold (null = no limit)
+  let status = column.status; let limit = column.card_limit;
+  if ('status' in req.body) {
+    if (req.body.status !== null && !COLUMN_STATUSES.includes(req.body.status)) return res.status(400).json({ error: `status must be one of ${COLUMN_STATUSES.join(', ')} or empty` });
+    status = req.body.status;
+  }
+  if ('card_limit' in req.body) {
+    const v = req.body.card_limit;
+    if (v !== null && v !== '' && (!Number.isInteger(Number(v)) || Number(v) < 1 || Number(v) > 999)) return res.status(400).json({ error: 'card limit must be a whole number from 1 to 999, or empty for no limit' });
+    limit = v === null || v === '' ? null : Number(v);
+  }
+  db.prepare('UPDATE columns SET name = ?, status = ?, card_limit = ? WHERE id = ?').run(name?.trim() || column.name, status, limit, req.params.id);
+  // giving a column a status applies it to the cards already in it, so the board never contradicts itself
+  if (status && status !== column.status) {
+    const ts = nowIso();
+    db.prepare("UPDATE cards SET status = ?, completed_at = CASE WHEN ? = 'done' THEN COALESCE(completed_at, ?) ELSE NULL END, updated_at = ? WHERE column_id = ? AND status <> ?").run(status, status, ts, ts, column.id, status);
+  }
   res.json(db.prepare('SELECT * FROM columns WHERE id = ?').get(req.params.id));
 });
 

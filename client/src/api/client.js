@@ -148,6 +148,14 @@ export const api = {
   readNotification: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
   readAllNotifications: () => request('/notifications/read-all', { method: 'POST' }),
   notificationPrefs: () => request('/notifications/preferences'),
+  assistantSettings: () => request('/ai/assistant/settings'),
+  setAssistantSettings: (data) => request('/ai/assistant/settings', json('PUT', data)),
+  listConnections: () => request('/ai/assistant/connections'),
+  addConnection: (data) => request('/ai/assistant/connections', json('POST', data)),
+  testConnection: (id) => request(`/ai/assistant/connections/${id}/test`, json('POST', {})),
+  deleteConnection: (id) => request(`/ai/assistant/connections/${id}`, { method: 'DELETE' }),
+  copyToWorkspace: (data) => request('/transfer', json('POST', data)),
+  sendTestEmail: () => request('/notifications/email-test', json('POST', {})),
   setNotificationPrefs: (data) => request('/notifications/preferences', json('PUT', data)),
   monthBudget: (month) => request(`/finance/budget?month=${month}`),
   setMonthBudget: (data) => request('/finance/budget', json('PUT', data)),
@@ -214,6 +222,8 @@ export const api = {
     request(`/projects/${projectId}/columns`, { method: 'POST', body: JSON.stringify({ name }) }),
   renameColumn: (columnId, name) =>
     request(`/projects/columns/${columnId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  updateColumn: (columnId, data) =>
+    request(`/projects/columns/${columnId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteColumn: (columnId) => request(`/projects/columns/${columnId}`, { method: 'DELETE' }),
   reorderColumns: (projectId, order) =>
     request(`/projects/${projectId}/columns/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
