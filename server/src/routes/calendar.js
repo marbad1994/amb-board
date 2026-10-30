@@ -8,14 +8,14 @@ import { isValidTimeZone, occurrences } from '../calendar/recurrence.js';
 const router = Router();
 const KINDS = ['appointment', 'personal'];
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
-const eventInWs = (id, ws) => db.prepare('SELECT * FROM calendar_events WHERE id = ? AND workspace_id = ?').get(String(id), ws);
+export const eventInWs = (id, ws) => db.prepare('SELECT * FROM calendar_events WHERE id = ? AND workspace_id = ?').get(String(id), ws);
 
 router.param('id', (req, res, next, id) => {
   if (!eventInWs(id, req.ws.id)) return res.status(404).json({ error: 'not found' });
   next();
 });
 
-function readEvent(body, ws, cur = {}) {
+export function readEvent(body, ws, cur = {}) {
   const v = {
     title: cur.title, description: cur.description ?? '', kind: cur.kind ?? 'appointment', all_day: cur.all_day ?? 0,
     start_local: cur.start_local, end_local: cur.end_local ?? null, timezone: cur.timezone, recurrence: cur.recurrence ?? 'none',
@@ -86,6 +86,10 @@ router.get('/', (req, res) => {
   for (const p of db.prepare(`SELECT id, name, target_date, status FROM projects WHERE workspace_id = ? AND archived_at IS NULL AND target_date BETWEEN ? AND ?`).all(req.ws.id, from, to)) {
     items.push({ id: `deadline:${p.id}`, source: 'project', kind: 'project_deadline', title: `${p.name} deadline`, date: p.target_date, all_day: true,
       done: p.status === 'done', project_id: p.id, project_name: p.name });
+  }
+  for (const m of db.prepare(`SELECT m.id, m.title, m.due_date, m.done, g.id AS goal_id, g.title AS goal_title FROM goal_milestones m JOIN goals g ON g.id = m.goal_id
+      WHERE g.workspace_id = ? AND g.status = 'active' AND m.due_date BETWEEN ? AND ?`).all(req.ws.id, from, to)) {
+    items.push({ id: `milestone:${m.id}`, source: 'goal', kind: 'milestone', title: `${m.title} (${m.goal_title})`, date: m.due_date, all_day: true, done: !!m.done, goal_id: m.goal_id });
   }
   items.sort((a, b) => (a.date + (a.start_local || '')).localeCompare(b.date + (b.start_local || '')));
 

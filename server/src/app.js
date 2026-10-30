@@ -11,6 +11,11 @@ import lifeAreasRouter from './routes/lifeAreas.js';
 import dashboardRouter from './routes/dashboard.js';
 import financeRouter, { projectFinanceRouter } from './routes/finance.js';
 import calendarRouter from './routes/calendar.js';
+import goalsRouter, { projectGoalsRouter } from './routes/goals.js';
+import habitsRouter from './routes/habits.js';
+import notesRouter from './routes/notes.js';
+import documentsRouter from './routes/documents.js';
+import myDayRouter from './routes/myday.js';
 import tasksRouter, { searchRouter } from './routes/tasks.js';
 import projectsRouter from './routes/projects.js';
 import columnsRouter from './routes/columns.js';
@@ -20,6 +25,7 @@ import ideasRouter from './routes/ideas.js';
 import translateRouter from './routes/translate.js';
 import aiRouter from './routes/ai.js';
 import aiInsightsRouter from './routes/aiInsights.js';
+import aiAssistantRouter from './routes/aiAssistant.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const clientDist = join(__dirname, '..', '..', 'client', 'dist');
@@ -51,6 +57,12 @@ export function createApp() {
   app.use('/api/search', searchRouter);
   app.use('/api/finance', financeRouter);
   app.use('/api/calendar', calendarRouter);
+  app.use('/api/goals', goalsRouter);
+  app.use('/api/habits', habitsRouter);
+  app.use('/api/notes', notesRouter);
+  app.use('/api/documents', documentsRouter);
+  app.use('/api/my-day', myDayRouter);
+  app.use('/api/projects', projectGoalsRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/projects', projectFinanceRouter);
   app.use('/api/projects', columnsRouter);
@@ -60,6 +72,7 @@ export function createApp() {
   app.use('/api/ideas', ideasRouter);
   app.use('/api/translate', translateRouter);
   app.use('/api/ai', aiInsightsRouter);
+  app.use('/api/ai/assistant', aiAssistantRouter);
   app.use('/api/ai', aiRouter);
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));

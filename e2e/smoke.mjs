@@ -22,7 +22,18 @@ const fakeAi = createServer((req, res) => {
   let b = '';
   req.on('data', (c) => (b += c));
   req.on('end', () => {
-    const daily = JSON.parse(b).messages[0].content.includes('"headline"');
+    const msgs = JSON.parse(b).messages;
+    if (msgs[0].content.includes('assistant inside AMB Board')) {
+      const user = msgs[1].content;
+      const out = user.includes('"tool_results":[]')
+        ? { type: 'tool', calls: [{ tool: 'list_projects', args: {} }] }
+        : { type: 'final', answer: 'Focus on your renovation project today.', proposals: [
+            { type: 'create_task', args: { project_id: /"id":"([^"]+)"/.exec(user)[1], title: 'Call the contractor', due_date: '2027-01-15', priority: 'high' } },
+            { type: 'delete_project', args: { project_id: 'x' } }] };
+      res.setHeader('content-type', 'application/json');
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }], usage: {} }));
+    }
+    const daily = msgs[0].content.includes('"headline"');
     const out = daily
       ? { headline: 'Briefing from fake provider', priorities: ['Finish flooring'], upcoming: [], attention: [], suggested_focus: 'Start early.' }
       : { overview: 'Overview from fake provider', completed: ['Chose flooring'], remaining: [], risks: [], suggestions: ['Order tiles'] };
@@ -285,6 +296,84 @@ try {
     await page.getByRole('button', { name: 'Generate' }).click();
     await page.getByText('Briefing from fake provider').waitFor();
     await shot(page, '07-briefing');
+  });
+
+  await step('AI assistant: answers from data, proposes changes, nothing changes until Approve; disallowed proposal discarded', async () => {
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByRole('button', { name: 'What should I focus on today?' }).click();
+    await page.getByText('Focus on your renovation project today.').waitFor();
+    await page.getByText('Looked at: list projects').waitFor();
+    await page.getByText('1 suggested change was not allowed').waitFor();
+    await page.getByText('Create task "Call the contractor" in project "Apartment Renovation"').waitFor();
+    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('link', { name: 'Order tiles' }).waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Call the contractor' }).count(), 0, 'not created before approval');
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByLabel('Conversation').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByText('Applied.').waitFor();
+    await shot(page, '11-assistant');
+    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('link', { name: 'Call the contractor' }).waitFor();
+  });
+
+  await step('goals with milestones, habits with streak, challenge progress', async () => {
+    await page.getByRole('link', { name: 'Goals & Habits' }).click();
+    await page.getByLabel('New goal').fill('Run a marathon');
+    await page.getByRole('button', { name: 'Add goal' }).click();
+    await page.getByRole('heading', { name: 'Run a marathon' }).waitFor();
+    await page.getByLabel('New milestone for Run a marathon').fill('First 10k');
+    await page.getByRole('button', { name: 'Add milestone' }).click();
+    await page.getByRole('checkbox', { name: /First 10k/ }).check();
+    await page.getByText(/100% from milestones/).waitFor();
+    await page.getByRole('button', { name: 'Habits', exact: true }).click();
+    await page.getByLabel('New habit').fill('Meditate');
+    await page.getByRole('button', { name: 'Add habit' }).click();
+    await page.getByRole('checkbox', { name: 'Meditate, done today' }).check();
+    await page.getByText(/Streak 1 days · best 1/).waitFor();
+    await page.getByRole('button', { name: 'Challenges', exact: true }).click();
+    await page.getByLabel('Challenge name').fill('30 days of calm');
+    await page.getByLabel('Habit for challenge').selectOption({ label: 'Meditate' });
+    await page.getByRole('button', { name: 'Start challenge' }).click();
+    await page.getByRole('heading', { name: '30 days of calm' }).waitFor();
+    await page.getByText(/1 of 30 days/).waitFor();
+    await shot(page, '12-goals');
+  });
+
+  await step('notes and private journal; documents upload, list and download', async () => {
+    await page.getByRole('link', { name: 'Notes & Journal' }).click();
+    await page.getByRole('textbox', { name: 'Title' }).fill('Paint colours');
+    await page.getByRole('textbox', { name: 'Text' }).fill('Matt white for the kitchen');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('heading', { name: 'Paint colours' }).waitFor();
+    await page.getByRole('button', { name: 'Journal' }).click();
+    await page.getByRole('textbox', { name: 'Entry' }).fill('Good day, finished the flooring plan.');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByText('Good day, finished the flooring plan.').waitFor();
+    await page.getByText('Private to you', { exact: true }).waitFor();
+    await page.getByLabel('Search notes').fill('flooring');
+    await page.getByText('Good day, finished').waitFor();
+    await page.getByRole('link', { name: 'Documents' }).click();
+    await page.getByLabel('File').setInputFiles({ name: 'lease-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('rent is due on the 1st') });
+    await page.getByRole('button', { name: 'Upload' }).click();
+    await page.getByText('lease-notes.txt').waitFor();
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download lease-notes.txt' }).click()]);
+    assert.equal(dl.suggestedFilename(), 'lease-notes.txt');
+    await page.getByLabel('File').setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<script>alert(1)</script>') });
+    await page.getByRole('button', { name: 'Upload' }).click();
+    await page.getByText(/is not allowed/).waitFor();
+    await shot(page, '13-documents');
+  });
+
+  await step('My Day shows today from real records (habit done, overdue task, budget attention, briefing)', async () => {
+    await page.getByRole('link', { name: 'My Day' }).click();
+    await page.getByRole('heading', { name: 'My Day', level: 1 }).waitFor();
+    await page.getByRole('checkbox', { name: 'Meditate, done today' }).waitFor();
+    assert.equal(await page.getByRole('checkbox', { name: 'Meditate, done today' }).isChecked(), true);
+    await page.getByRole('heading', { name: 'Overdue' }).waitFor();
+    await page.getByText(/Budget attention: Apartment Renovation/).waitFor();
+    await page.getByRole('region', { name: 'Daily briefing' }).waitFor();
+    await shot(page, '14-my-day');
   });
 
   await step('idea converts to a project and stays linked', async () => {

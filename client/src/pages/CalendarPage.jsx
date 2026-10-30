@@ -5,7 +5,7 @@ import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import EventModal from '../components/EventModal.jsx';
 
-const KIND_LABEL = { appointment: 'Appointment', personal: 'Personal', task_due: 'Task due', project_deadline: 'Deadline' };
+const KIND_LABEL = { appointment: 'Appointment', personal: 'Personal', task_due: 'Task due', project_deadline: 'Deadline', milestone: 'Milestone' };
 const pad = (n) => String(n).padStart(2, '0');
 const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -52,7 +52,7 @@ export default function CalendarPage() {
     const cls = `cal-chip cal-chip--${i.kind}${i.done ? ' is-done' : ''}`;
     const inner = <><span className="cal-chip__kind">{KIND_LABEL[i.kind]}</span> {text}{i.recurring && ' (repeats)'}</>;
     if (i.source === 'event') return <button key={i.id} type="button" className={cls} title={`${KIND_LABEL[i.kind]}: ${text}`} onClick={() => setModal({ event: i, date: i.date })}>{inner}</button>;
-    return <Link key={i.id} className={cls} title={`${KIND_LABEL[i.kind]}: ${text}`} to={i.source === 'task' ? `/projects/${i.project_id}?card=${i.card_id}` : `/projects/${i.project_id}`}>{inner}</Link>;
+    return <Link key={i.id} className={cls} title={`${KIND_LABEL[i.kind]}: ${text}`} to={i.source === 'task' ? `/projects/${i.project_id}?card=${i.card_id}` : i.source === 'goal' ? '/goals' : `/projects/${i.project_id}`}>{inner}</Link>;
   };
 
   return (

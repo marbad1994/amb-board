@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Layers, FolderKanban, StickyNote, Settings, Sun, ListChecks, Calendar, Landmark,
-  NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus,
+  NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus, Target, FileText,
 } from 'lucide-react';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import SearchBox from './SearchBox.jsx';
@@ -11,19 +11,21 @@ import QuickAddTask from './QuickAddTask.jsx';
 const NAV = [
   { label: 'Overview', items: [
     { to: '/', icon: LayoutDashboard, text: 'Dashboard', end: true },
-    { icon: Sun, text: 'My Day' },
+    { to: '/my-day', icon: Sun, text: 'My Day' },
     { to: '/life-areas', icon: Layers, text: 'Life Areas' },
   ] },
   { label: 'Manage', items: [
     { to: '/projects', icon: FolderKanban, text: 'Projects Board' },
     { to: '/tasks', icon: ListChecks, text: 'Tasks' },
+    { to: '/goals', icon: Target, text: 'Goals & Habits' },
     { to: '/ideas', icon: StickyNote, text: 'Idea Board' },
     { to: '/calendar', icon: Calendar, text: 'Calendar' },
   ] },
   { label: 'Personal', items: [
     { to: '/finance', icon: Landmark, text: 'Finance & Budget' },
-    { icon: NotebookPen, text: 'Notes & Journal' },
-    { icon: Sparkles, text: 'AI Assistant' },
+    { to: '/notes', icon: NotebookPen, text: 'Notes & Journal' },
+    { to: '/documents', icon: FileText, text: 'Documents' },
+    { to: '/assistant', icon: Sparkles, text: 'AI Assistant' },
   ] },
   { label: 'System', items: [
     { to: '/settings', icon: Settings, text: 'Workspace' },

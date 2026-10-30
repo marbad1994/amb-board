@@ -99,6 +99,49 @@ export const api = {
   updateEvent: (id, data) => request(`/calendar/events/${id}`, json('PATCH', data)),
   deleteEvent: (id) => request(`/calendar/events/${id}`, { method: 'DELETE' }),
 
+  // my day, goals, habits, notes, documents
+  myDay: () => request('/my-day'),
+  listGoals: (status) => request(`/goals${status ? `?status=${status}` : ''}`),
+  createGoal: (data) => request('/goals', json('POST', data)),
+  updateGoal: (id, data) => request(`/goals/${id}`, json('PATCH', data)),
+  deleteGoal: (id) => request(`/goals/${id}`, { method: 'DELETE' }),
+  addMilestone: (id, title, due_date) => request(`/goals/${id}/milestones`, json('POST', { title, due_date: due_date || null })),
+  updateMilestone: (id, mid, data) => request(`/goals/${id}/milestones/${mid}`, json('PATCH', data)),
+  deleteMilestone: (id, mid) => request(`/goals/${id}/milestones/${mid}`, { method: 'DELETE' }),
+  linkGoalProject: (id, projectId) => request(`/goals/${id}/projects/${projectId}`, { method: 'PUT' }),
+  unlinkGoalProject: (id, projectId) => request(`/goals/${id}/projects/${projectId}`, { method: 'DELETE' }),
+  listHabits: () => request('/habits'),
+  createHabit: (data) => request('/habits', json('POST', data)),
+  updateHabit: (id, data) => request(`/habits/${id}`, json('PATCH', data)),
+  checkHabit: (id, date, done) => request(`/habits/${id}/entries/${date}`, { method: 'PUT', body: JSON.stringify({ done }) }),
+  listChallenges: () => request('/habits/challenges/all'),
+  createChallenge: (data) => request('/habits/challenges', json('POST', data)),
+  deleteChallenge: (id) => request(`/habits/challenges/${id}`, { method: 'DELETE' }),
+  listNotes: (params = {}) => request(`/notes?${new URLSearchParams(params)}`),
+  createNote: (data) => request('/notes', json('POST', data)),
+  updateNote: (id, data) => request(`/notes/${id}`, json('PATCH', data)),
+  deleteNote: (id) => request(`/notes/${id}`, { method: 'DELETE' }),
+  listDocuments: () => request('/documents'),
+  uploadDocument: (file, extra = {}) => {
+    const f = new FormData();
+    f.append('file', file);
+    for (const [k, v] of Object.entries(extra)) if (v) f.append(k, v);
+    return request('/documents', { method: 'POST', body: f });
+  },
+  deleteDocument: (id) => request(`/documents/${id}`, { method: 'DELETE' }),
+  downloadDocument: async (id) => {
+    const res = await fetch(`${BASE}/documents/${id}/download`, { headers: workspaceId ? { 'x-workspace-id': workspaceId } : {} });
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    return res.blob();
+  },
+
+  // AI assistant
+  listConversations: () => request('/ai/assistant/conversations'),
+  getConversation: (id) => request(`/ai/assistant/conversations/${id}`),
+  chat: (message, conversationId) => request('/ai/assistant/chat', json('POST', { message, conversationId })),
+  approveProposal: (id) => request(`/ai/assistant/proposals/${id}/approve`, { method: 'POST' }),
+  rejectProposal: (id) => request(`/ai/assistant/proposals/${id}/reject`, { method: 'POST' }),
+
   // AI insights
   aiStatus: () => request('/ai/status'),
   getProjectSummary: (id) => request(`/ai/projects/${id}/summary`),
