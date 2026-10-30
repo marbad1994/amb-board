@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, parseLabels } from '../db.js';
 import { sanitizeLabels } from './cards.js';
+import { projectInWs } from '../access.js';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ router.post('/parse-task', async (req, res) => {
     return res.status(400).json({ error: 'projectId and text are required' });
   }
 
+  if (!projectInWs(projectId, req.ws.id)) return res.status(404).json({ error: 'not found' });
   const columns = db.prepare('SELECT id, name FROM columns WHERE project_id = ? ORDER BY position ASC').all(projectId);
   if (!columns.length) return res.status(404).json({ error: 'project has no columns' });
 

@@ -3,6 +3,7 @@ import { X, Trash2, Paperclip, Send, FileText, Plus } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
 import DictationButton from './DictationButton.jsx';
+import { PRIORITIES } from '../lib/labels.js';
 import { labelColor } from '../utils/labelColor.js';
 
 const STATUSES = [
@@ -18,6 +19,7 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
   const [error, setError] = useState('');
   const [commentText, setCommentText] = useState('');
   const [labelInput, setLabelInput] = useState('');
+  const [subInput, setSubInput] = useState('');
   const fileInputRef = useRef(null);
   const saveTimer = useRef(null);
 
@@ -100,6 +102,14 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
     setLabelInput('');
   };
 
+  const applyCard = (updated) => {
+    setCard(updated);
+    onChanged?.(updated);
+  };
+  const subtaskAction = async (fn) => {
+    try { applyCard(await fn()); } catch (err) { setError(err.message); }
+  };
+
   const removeLabel = (label) => {
     patch({ labels: (card.labels || []).filter((l) => l !== label) });
   };
@@ -159,6 +169,47 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="two-col">
+              <div className="field">
+                <label htmlFor="card-due">Due date</label>
+                <input id="card-due" type="date" value={card.due_date || ''} onChange={(e) => patch({ due_date: e.target.value || null })} />
+              </div>
+              <div className="field">
+                <label htmlFor="card-prio">Priority</label>
+                <select id="card-prio" value={card.priority || 'medium'} onChange={(e) => patch({ priority: e.target.value })}>
+                  {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>Subtasks {card.subtasks?.length > 0 && `(${card.subtasks.filter((s) => s.done).length}/${card.subtasks.length})`}</label>
+              <ul className="subtasks">
+                {(card.subtasks || []).map((s) => (
+                  <li key={s.id}>
+                    <label className="check">
+                      <input type="checkbox" checked={s.done} onChange={(e) => {
+                        const done = e.target.checked;
+                        setCard((prev) => ({ ...prev, subtasks: prev.subtasks.map((x) => (x.id === s.id ? { ...x, done } : x)) }));
+                        subtaskAction(() => api.updateSubtask(cardId, s.id, { done }));
+                      }} />
+                      <span className={s.done ? 'is-done' : ''}>{s.title}</span>
+                    </label>
+                    <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete subtask ${s.title}`}
+                      onClick={() => subtaskAction(() => api.deleteSubtask(cardId, s.id))}><X size={14} /></button>
+                  </li>
+                ))}
+              </ul>
+              <form className="inline-form" onSubmit={(e) => {
+                e.preventDefault();
+                if (!subInput.trim()) return;
+                subtaskAction(() => api.addSubtask(cardId, subInput.trim())).then(() => setSubInput(''));
+              }}>
+                <input type="text" aria-label="New subtask" placeholder="Add a subtask" maxLength={200} value={subInput} onChange={(e) => setSubInput(e.target.value)} />
+                <button type="submit" className="btn btn-icon" aria-label="Add subtask" disabled={!subInput.trim()}><Plus size={16} /></button>
+              </form>
             </div>
 
             <div className="field">
@@ -222,7 +273,7 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
                 {card.attachments?.map((att) => (
                   <div key={att.id} className="attachment-item">
                     <FileText size={16} />
-                    <a href={`/uploads/${att.filename}`} target="_blank" rel="noreferrer">
+                    <a href={`/api/attachments/${att.id}/download`} target="_blank" rel="noreferrer">
                       {att.original_name}
                     </a>
                     <button
