@@ -80,6 +80,14 @@ export function validateProposal(type, args, ws, user = null) {
     if (t.error) return { error: t.error };
     const st = validateSteps(a.steps, ws, t.trigger, user?.id ?? null);
     if (st.error) return { error: st.error };
+    // a second flow that does the same thing at the same time means duplicate emails: point at the existing one instead
+    const nm = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const kinds = (steps) => steps.map((x) => x.type).join(',');
+    for (const r of db.prepare('SELECT id, name, trigger, steps FROM automations WHERE workspace_id = ?').all(ws)) {
+      const sameName = nm(r.name) === nm(name);
+      const sameRun = JSON.stringify(JSON.parse(r.trigger)) === JSON.stringify(t.trigger) && kinds(JSON.parse(r.steps)) === kinds(st.steps);
+      if (sameName || sameRun) return { error: `an automation "${r.name}" (id ${r.id}) already ${sameName ? 'has that name' : 'runs at the same time with the same kinds of steps'}. Change it with update_automation, or use a clearly different name and schedule if this is really a separate flow` };
+    }
     return { payload: { name, trigger: t.trigger, steps: st.steps }, target: { entity: 'automation', id: null },
       description: `Create automation "${name}": ${describeTrigger(t.trigger)}, then ${st.steps.length} step${st.steps.length === 1 ? '' : 's'} (${st.steps.map((x) => x.type.replace(/_/g, ' ')).join(', ')}), runs as you` };
   }

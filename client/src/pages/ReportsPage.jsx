@@ -39,6 +39,8 @@ export default function ReportsPage() {
   const [form, setForm] = useState({ kind: 'overview', month: new Date().toISOString().slice(0, 7), project_id: '', narrative: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [sort, setSort] = useState('new');
+  const ordered = [...(items || [])].sort((a, b) => (sort === 'old' ? a.created_at.localeCompare(b.created_at) : sort === 'title' ? a.title.localeCompare(b.title) : sort === 'type' ? (KIND_LABEL[a.kind] || a.kind).localeCompare(KIND_LABEL[b.kind] || b.kind) || b.created_at.localeCompare(a.created_at) : b.created_at.localeCompare(a.created_at)));
   const load = useCallback(() => api.listReports().then((r) => setItems(r.items)).catch((err) => setError(err.message)), []);
   useEffect(() => { load(); api.listProjects().then(setProjects).catch(() => {}); }, [load]);
 
@@ -76,10 +78,14 @@ export default function ReportsPage() {
         </form>
       )}
       {items && items.length === 0 && <div className="empty-state">No reports yet.</div>}
+      {items && items.length > 1 && (
+        <label className="field report-sort"><span className="field__label">Sort by</span>
+          <select aria-label="Sort reports" value={sort} onChange={(e) => setSort(e.target.value)}><option value="new">Newest first</option><option value="old">Oldest first</option><option value="title">Title A to Z</option><option value="type">Type</option></select></label>
+      )}
       {items && items.length > 0 && (
         <section className="panel">
           <ul className="task-list">
-            {items.map((r) => (
+            {ordered.map((r) => (
               <li key={r.id}>
                 <FileBarChart size={18} aria-hidden="true" />
                 <div className="task-list__main"><Link to={`/reports/${r.id}`}>{r.title}</Link><small>{KIND_LABEL[r.kind] || r.kind} · {new Date(r.created_at).toLocaleString()} · {Math.round(r.size / 1024)} KB</small></div>

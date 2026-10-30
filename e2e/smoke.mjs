@@ -413,6 +413,12 @@ try {
     await page.getByLabel('File').setInputFiles({ name: 'lease-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('rent is due on the 1st') });
     await page.getByRole('button', { name: 'Upload' }).click();
     await page.getByText('lease-notes.txt').waitFor();
+    await page.getByLabel('Search documents').fill('zzz');
+    await page.getByText('No document matches').waitFor();
+    await page.getByLabel('Search documents').fill('lease');
+    await page.getByRole('button', { name: 'Preview lease-notes.txt' }).click();
+    await page.getByRole('dialog', { name: /Preview of lease-notes/ }).getByText('rent is due on the 1st').waitFor();
+    await page.getByRole('button', { name: 'Close preview' }).click();
     const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download lease-notes.txt' }).click()]);
     assert.equal(dl.suggestedFilename(), 'lease-notes.txt');
     await page.getByLabel('File').setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<script>alert(1)</script>') });
