@@ -68,7 +68,7 @@ export default function MyDayPage() {
               <ul className="task-list">
                 {d.habits.map((h) => (
                   <li key={h.id}>
-                    <input type="checkbox" aria-label={`${h.title}, done today`} checked={local[h.id] ?? h.done_today} disabled={!writable} onChange={() => check(h)} />
+                    <label className="hit"><input type="checkbox" aria-label={`${h.title}, done today`} checked={local[h.id] ?? h.done_today} disabled={!writable} onChange={() => check(h)} /></label>
                     <div className="task-list__main"><span>{h.title}</span>{h.frequency === 'weekly' && <small>{h.week_done}/{h.week_target} this week</small>}</div>
                   </li>
                 ))}

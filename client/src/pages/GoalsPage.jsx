@@ -124,7 +124,7 @@ export default function GoalsPage() {
             <ul className="task-list">
               {habits?.map((h) => (
                 <li key={h.id}>
-                  <input type="checkbox" aria-label={`${h.title}, done today`} checked={habitLocal[h.id] ?? h.done_today} disabled={!writable} onChange={() => { const next = !(habitLocal[h.id] ?? h.done_today); setHabitLocal({ ...habitLocal, [h.id]: next }); act(() => api.checkHabit(h.id, today(), next)); }} />
+                  <label className="hit"><input type="checkbox" aria-label={`${h.title}, done today`} checked={habitLocal[h.id] ?? h.done_today} disabled={!writable} onChange={() => { const next = !(habitLocal[h.id] ?? h.done_today); setHabitLocal({ ...habitLocal, [h.id]: next }); act(() => api.checkHabit(h.id, today(), next)); }} /></label>
                   <div className="task-list__main">
                     <span>{h.title}</span>
                     <small>{h.frequency === 'weekly' ? `${h.done_this_week}/${h.target_per_week} this week · ` : ''}Streak {h.streak.current} {h.frequency === 'weekly' ? 'weeks' : 'days'} · best {h.streak.longest}</small>

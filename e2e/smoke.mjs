@@ -600,6 +600,7 @@ try {
     await page.getByLabel('Message').fill('');
     await page.getByRole('button', { name: 'Close assistant' }).click();
     await page.getByRole('link', { name: 'Workspace' }).click();
+    await page.getByRole('button', { name: 'Assistant', exact: true }).click();
     await page.getByLabel('Or paste a skill (SKILL.md text)').fill('---\nname: friday-tidy\ndescription: tidy up on Fridays\n---\nList overdue tasks first.');
     await page.getByRole('button', { name: 'Add skill' }).click();
     await page.getByText('Added /friday-tidy.').waitFor();
@@ -623,6 +624,7 @@ try {
 
   await step('MCP: create a token in settings; an external client reads, analyses and proposes; approval happens in the app', async () => {
     await page.getByRole('link', { name: 'Workspace' }).click();
+    await page.getByRole('button', { name: 'Connect other AI tools', exact: true }).click();
     await page.getByLabel('Token name').fill('e2e-client');
     await page.getByRole('button', { name: 'Create token' }).click();
     const token = await page.getByLabel('New token').inputValue();
@@ -797,6 +799,7 @@ try {
 
   await step('settings: let the assistant auto-apply routine changes; connect a tool (private addresses refused)', async () => {
     await page.getByRole('link', { name: 'Workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'Assistant', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Create tasks' }).check();
     await page.getByRole('checkbox', { name: 'Create tasks' }).waitFor();
     await page.reload();

@@ -50,6 +50,7 @@ export default function Column({ column, onOpenCard, onAddCard, onRename, onDele
         <GripVertical size={16} color="var(--color-text-muted)" />
         <input
           className="column__title"
+          aria-label="Column name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
@@ -73,7 +74,7 @@ export default function Column({ column, onOpenCard, onAddCard, onRename, onDele
           }}
           title="Delete column"
         >
-          <Trash2 size={16} color="var(--color-danger)" />
+          <Trash2 size={16} color="var(--color-text-muted)" />
         </button>
       </div>
 
