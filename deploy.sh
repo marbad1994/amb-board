@@ -160,7 +160,7 @@ map_docker_caddy() {
   done <<< "$mounts"
   if [ -z "$host_file" ] || [ ! -f "$host_file" ]; then warn "found the Caddy container '${name}' but not its Caddyfile on this server (looked for ${cfg}). Add the block printed below to it yourself."; DOCKER_CADDY_HINT=1; return 1; fi
   # an address the container can use to reach the app on the host
-  for gw in $(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}' "$name" 2>/dev/null) host.docker.internal; do
+  for gw in $(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}' "$name" 2>/dev/null) 172.17.0.1 host.docker.internal; do
     if docker exec "$name" wget -q -T 3 -O /dev/null "http://${gw}:${PORT}/api/health" 2>/dev/null; then ok="$gw"; break; fi
   done
   if [ -z "$ok" ]; then
@@ -282,6 +282,50 @@ map_caddy() {
   fi
 }
 
+start_app() {
+  log "npm start (port ${PORT}, log: ${LOG_FILE})"
+  : > "$LOG_FILE"
+  # The server is started through a tiny launcher that writes its OWN pid and then exec's npm. `setsid` makes it the
+  # leader of a new process group, so the next deploy can stop npm and node together with one signal.
+  START_SCRIPT="${DEST_DIR}/.start.sh"
+  {
+    printf '#!/usr/bin/env bash\necho $$ > %q\ncd %q\n' "$PID_FILE" "$DEST_DIR"
+    # behind a proxy: trust X-Forwarded-For for rate limiting; over HTTPS: Secure session cookie (it would break plain-HTTP logins)
+    [ "$START_PROXY" = true ] && printf 'export TRUST_PROXY=true\n'
+    [ "$START_SECURE" = true ] && printf 'export COOKIE_SECURE=true\n'
+    printf 'exec npm start\n'
+  } > "$START_SCRIPT"
+  chmod +x "$START_SCRIPT"
+  if [ -n "$RUN_AS" ]; then
+    chown "$RUN_AS": "$LOG_FILE" "$START_SCRIPT"
+    su - "$RUN_AS" -c "nohup setsid bash '${START_SCRIPT}' >> '${LOG_FILE}' 2>&1 < /dev/null &"
+  else
+    nohup setsid bash "$START_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
+  fi
+  for _ in $(seq 1 20); do [ -s "$PID_FILE" ] && break; sleep 0.25; done
+  [ -s "$PID_FILE" ] || die "the server did not start (no pid file). See ${LOG_FILE}"
+
+  # ---------------------------------------------------------------- verify
+  log "Waiting for the server to answer on port ${PORT}"
+  ok=0
+  for _ in $(seq 1 "$HEALTH_TIMEOUT"); do
+    if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then ok=1; break; fi
+    sleep 1
+  done
+  if [ "$ok" -ne 1 ]; then
+    warn "the server did not become healthy within ${HEALTH_TIMEOUT} s. Last log lines:"
+    tail -n 30 "$LOG_FILE" >&2 || true
+    die "deploy of commit ${COMMIT} failed to start. Your data is untouched (backup in ${BACKUP_ROOT})."
+  fi
+}
+
+# The app is started FIRST: the proxy step below checks that the web server can actually reach it. It starts with the settings the
+# site will most likely need; if the proxy step ends differently (HTTPS not routed, or routed), it is restarted once with the right ones.
+START_PROXY=false; START_SECURE=false
+[ -n "$DOMAIN" ] && [ "$PROXY" != none ] && START_PROXY=true
+[ "$HTTPS" = true ] && START_SECURE=true
+start_app
+
 if [ -n "$DOMAIN" ] && [ "$PROXY" != none ]; then
   kind="$PROXY"; [ "$kind" = auto ] && kind="$(detect_proxy)"
   case "$kind" in
@@ -296,39 +340,14 @@ if [ "$DOCKER_CADDY_HINT" = 1 ]; then
   printf '\nAdd this to the Caddyfile that serves port 443 (use an address that container can reach the host on, e.g. the Docker gateway), then reload it:\n\n%s {\n    encode gzip\n    reverse_proxy 172.17.0.1:%s\n}\n\n' "$DOMAIN" "$PORT"
 fi
 
-log "npm start (port ${PORT}, log: ${LOG_FILE})"
-: > "$LOG_FILE"
-# The server is started through a tiny launcher that writes its OWN pid and then exec's npm. `setsid` makes it the
-# leader of a new process group, so the next deploy can stop npm and node together with one signal.
-START_SCRIPT="${DEST_DIR}/.start.sh"
-{
-  printf '#!/usr/bin/env bash\necho $$ > %q\ncd %q\n' "$PID_FILE" "$DEST_DIR"
-  # behind a proxy: trust X-Forwarded-For for rate limiting; over HTTPS: Secure session cookie (it would break plain-HTTP logins)
-  [ "$BEHIND_PROXY" = true ] && printf 'export TRUST_PROXY=true\n'
-  [ "$SECURE" = true ] && printf 'export COOKIE_SECURE=true\n'
-  printf 'exec npm start\n'
-} > "$START_SCRIPT"
-chmod +x "$START_SCRIPT"
-if [ -n "$RUN_AS" ]; then
-  chown "$RUN_AS": "$LOG_FILE" "$START_SCRIPT"
-  su - "$RUN_AS" -c "nohup setsid bash '${START_SCRIPT}' >> '${LOG_FILE}' 2>&1 < /dev/null &"
-else
-  nohup setsid bash "$START_SCRIPT" >> "$LOG_FILE" 2>&1 < /dev/null &
-fi
-for _ in $(seq 1 20); do [ -s "$PID_FILE" ] && break; sleep 0.25; done
-[ -s "$PID_FILE" ] || die "the server did not start (no pid file). See ${LOG_FILE}"
 
-# ---------------------------------------------------------------- verify
-log "Waiting for the server to answer on port ${PORT}"
-ok=0
-for _ in $(seq 1 "$HEALTH_TIMEOUT"); do
-  if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then ok=1; break; fi
-  sleep 1
-done
-if [ "$ok" -ne 1 ]; then
-  warn "the server did not become healthy within ${HEALTH_TIMEOUT} s. Last log lines:"
-  tail -n 30 "$LOG_FILE" >&2 || true
-  die "deploy of commit ${COMMIT} failed to start. Your data is untouched (backup in ${BACKUP_ROOT})."
+FINAL_PROXY=$BEHIND_PROXY; FINAL_SECURE=$SECURE
+if [ "$FINAL_PROXY" != "$START_PROXY" ] || [ "$FINAL_SECURE" != "$START_SECURE" ]; then
+  log "Restarting the app with the final proxy and cookie settings"
+  START_PROXY=$FINAL_PROXY; START_SECURE=$FINAL_SECURE
+  stop_old
+  start_app
 fi
+
 log "Deployed commit ${COMMIT} to ${DEST_DIR}; running at http://127.0.0.1:${PORT} (pid $(cat "$PID_FILE"))"
 [ "$BEHIND_PROXY" = true ] && log "Public address: $([ "$SECURE" = true ] && echo https || echo http)://${DOMAIN}"
