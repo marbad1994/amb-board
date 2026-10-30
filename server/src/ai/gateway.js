@@ -96,3 +96,85 @@ export function parseJson(text) {
   const body = (fenced ? fenced[1] : text).trim();
   return JSON.parse(body);
 }
+
+// ---------------------------------------------------------------- streaming
+// Same providers and failover as complete(), but the model's text is handed to onDelta as it is generated (OpenAI-style
+// server-sent events). A provider that answers with plain JSON instead is accepted and delivered as one piece.
+// `signal` stops the request (the person pressed Stop or went away). Failover only happens before any text was delivered.
+export class StreamAbortedError extends Error { constructor(partial = '') { super('stopped'); this.partial = partial; } }
+
+async function streamOnce(provider, messages, { signal, onDelta }) {
+  const ctrl = new AbortController();
+  const onAbort = () => ctrl.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  let idle = setTimeout(() => ctrl.abort(), TIMEOUT_MS());
+  const bump = () => { clearTimeout(idle); idle = setTimeout(() => ctrl.abort(), TIMEOUT_MS()); };
+  let text = ''; let usage;
+  try {
+    const res = await fetch(`${provider.base}/chat/completions`, {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${provider.key}` },
+      body: JSON.stringify({ model: provider.model, messages, temperature: 0.2, response_format: { type: 'json_object' }, stream: true, stream_options: { include_usage: true } }),
+    });
+    if (!res.ok) { const err = new Error(`provider ${provider.name} returned ${res.status}`); err.retryable = res.status >= 500 || res.status === 429; throw err; }
+    if (/json/.test(res.headers.get('content-type') || '') && !/event-stream/.test(res.headers.get('content-type') || '')) {
+      const data = await res.json();
+      text = data.choices?.[0]?.message?.content; usage = data.usage;
+      if (typeof text !== 'string' || !text.trim()) throw Object.assign(new Error('empty response'), { retryable: true });
+      onDelta?.(text);
+      return { text, usage };
+    }
+    const dec = new TextDecoder(); let buf = '';
+    for await (const chunk of res.body) {
+      bump();
+      buf += dec.decode(chunk, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        let j; try { j = JSON.parse(payload); } catch { continue; }
+        if (j.usage) usage = j.usage;
+        const piece = j.choices?.[0]?.delta?.content;
+        if (typeof piece === 'string' && piece) { text += piece; onDelta?.(piece); }
+      }
+    }
+    if (!text.trim()) throw Object.assign(new Error('empty response'), { retryable: true });
+    return { text, usage };
+  } catch (err) {
+    if (signal?.aborted) throw new StreamAbortedError(text);
+    if (err.name === 'AbortError') err.message = `provider ${provider.name} timed out`;
+    if (err.retryable === undefined) err.retryable = true;
+    err.delivered = text.length > 0;
+    throw err;
+  } finally {
+    clearTimeout(idle); signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+export async function completeStream(ctx, { system, user }, { signal, onDelta } = {}) {
+  const providers = configuredProviders();
+  if (providers.length === 0) throw new AiUnavailableError('No AI provider is configured on the server.');
+  if (usageToday(ctx.workspaceId) >= dailyLimit()) throw new AiLimitError('The daily AI limit for this workspace has been reached.');
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+  const failures = [];
+  for (const provider of providers) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const started = Date.now();
+      try {
+        const { text, usage } = await streamOnce(provider, messages, { signal, onDelta });
+        record(ctx, provider, 'ok', usage, started);
+        return { text, provider: provider.name, model: provider.model };
+      } catch (err) {
+        record(ctx, provider, 'error', null, started);
+        if (err instanceof StreamAbortedError) throw err;
+        failures.push(`${provider.name}: ${err.message}`);
+        if (err.delivered) throw Object.assign(new AiFailureError('The connection to the AI service dropped while it was writing.'), { dropped: true });
+        if (!err.retryable) break;
+      }
+    }
+  }
+  console.error('AI gateway: all providers failed:', failures.join('; '));
+  throw new AiFailureError('The AI service is temporarily unavailable.');
+}

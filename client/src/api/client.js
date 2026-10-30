@@ -10,6 +10,34 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = fn;
 }
 
+// Streaming chat: the server sends events (step, delta, reset, done, error) as it works. Throws on a failed start;
+// events that are errors reach onEvent too. Aborting the signal stops the model on the server.
+async function chatStream(body, { onEvent, signal }) {
+  const headers = { 'content-type': 'application/json' };
+  if (workspaceId) headers['x-workspace-id'] = workspaceId;
+  const res = await fetch(`${BASE}/ai/assistant/chat/stream`, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  if (!res.ok) {
+    let message = `Request failed: ${res.status}`;
+    try { message = (await res.json()).error || message; } catch { /* not json */ }
+    if (res.status === 401) onUnauthorized();
+    throw Object.assign(new Error(message), { status: res.status });
+  }
+  const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      const line = block.split('\n').find((l) => l.startsWith('data:'));
+      if (!line) continue;
+      let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+      onEvent(ev);
+    }
+  }
+}
+
 async function request(path, options = {}) {
   const headers = options.body instanceof FormData ? {} : { 'content-type': 'application/json' };
   if (workspaceId) headers['x-workspace-id'] = workspaceId;
@@ -215,6 +243,7 @@ export const api = {
   // AI assistant
   listConversations: () => request('/ai/assistant/conversations'),
   getConversation: (id) => request(`/ai/assistant/conversations/${id}`),
+  chatStream,
   chat: (message, conversationId, context) => request('/ai/assistant/chat', json('POST', { message, conversationId, context })),
   approveProposal: (id, body = {}) => request(`/ai/assistant/proposals/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
   rejectProposal: (id) => request(`/ai/assistant/proposals/${id}/reject`, { method: 'POST' }),

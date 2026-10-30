@@ -25,6 +25,15 @@ const fakeAi = createServer((req, res) => {
     const msgs = JSON.parse(b).messages;
     if (msgs[0].content.includes('assistant inside AMB Board')) {
       const user = msgs[1].content;
+      if (/<question>[^<]*stream demo/i.test(user)) {
+        // a slow, never-ending stream: the test presses Stop
+        res.setHeader('content-type', 'text/event-stream');
+        const text = JSON.stringify({ type: 'final', answer: 'Streaming works. This sentence keeps arriving word by word until you stop it, so you can see it grow and then cut it off.' });
+        let i = 0;
+        const t = setInterval(() => { if (res.destroyed || i >= text.length) { clearInterval(t); return; } res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text.slice(i, i + 12) } }] })}\n\n`); i += 12; }, 250);
+        res.on('close', () => clearInterval(t));
+        return;
+      }
       if (/<question>[^<]*automation/i.test(user)) {
         res.setHeader('content-type', 'application/json');
         const guided = msgs[0].content.includes('ACTIVE SKILL /create-automation');
@@ -344,9 +353,10 @@ try {
 
   await step('AI assistant: answers from data, proposes changes, nothing changes until Approve; disallowed proposal discarded', async () => {
     await page.getByRole('link', { name: 'AI Assistant' }).click();
-    await page.getByRole('button', { name: 'What should I focus on today?' }).click();
+    await page.getByText('Ask about your workspace, or have me set things up').waitFor();
+    await page.getByRole('button', { name: 'What is overdue?' }).click();
     await page.getByText('Focus on your renovation project today.').waitFor();
-    await page.getByText('Looked at: list projects').waitFor();
+    await page.getByText(/Read your projects/).waitFor();
     await page.getByText(/1 suggested change was discarded because it did not match your data/).waitFor();
     await page.getByText('Create task "Call the contractor" in project "Apartment Renovation"').waitFor();
     await page.getByRole('link', { name: 'Tasks', exact: true }).click();
@@ -355,7 +365,7 @@ try {
     await page.getByRole('link', { name: 'AI Assistant' }).click();
     await page.getByLabel('Conversation').first().selectOption({ index: 1 });
     await page.getByRole('button', { name: 'Approve' }).click();
-    await page.getByText('Applied.').waitFor();
+    await page.getByText('Applied', { exact: true }).waitFor();
     await shot(page, '11-assistant');
     await page.getByRole('link', { name: 'Tasks', exact: true }).click();
     await page.getByRole('link', { name: 'Call the contractor' }).waitFor();
@@ -580,10 +590,10 @@ try {
     await page.getByLabel('Message').fill('help me create an automation');
     await page.getByRole('button', { name: 'Send' }).click();
     await page.getByText('When should it run?').waitFor();
-    await page.getByText(/Running \/create-automation/).waitFor();
+    await page.getByText('/create-automation', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Every Monday at 08:00' }).click();
     await page.getByText('Scheduled for Mondays. All set.').waitFor();
-    await page.getByText(/Running \/create-automation/).waitFor({ state: 'detached' });
+    await page.getByText('/create-automation', { exact: true }).waitFor({ state: 'detached' });
     await page.getByLabel('Message').fill('/amb');
     await page.getByRole('option', { name: /amb-workflow/ }).waitFor();
     await page.getByLabel('Message').fill('');
@@ -594,6 +604,20 @@ try {
     await page.getByText('Added /friday-tidy.').waitFor();
     await page.getByRole('button', { name: 'Delete skill friday-tidy' }).click();
     await page.getByRole('button', { name: 'Delete skill friday-tidy' }).waitFor({ state: 'detached' });
+  });
+
+  await step('assistant streams, shows named steps, Stop keeps the partial answer as incomplete, Continue offered', async () => {
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByRole('button', { name: 'New chat' }).click().catch(() => {});
+    await page.getByLabel('Message').fill('stream demo please');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('status', { name: 'What I am doing' }).waitFor().catch(() => {});
+    await page.getByText(/Streaming works\./).waitFor();
+    await page.getByRole('button', { name: 'Stop', exact: true }).last().click();
+    await page.getByText(/Incomplete: it was stopped/).waitFor();
+    await page.getByRole('button', { name: 'Continue' }).waitFor();
+    await page.getByRole('button', { name: 'Start again' }).waitFor();
+    await shot(page, '26-stopped');
   });
 
   await step('MCP: create a token in settings; an external client reads, analyses and proposes; approval happens in the app', async () => {
@@ -614,7 +638,7 @@ try {
     await page.getByLabel('Conversation').first().selectOption({ label: 'External assistant (MCP)' });
     await page.getByText('Create task "Proposed over MCP" in project').last().waitFor();
     await page.getByRole('button', { name: 'Approve' }).click();
-    await page.getByText('Applied.').waitFor();
+    await page.getByText('Applied', { exact: true }).waitFor();
     await page.getByRole('link', { name: 'Tasks', exact: true }).click();
     await page.getByRole('link', { name: 'Proposed over MCP' }).waitFor();
   });
@@ -640,7 +664,7 @@ try {
     await page.getByText('Setup plan: 3 steps, approved together').waitFor();
     await page.getByText(/2\. Create task "Sign the lease" in project "Move plan project"/).waitFor();
     await page.getByRole('button', { name: 'Approve' }).first().click();
-    await page.getByText('Applied.').waitFor();
+    await page.getByText('Applied', { exact: true }).waitFor();
     await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.locator('.project-card', { hasText: 'Move plan project' }).first().waitFor();
     assert.match(await page.locator('.project-card', { hasText: 'Move plan project' }).first().innerText(), /2 tasks/);

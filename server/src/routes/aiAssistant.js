@@ -43,6 +43,33 @@ router.post('/chat', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// Same turn as /chat, delivered as server-sent events: step (what it is doing), delta (answer text as it is written),
+// reset (discard the text so far), done (the finished message, same shape as /chat), error. Closing the connection stops
+// the model; what was written so far is kept and marked incomplete.
+router.post('/chat/stream', async (req, res) => {
+  const message = String(req.body.message || '').trim();
+  if (!message) return res.status(400).json({ error: 'message is required' });
+  if (message.length > 12000) return res.status(400).json({ error: 'message is too long (12000 characters max)' });
+  res.status(200).set({ 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
+  res.flushHeaders();
+  const ctrl = new AbortController();
+  let finished = false;
+  res.on('close', () => { if (!finished) ctrl.abort(); });
+  const send = (event) => { if (!res.writableEnded && !res.destroyed) res.write(`data: ${JSON.stringify(event)}\n\n`); };
+  try {
+    const out = await chat({ workspaceId: req.ws.id, user: req.user, role: req.ws.role, conversationId: req.body.conversationId, message, context: req.body.context, emit: send, signal: ctrl.signal });
+    if (out.notFound) send({ type: 'error', status: 404, message: 'This conversation no longer exists.' });
+    else send({ type: 'done', ...out });
+  } catch (err) {
+    const status = err instanceof AiUnavailableError ? 503 : err instanceof AiLimitError ? 429 : err instanceof AiFailureError ? 502 : 500;
+    if (status === 500) console.error('assistant stream error:', err);
+    send({ type: 'error', status, message: status === 500 ? 'Something went wrong on the server.' : err.message });
+  } finally {
+    finished = true;
+    res.end();
+  }
+});
+
 function ownProposal(req) {
   expireOld();
   return db.prepare('SELECT * FROM ai_action_proposals WHERE id = ? AND workspace_id = ? AND user_id = ?').get(req.params.id, req.ws.id, req.user.id);
