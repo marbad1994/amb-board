@@ -87,6 +87,15 @@ export default function BoardPage() {
     }
   };
 
+  const saveColumnSettings = async (columnId, data) => {
+    try {
+      await api.updateColumn(columnId, data);
+      setColumns(await api.listColumns(projectId));   // cards in the column may have taken its status
+      api.getProject(projectId).then(setProject).catch(() => {});
+      setError('');
+    } catch (err) { setError(err.message); }
+  };
+
   const handleDragOver = ({ active, over }) => {
     if (!over || active.data.current?.type !== 'card') return;
     const activeId = active.id;
@@ -104,6 +113,8 @@ export default function BoardPage() {
         targetColId = targetCol?.id;
       }
       if (!targetColId || sourceCol.id === targetColId) return prev;
+      const target = prev.find((c) => c.id === targetColId);
+      if (target?.card_limit != null && target.cards.length >= target.card_limit) return prev;   // full: the card cannot enter
 
       const card = sourceCol.cards.find((c) => c.id === activeId);
       const next = prev.map((col) => {
@@ -158,7 +169,7 @@ export default function BoardPage() {
           setColumns((cur) => cur.map((c) => ({ ...c, cards: c.cards.map((x) => (x.id === moved.id ? { ...x, status: moved.status, completed_at: moved.completed_at } : x)) })));
           api.getProject(projectId).then(setProject).catch(() => {});
         })
-        .catch((err) => setError(err.message));
+        .catch((err) => { setError(err.message); api.listColumns(projectId).then(setColumns).catch(() => {}); });   // refused (e.g. column full): put the card back
 
       return next;
     });
@@ -298,6 +309,8 @@ export default function BoardPage() {
                   onAddCard={addCard}
                   onRename={renameColumn}
                   onDelete={deleteColumn}
+                  onSettings={saveColumnSettings}
+                  writable={canWrite(active?.role)}
                 />
               ))}
             </SortableContext>

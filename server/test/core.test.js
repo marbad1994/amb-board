@@ -145,19 +145,52 @@ test('tasks and subtasks cannot be reached across workspaces; viewers cannot wri
   assert.equal((await other.c.get(`/api/tasks?project=${(await u.c.get('/api/projects')).json[0].id}`)).json.length, 0);
 });
 
-test('column and status stay in step: dropping into Done completes, setting status moves the card', async () => {
-  const { u, project, mk } = await setup('ColSync');
+test('column settings: a column holds a status (several columns may share one) and a card limit; moves and status changes follow them', async () => {
+  const { u, project, mk } = await setup('ColSet');
   const cols = (await u.c.get(`/api/projects/${project.id}/columns`)).json;
   const [backlog, progress, done] = cols;
+  assert.deepEqual(cols.map((c) => c.status), ['todo', 'doing', 'done']);
   const t = await mk('Sync me');
-  const moved = (await u.c.post(`/api/cards/${t.id}/move`, { columnId: progress.id, order: [t.id] })).json;
-  assert.equal(moved.status, 'doing');
+  assert.equal((await u.c.post(`/api/cards/${t.id}/move`, { columnId: progress.id, order: [t.id] })).json.status, 'doing');
   const fin = (await u.c.post(`/api/cards/${t.id}/move`, { columnId: done.id, order: [t.id] })).json;
   assert.equal(fin.status, 'done'); assert.ok(fin.completed_at);
   const back = (await u.c.patch(`/api/cards/${t.id}`, { status: 'todo' })).json;
   assert.equal(back.column_id, backlog.id); assert.equal(back.completed_at, null);
-  // custom column names never change status
-  const custom = (await u.c.post(`/api/projects/${project.id}/columns`, { name: 'Waiting on supplier' })).json;
-  const kept = (await u.c.post(`/api/cards/${t.id}/move`, { columnId: custom.id, order: [t.id] })).json;
-  assert.equal(kept.status, 'todo');
+  // two columns can hold the same status; a column with no status leaves the card's status alone
+  const review = (await u.c.post(`/api/projects/${project.id}/columns`, { name: 'Review' })).json;
+  assert.equal(review.status, null);
+  assert.equal((await u.c.patch(`/api/projects/columns/${review.id}`, { status: 'doing' })).json.status, 'doing');
+  assert.equal((await u.c.post(`/api/cards/${t.id}/move`, { columnId: review.id, order: [t.id] })).json.status, 'doing');
+  const free = (await u.c.post(`/api/projects/${project.id}/columns`, { name: 'Waiting on supplier' })).json;
+  assert.equal((await u.c.post(`/api/cards/${t.id}/move`, { columnId: free.id, order: [t.id] })).json.status, 'doing', 'no status: unchanged');
+  // setting a status on a column applies it to the cards already there
+  assert.equal((await u.c.patch(`/api/projects/columns/${free.id}`, { status: 'blocked' })).status, 200);
+  assert.equal((await u.c.get(`/api/cards/${t.id}`)).json.status, 'blocked');
+  // validation
+  assert.equal((await u.c.patch(`/api/projects/columns/${free.id}`, { status: 'nonsense' })).status, 400);
+  for (const bad of [0, -1, 1000, 1.5, 'abc']) assert.equal((await u.c.patch(`/api/projects/columns/${free.id}`, { card_limit: bad })).status, 400, `limit ${bad}`);
+  assert.equal((await u.c.patch(`/api/projects/columns/${free.id}`, { card_limit: null, status: null })).json.card_limit, null);
+});
+
+test('card limits: a full column refuses new and moved cards (409), reorders inside it still work, and a status change needs room', async () => {
+  const { u, project, mk } = await setup('Wip');
+  const [backlog, progress, done] = (await u.c.get(`/api/projects/${project.id}/columns`)).json;
+  assert.equal((await u.c.patch(`/api/projects/columns/${progress.id}`, { card_limit: 2 })).json.card_limit, 2);
+  const a = await mk('A'); const b = await mk('B'); const c = await mk('C');
+  assert.equal((await u.c.post(`/api/cards/${a.id}/move`, { columnId: progress.id, order: [a.id] })).status, 200);
+  assert.equal((await u.c.post(`/api/cards/${b.id}/move`, { columnId: progress.id, order: [a.id, b.id] })).status, 200);
+  const full = await u.c.post(`/api/cards/${c.id}/move`, { columnId: progress.id, order: [a.id, b.id, c.id] });
+  assert.equal(full.status, 409); assert.match(full.json.error, /full \(limit 2\)/);
+  assert.equal((await u.c.get(`/api/cards/${c.id}`)).json.column_id, backlog.id, 'the refused card did not move');
+  assert.equal((await u.c.post(`/api/cards/${a.id}/move`, { columnId: progress.id, order: [b.id, a.id] })).status, 200, 'reordering inside a full column is fine');
+  assert.equal((await u.c.post(`/api/cards/columns/${progress.id}/cards`, { title: 'new' })).status, 409, 'creating into a full column');
+  // changing status to "doing" would need a place in the full "doing" column
+  const st = await u.c.patch(`/api/cards/${c.id}`, { status: 'doing' });
+  assert.equal(st.status, 409); assert.equal((await u.c.get(`/api/cards/${c.id}`)).json.status, 'todo');
+  // a second column holding the same status takes the overflow
+  const extra = (await u.c.post(`/api/projects/${project.id}/columns`, { name: 'Doing 2' })).json;
+  await u.c.patch(`/api/projects/columns/${extra.id}`, { status: 'doing' });
+  const ok = await u.c.patch(`/api/cards/${c.id}`, { status: 'doing' });
+  assert.equal(ok.status, 200); assert.equal(ok.json.column_id, extra.id);
+  void done;
 });

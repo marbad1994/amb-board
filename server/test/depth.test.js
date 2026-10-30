@@ -173,7 +173,7 @@ test('S-reminders: event reminder fires once inside its window, respects prefere
   assert.equal((await count()).items[0].title, 'Call starts now');
 
   // preferences: switch event reminders off, the next event notification is skipped
-  assert.deepEqual((await a.c.put('/api/notifications/preferences', { event_reminders: false })).json, { event_reminders: false, task_due: true, budget_alerts: true });
+  assert.deepEqual((await a.c.put('/api/notifications/preferences', { event_reminders: false })).json, { event_reminders: false, task_due: true, budget_alerts: true, email: false, email_available: false });
   await a.c.post('/api/calendar/events', { title: 'Muted', start_local: '2027-05-12T09:00', timezone: 'UTC', reminder_minutes: 15 });
   assert.equal(generateForWorkspace(a.personalId, new Date('2027-05-12T08:50:00Z')), 0);
   assert.equal((await a.c.get('/api/notifications/preferences')).json.event_reminders, false);

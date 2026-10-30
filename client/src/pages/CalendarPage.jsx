@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Plus, TriangleAlert } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import EventModal from '../components/EventModal.jsx';
+import TimeGrid from '../components/TimeGrid.jsx';
 
 const KIND_LABEL = { appointment: 'Appointment', personal: 'Personal', task_due: 'Task due', project_deadline: 'Deadline', milestone: 'Milestone' };
 const pad = (n) => String(n).padStart(2, '0');
@@ -110,8 +111,11 @@ export default function CalendarPage() {
           {dates.map((d) => dayCell(d))}
         </div>
       )}
-      {view === 'week' && <div className="cal-week" role="grid" aria-label={label}>{dates.map((d) => dayCell(d, 'cal-day--tall'))}</div>}
-      {view === 'day' && <div className="cal-dayview" role="grid" aria-label={label}>{dayCell(cursor, 'cal-day--tall')}{(byDate[cursor] || []).length === 0 && <p className="muted">Nothing scheduled.</p>}</div>}
+      {(view === 'week' || view === 'day') && (
+        <TimeGrid dates={dates} byDate={byDate} today={today()} label={label} pressure={pressure} writable={writable} chip={chip} longDate={long}
+          onAdd={(d, hour) => setModal({ date: d, prefill: hour == null ? undefined : { start_local: `${d}T${pad(hour)}:00` } })}
+          onOpen={(i) => setModal({ event: i, date: i.date })} />
+      )}
       {view === 'agenda' && (
         <section className="panel">
           {items.filter((i) => i.date.slice(0, 7) === month).length === 0 && <p className="muted">Nothing scheduled in {label}.</p>}

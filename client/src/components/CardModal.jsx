@@ -35,6 +35,7 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
       onChanged?.(updated);
     } catch (err) {
       setError(err.message);
+      api.getCard(cardId).then(setCard).catch(() => {});   // show what is really saved (e.g. the target column was full)
     }
   };
 

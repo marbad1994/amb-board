@@ -491,9 +491,9 @@ try {
   await step('calendar week and day views; event reminder reaches the notification bell', async () => {
     await page.getByRole('link', { name: 'Calendar' }).click();
     await page.getByRole('button', { name: 'Week', exact: true }).click();
-    assert.equal(await page.getByRole('gridcell').count(), 7, 'seven day columns');
+    assert.equal(await page.getByRole('gridcell', { name: /timeline$/ }).count(), 7, 'seven day columns on an hour grid');
     await page.getByRole('button', { name: 'Day', exact: true }).click();
-    assert.equal(await page.getByRole('gridcell').count(), 1);
+    assert.equal(await page.getByRole('gridcell', { name: /timeline$/ }).count(), 1);
     const soon = new Date(Date.now() + 5 * 60_000);
     const hhmm = soon.toISOString().slice(11, 16);
     await page.getByRole('button', { name: 'New event' }).click();
@@ -635,6 +635,31 @@ try {
     assert.match(await page.locator('.project-card', { hasText: 'Move plan project' }).first().innerText(), /3 tasks/, 'the flow created a task');
   });
 
+  await step('board columns: a column holds a status and a card limit; a full column refuses more cards', async () => {
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    await page.locator('.project-card', { hasText: 'Move plan project' }).first().click();
+    await page.locator('button[aria-label="Settings for column In Progress"]').click();
+    await page.getByLabel('Most cards it can hold').fill('1');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByLabel('0 cards, limit 1').waitFor();
+    await page.getByText('Holds: Doing').waitFor();
+    const drag = async (title) => {
+      const src = await page.locator('.card', { hasText: title }).first().boundingBox();
+      const dst = await page.locator('.column').nth(1).boundingBox();
+      await page.mouse.move(src.x + 40, src.y + 20); await page.mouse.down();
+      await page.mouse.move(src.x + 60, src.y + 30, { steps: 5 });
+      await page.mouse.move(dst.x + dst.width / 2, dst.y + 100, { steps: 15 });
+      await page.mouse.up();
+    };
+    await drag('Sign the lease');
+    await page.getByLabel('1 cards, limit 1').waitFor();
+    await page.locator('.column').nth(1).locator('.card', { hasText: 'Sign the lease' }).getByText('DOING', { exact: false }).waitFor();   // status followed the column
+    await drag('Book movers');
+    await page.locator('.column').nth(0).locator('.card', { hasText: 'Book movers' }).waitFor();   // it snapped back
+    await page.getByRole('button', { name: 'Add card' }).nth(1).isDisabled();
+    await shot(page, '23-column-limit');
+  });
+
   await step('sign out, then sign in again with the same credentials', async () => {
     await page.getByRole('button', { name: 'Sign out' }).click();
     await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
@@ -644,8 +669,8 @@ try {
     await page.getByText('invalid email or password').waitFor();
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor(); // session restored on the page we left
-    assert.match(page.url(), /\/projects$/);
+    await page.getByRole('heading', { name: /Move plan project/ }).waitFor(); // session restored on the page we left
+    assert.match(page.url(), /\/projects\/[^/]+$/);
   });
 
   await step('a second user cannot see the first user\'s project', async () => {

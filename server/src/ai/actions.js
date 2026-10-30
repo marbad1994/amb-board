@@ -278,7 +278,7 @@ export function applyValidated(type, p, ws, actor, ts) {
   const id = nanoid();
   db.prepare(`INSERT INTO projects (id, name, color, description, workspace_id, life_area_id, status, target_date, created_at, updated_at)
     VALUES (?, ?, '#0ea5e9', ?, ?, ?, 'todo', ?, ?, ?)`).run(id, p.name, p.description, ws, p.life_area_id, p.target_date, ts, ts);
-  ['Backlog', 'In Progress', 'Done'].forEach((c, i) => db.prepare('INSERT INTO columns (id, project_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)').run(nanoid(), id, c, i, ts));
+  [['Backlog', 'todo'], ['In Progress', 'doing'], ['Done', 'done']].forEach(([c, st], i) => db.prepare('INSERT INTO columns (id, project_id, name, position, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(nanoid(), id, c, i, st, ts));
   return { entity: 'project', id };
 
 }

@@ -56,7 +56,7 @@ router.post('/:id/convert', (req, res) => {
   tx(() => {
     db.prepare(`INSERT INTO projects (id, name, color, description, workspace_id, life_area_id, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'todo', ?, ?)`).run(projectId, name, idea.color, text.slice(0, 5000), req.ws.id, lifeAreaId, ts, ts);
-    ['Backlog', 'In Progress', 'Done'].forEach((c, i) => db.prepare('INSERT INTO columns (id, project_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)').run(nanoid(), projectId, c, i, ts));
+    [['Backlog', 'todo'], ['In Progress', 'doing'], ['Done', 'done']].forEach(([c, st], i) => db.prepare('INSERT INTO columns (id, project_id, name, position, status, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(nanoid(), projectId, c, i, st, ts));
     db.prepare('UPDATE idea_notes SET converted_project_id = ?, updated_at = ? WHERE id = ?').run(projectId, ts, idea.id);
     audit(req, 'idea.convert', 'project', projectId, { ideaId: idea.id });
   });

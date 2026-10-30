@@ -214,6 +214,8 @@ export const api = {
     request(`/projects/${projectId}/columns`, { method: 'POST', body: JSON.stringify({ name }) }),
   renameColumn: (columnId, name) =>
     request(`/projects/columns/${columnId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  updateColumn: (columnId, data) =>
+    request(`/projects/columns/${columnId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteColumn: (columnId) => request(`/projects/columns/${columnId}`, { method: 'DELETE' }),
   reorderColumns: (projectId, order) =>
     request(`/projects/${projectId}/columns/reorder`, { method: 'POST', body: JSON.stringify({ order }) }),
