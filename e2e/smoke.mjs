@@ -53,6 +53,7 @@ const fakeAi = createServer((req, res) => {
           { type: 'create_task', args: { project_id: '@p', title: 'Sign the lease', priority: 'high' } },
           { type: 'create_task', args: { project_id: '@p', title: 'Book movers' } }] } }] }) } }], usage: {} }));
       }
+      if (user.includes('<fix>The app rejected')) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'final', answer: '', proposals: [] }) } }], usage: {} })); }   // the assistant's attempt to repair a rejected proposal: it has nothing
       const wantsReport = /<question>[^<]*report/i.test(user);
       const out = wantsReport
         ? (user.includes('"tool_results":[]') ? { type: 'tool', calls: [{ tool: 'generate_report', args: { kind: 'overview', title: 'E2E overview' } }] } : { type: 'final', answer: 'Report is ready under Reports.', proposals: [] })
