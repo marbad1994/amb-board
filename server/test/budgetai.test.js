@@ -280,3 +280,46 @@ test('bulk budget builder and trend data', async () => {
   const stranger = await signUp(srv.base, 'BudBulkO');
   assert.deepEqual((await stranger.c.get('/api/finance/trend')).json.series, []);
 });
+
+const SHEET = [
+  'BUGET LUNAR,,,,,',
+  'VENITURI,,,,,',
+  'Salariu,"6.500,00",,,,',
+  'CHELTUIELI,,,,,',
+  'Chirie,"2.000,00",,,,',
+  'Intretinere,350,,,,',
+  'Mancare,"1.800,50",,,,',
+  'Abonamente,120,,,,',
+  'Total cheltuieli,"4.270,50",,,,',
+  'Ramas,"2.229,50",,,,',
+].join('\n');
+
+test('budget sheet (no dates, Romanian): amounts come from code, totals are not double counted, AI only classifies labels', async () => {
+  const u = await signUp(srv.base, 'Sheet1');
+  reply = (m) => {
+    const d = dataOf(m);
+    assert.ok(!JSON.stringify(d).match(/\d{3}/), 'no amounts are sent to the AI');
+    return { items: d.rows.map((r) => ({ id: r.id, kind: /salariu/i.test(r.label) ? 'income' : /total|ramas/i.test(r.label) ? 'total' : 'expense', category: r.label })) };
+  };
+  const res = await draftReq(u, { csv: SHEET, currency: 'RON', name: 'Buget lunar.csv' });
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  const lines = Object.fromEntries(res.json.lines.map((l) => [l.category, l.limit_minor]));
+  assert.deepEqual(lines, { Chirie: 200000, Intretinere: 35000, Mancare: 180050, Abonamente: 12000 });
+  assert.equal(res.json.income.avg_monthly_minor, 650000);
+  assert.equal(res.json.sheet.expenses_total_minor, 427050);
+  // even if the model labels the subtotal an expense, code detects it as the sum of the lines above
+  reply = (m) => ({ items: dataOf(m).rows.map((r) => ({ id: r.id, kind: /salariu/i.test(r.label) ? 'income' : 'expense', category: r.label })) });
+  const res2 = await draftReq(u, { csv: SHEET, currency: 'RON' });
+  assert.equal(res2.json.sheet.expenses_total_minor, 427050, 'subtotal not counted');
+});
+
+test('budget sheet without an AI provider falls back to rules', async () => {
+  const u = await signUp(srv.base, 'Sheet2');
+  const keep = process.env.DEEPSEEK_API_KEY; delete process.env.DEEPSEEK_API_KEY; delete process.env.X_GROK_API_KEY;
+  const res = await draftReq(u, { csv: SHEET, currency: 'RON' });
+  process.env.DEEPSEEK_API_KEY = keep;
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  assert.equal(res.json.ai_used, false);
+  assert.equal(res.json.sheet.expenses_total_minor, 427050);
+  assert.equal(res.json.income.avg_monthly_minor, 650000);
+});
