@@ -53,6 +53,7 @@ const fakeAi = createServer((req, res) => {
           { type: 'create_task', args: { project_id: '@p', title: 'Sign the lease', priority: 'high' } },
           { type: 'create_task', args: { project_id: '@p', title: 'Book movers' } }] } }] }) } }], usage: {} }));
       }
+      if (user.includes('<fix>The app rejected')) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ type: 'final', answer: '', proposals: [] }) } }], usage: {} })); }   // the assistant's attempt to repair a rejected proposal: it has nothing
       const wantsReport = /<question>[^<]*report/i.test(user);
       const out = wantsReport
         ? (user.includes('"tool_results":[]') ? { type: 'tool', calls: [{ tool: 'generate_report', args: { kind: 'overview', title: 'E2E overview' } }] } : { type: 'final', answer: 'Report is ready under Reports.', proposals: [] })
@@ -360,7 +361,7 @@ try {
     await page.getByRole('button', { name: 'What is overdue?' }).click();
     await page.getByText('Focus on your renovation project today.').waitFor();
     await page.getByText(/Read your projects/).waitFor();
-    await page.getByText(/1 suggested change was discarded because it did not match your data/).waitFor();
+    await page.getByText(/I tried to fix 1 suggested change that did not match your data and could not/).waitFor();
     await page.getByText('Create task "Call the contractor" in project "Apartment Renovation"').waitFor();
     await page.getByRole('link', { name: 'Tasks', exact: true }).click();
     await page.getByRole('link', { name: 'Order tiles' }).waitFor();

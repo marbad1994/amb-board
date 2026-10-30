@@ -32,7 +32,7 @@ export const PROPOSAL_DOCS = {
   reschedule_task: '{"task_id":"","due_date":"YYYY-MM-DD"}',
   add_subtask: '{"task_id":"","title":""}',
   add_comment: '{"task_id":"","text":""}',
-  create_event: '{"title":"","start_local":"YYYY-MM-DDTHH:mm","end_local":"","timezone":"IANA zone","all_day":false,"kind":"appointment|personal","project_id":"","reminder_minutes":30}',
+  create_event: '{"title":"","start_local":"YYYY-MM-DDTHH:mm (with all_day true: YYYY-MM-DD, no time)","end_local":"","timezone":"IANA zone","all_day":false,"kind":"appointment|personal","project_id":"","reminder_minutes":30}',
   create_project: '{"name":"","description":"","life_area_id":"","target_date":"YYYY-MM-DD"}',
   create_transaction: '{"type":"expense|income|refund","amount":25.5,"currency":"EUR","date":"YYYY-MM-DD","description":"","category":"existing category name","project_id":"","status":"posted|planned"}',
   categorize_transaction: '{"transaction_id":"","category":"existing category name"}',

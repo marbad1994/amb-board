@@ -140,6 +140,7 @@ test('invalid or foreign proposals are dropped at proposal time (bad dates, fore
     { type: 'reschedule_task', args: { task_id: a.card.id, due_date: '2027-02-30' } },
     { type: 'create_task', args: { project_id: a.p.id, title: '' } },
     { type: 'create_event', args: { title: 'e', start_local: 'tomorrow', timezone: 'UTC' } }] },
+    { type: 'final', answer: '', proposals: [] },   // the assistant's attempt to repair them: it has nothing
     { type: 'final', answer: 'x', proposals: [{ type: 'create_project', args: { name: 'P', life_area_id: 'bogus' } }, { type: 'x'.repeat(10), args: {} }] }]);
   const res = await a.ask('do things');
   assert.equal(res.json.message.proposals.length, 0);
