@@ -2,13 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Plus, Sparkles, Workflow } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
-import { blank } from '../components/automation/fields.jsx';
-import { StepIcon, stepIconType } from '../components/automation/stepMeta.jsx';
+import { blank, TZ } from '../components/automation/fields.jsx';
+import { StepIcon, stepIconType, stepTitle } from '../components/automation/stepMeta.jsx';
 import Builder from '../components/automation/Builder.jsx';
 import RunHistory from '../components/automation/RunHistory.jsx';
 import EmailTemplates from '../components/automation/EmailTemplates.jsx';
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : null);
+const zoned = (iso, tz) => { try { return new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: tz }); } catch { return when(iso); } };
+// next run in the flow's own time zone, plus your time when they differ, so the card never seems to contradict itself
+const nextText = (a) => { const tz = a.trigger.timezone; if (!tz || tz === TZ) return when(a.next_run_at); return `${zoned(a.next_run_at, tz)} ${tz.split('/').pop().replace(/_/g, ' ')} (${when(a.next_run_at)} your time)`; };
+const norm = (n) => String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const FILTERS = [['all', 'All'], ['on', 'On'], ['off', 'Off'], ['attention', 'Needs attention']];
 
 const TEMPLATES = [
@@ -18,24 +22,28 @@ const TEMPLATES = [
       { type: 'ai_text', args: { instruction: 'Summarise in 5 bullet points', input: '{{result.news}}', save_as: 'summary' } },
       { type: 'send_email', args: { to: ['me'], template: 'news_summary', subject: '', body: '' } }] } },
   { name: 'Deals or price watcher', desc: 'Scrape a page, keep title and price, mail what you found.',
-    flow: { name: 'Deals digest', trigger: { type: 'schedule', frequency: 'weekly', weekday: 5, day: 1, date: '', time: '08:00' }, steps: [
+    flow: { name: 'Deals or price watcher', trigger: { type: 'schedule', frequency: 'weekly', weekday: 5, day: 1, date: '', time: '08:00' }, steps: [
       { type: 'scrape', args: { url: '', format: 'links', contains: '', max: 50, save_as: 'links' } },
       { type: 'parse', args: { input: '{{result.links}}', parser: 'json', prompt: '', fieldsText: 'text, url', output_format: 'json', save_as: 'items' } },
       { type: 'send_email', args: { to: ['me'], template: '', subject: 'Deals {{date}}', body: '{{result.items | pretty}}' } }] } },
   { name: 'Weekly review to your inbox', desc: 'Project health and the week ahead, every Monday.',
-    flow: { name: 'Weekly review', trigger: { type: 'schedule', frequency: 'weekly', weekday: 1, day: 1, date: '', time: '08:00' }, steps: [
+    flow: { name: 'Weekly review to your inbox', trigger: { type: 'schedule', frequency: 'weekly', weekday: 1, day: 1, date: '', time: '08:00' }, steps: [
       { type: 'use_tool', args: { tool: 'project_health', args: {}, save_as: 'review' } },
       { type: 'send_email', args: { to: ['me'], template: 'weekly_review', subject: '', body: '' } }] } },
   { name: 'Alert on a big expense', desc: 'Tell me when one transaction crosses an amount.',
-    flow: { name: 'Big expense alert', trigger: { type: 'event', event: 'transaction_added', conditions: { type: 'expense', min_amount_minor: 100000 } }, steps: [
+    flow: { name: 'Alert on a big expense', trigger: { type: 'event', event: 'transaction_added', conditions: { type: 'expense', min_amount_minor: 100000 } }, steps: [
       { type: 'send_email', args: { to: ['me'], template: '', subject: 'Big expense: {{trigger.amount}} {{trigger.currency}}', body: '{{trigger.title | default:"An expense"}} was recorded.' } }] } },
 ];
 
 function Chain({ a }) {
+  const names = a.steps.map((s) => stepTitle(s));
   return (
-    <div className="ab-chain" aria-label="Steps">
-      <StepIcon type={a.trigger.type === 'event' ? 'event' : 'trigger'} size={16} />
-      {a.steps.map((s, i) => (<span key={i} className="ab-chain__s"><ChevronRight size={14} aria-hidden="true" /><StepIcon type={stepIconType(s)} size={16} /></span>))}
+    <div>
+      <div className="ab-chain" role="img" aria-label={`Steps: ${names.join(', then ')}`}>
+        <span title={a.trigger.type === 'event' ? 'When something happens' : 'On a schedule'}><StepIcon type={a.trigger.type === 'event' ? 'event' : 'trigger'} size={16} /></span>
+        {a.steps.map((s, i) => (<span key={i} className="ab-chain__s" title={names[i]}><ChevronRight size={14} aria-hidden="true" /><StepIcon type={stepIconType(s)} size={16} /></span>))}
+      </div>
+      <p className="ab-card__flow">{names.join(' \u203a ')}</p>
     </div>
   );
 }
@@ -64,11 +72,13 @@ export default function AutomationsPage() {
   }, [load]);
 
   const save = async (body) => {
+    const twin = (items || []).find((x) => x.id !== view.auto?.id && norm(x.name) === norm(body.name));
+    if (twin) throw new Error(`There is already an automation called "${twin.name}". Rename this one, or edit the existing one so you do not get duplicate runs and emails.`);
     if (view.auto) await api.updateAutomation(view.auto.id, body); else await api.createAutomation(body);
     setView({ mode: 'list' }); load();
   };
   const toggle = async (a) => { try { await api.updateAutomation(a.id, { enabled: !a.enabled }); load(); } catch (e) { setError(e.message); } };
-  const remove = async (a) => { if (!window.confirm(`Delete "${a.name}"? Its run history is deleted too.`)) return; try { await api.deleteAutomation(a.id); load(); } catch (e) { setError(e.message); } };
+  const remove = async (a) => { if (!window.confirm(`Delete "${a.name}"? Its run history is deleted too.`)) return; try { await api.deleteAutomation(a.id); setView({ mode: 'list' }); load(); } catch (e) { setError(e.message); } };
   const runNow = async (a) => { setError(''); await api.runAutomation(a.id); load(); };
   const askAssistant = () => window.dispatchEvent(new CustomEvent('amb:open-assistant'));
   const failure = (a) => { const l = a.runs?.[0]; if (!l || l.status !== 'failed') return null; const bad = (l.log || []).find((x) => !x.ok); return { message: bad?.message || 'It stopped with an error.', step: bad ? Number(String(bad.step).split('.')[0]) || 0 : 0 }; };
@@ -81,7 +91,7 @@ export default function AutomationsPage() {
     return (
       <div className="page page--wide">
         <Builder key={view.auto?.id || 'new'} initial={view.flow} enabledInitial={view.auto ? view.auto.enabled : true} openStep={view.openStep} projects={projects} categories={categories} meta={meta} tools={tools} templates={templates}
-          onSave={save} onCancel={() => setView({ mode: 'list' })} />
+          onSave={save} onCancel={() => setView({ mode: 'list' })} onDelete={view.auto && (writable && (view.auto.user_id === user?.id || ['owner', 'admin'].includes(active?.role))) ? () => remove(view.auto) : undefined} />
       </div>
     );
   }
@@ -111,7 +121,7 @@ export default function AutomationsPage() {
       {items === null && !error && <p>Loading...</p>}
       {items && items.length > 0 && (
         <div className="ab-filters" role="group" aria-label="Filter automations">
-          {FILTERS.map(([v, l]) => <button key={v} type="button" aria-pressed={filter === v} onClick={() => setFilter(v)}>{l} <em>{counts[v]}</em></button>)}
+          {FILTERS.map(([v, l]) => <button key={v} type="button" className={counts[v] === 0 && v !== 'all' ? 'is-zero' : ''} aria-pressed={filter === v} onClick={() => setFilter(v)}>{l} <em>{counts[v]}</em></button>)}
         </div>
       )}
       {items && items.length === 0 && (
@@ -126,24 +136,23 @@ export default function AutomationsPage() {
               <article key={a.id} className={`ab-card${fail ? ' is-bad' : ''}${a.enabled ? '' : ' is-off'}`} aria-label={a.name}>
                 <div className="ab-card__t"><h3>{a.name}</h3>
                   {a.created_via === 'assistant' && <span className="badge">Suggested by assistant</span>}
-                  <span className={`ab-chip ab-chip--${fail ? 'bad' : a.enabled ? 'on' : 'off'}`}>{fail ? 'Last run failed' : a.enabled ? 'On' : 'Off'}</span></div>
+                  {(fail || !a.enabled) && <span className={`ab-chip ab-chip--${fail ? 'bad' : 'off'}`}>{fail ? 'Last run failed' : 'Off'}</span>}</div>
                 <p className="ab-card__when">{a.summary}</p>
                 <Chain a={a} />
-                <ol className="sr-only" aria-label="Steps">{a.steps.map((s, i) => <li key={i}>{i + 1}. {s.type}</li>)}</ol>
                 <div className="ab-meta">
-                  {a.enabled && a.next_run_at && <span>Next run <b>{when(a.next_run_at)}</b></span>}
-                  {last && !fail && <span>Last run <b>{last.status === 'ok' ? 'OK' : last.status}</b>, {when(last.started_at)}</span>}
-                  {!last && a.trigger.type === 'event' && <span>Runs <b>when it happens</b></span>}
+                  {a.trigger.type === 'event' ? <span>Next run <b>when it happens</b></span> : a.enabled && a.next_run_at && <span>Next run <b>{nextText(a)}</b></span>}
+                  {last && !fail && <span className="ab-lastrun"><i className={`ab-dot ab-dot--${last.status}`} /><span>Last run <b>{last.status === 'ok' ? 'OK' : last.status}</b>, {when(last.started_at)}</span></span>}
                   {!a.enabled && <span>Paused. It will not run until you switch it on.</span>}
                 </div>
                 {fail && <p className="ab-fail" role="alert"><b>{fail.step ? `Step ${fail.step} stopped:` : 'It stopped:'}</b> {fail.message}</p>}
                 <div className="ab-card__acts">
                   {canEdit && fail?.step > 0 && <button type="button" className="ab-btn ab-btn--small ab-btn--primary" onClick={() => edit(a, fail.step - 1)}>Open step {fail.step}</button>}
                   {canEdit && <button type="button" className="ab-btn ab-btn--small" onClick={() => edit(a)}>Edit</button>}
-                  {mine && writable && a.trigger.type === 'schedule' && <button type="button" className="ab-btn ab-btn--small" onClick={async () => { try { await runNow(a); setView({ mode: 'runs', auto: a }); } catch (e) { setError(e.message); } }}>Run now</button>}
+                  {mine && writable && (a.trigger.type === 'schedule'
+                    ? <button type="button" className="ab-btn ab-btn--small" onClick={async () => { try { await runNow(a); setView({ mode: 'runs', auto: a }); } catch (e) { setError(e.message); } }}>Run now</button>
+                    : <button type="button" className="ab-btn ab-btn--small" disabled title="Runs when its event happens" aria-label="Run now (unavailable: this flow runs when its event happens)">Run now</button>)}
                   <button type="button" className="ab-btn ab-btn--small" onClick={() => setView({ mode: 'runs', auto: a })}>Run history</button>
                   <label className="ab-switch ab-card__sw"><input type="checkbox" checked={a.enabled} disabled={!canEdit} onChange={() => toggle(a)} aria-label={`${a.name} enabled`} /><span className="ab-switch__t" aria-hidden="true" />{a.enabled ? 'On' : 'Off'}</label>
-                  {canEdit && <button type="button" className="ab-btn ab-btn--small ab-btn--ghost" onClick={() => remove(a)} aria-label={`Delete ${a.name}`}>Delete</button>}
                 </div>
               </article>
             );

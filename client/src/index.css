@@ -2458,3 +2458,28 @@ input[type='file']::file-selector-button:hover { background: var(--color-surface
   .ab-name { font-size: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .ab-insp, .ab-switch__t, .ab-switch__t::after { transition: none; } }
+
+/* ---------------------------------------------------------------- automations: review fixes */
+.page button, .page input, .page select, .page textarea, .page summary { font-family: inherit; }
+.page { padding-bottom: 96px; }                                       /* the floating assistant button never covers content */
+.eyebrow { color: color-mix(in srgb, var(--color-primary) 55%, var(--color-text)); font-size: 12px; }
+.sidebar__ws-label { color: #a9bbd0; font-size: 11px; }
+.ab-btn--danger { color: color-mix(in srgb, var(--color-danger) 62%, var(--color-text)); border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border)); background: transparent; }
+.ab-btn--danger:hover:not(:disabled) { border-color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface)); }
+.ab-btn--small { min-height: 44px; }
+.ab-switch input { inset: 0; width: 100%; height: 100%; }
+.ab-filters button[aria-pressed="true"] { background: color-mix(in srgb, var(--color-primary) 22%, var(--color-surface)); color: var(--color-text); border-color: var(--color-primary); }
+.ab-filters button.is-zero:not([aria-pressed="true"]) { opacity: 0.55; }
+.ab-card__flow { margin: 6px 0 0; font-size: 13px; color: var(--color-text-muted); line-height: 1.45; }
+.ab-meta { font-size: 14px; }
+.ab-lastrun { display: inline-flex; align-items: center; gap: 6px; }
+.ab-tile { border-style: solid; }
+.ab-tiles { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.ab-ph { background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)); border-radius: 4px; padding: 1px 5px; font-weight: 600; font-size: 0.92em; white-space: nowrap; color: var(--color-text); }
+.ab-help { max-width: 70ch; line-height: 1.6; font-size: 13px; }
+.ab-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ab-rows li { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--color-border); }
+.ab-rows li:first-child { border-top: 0; }
+.ab-rows__t { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.ab-rows__t small { font-size: 13px; }
+.ab-rows__a { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex: none; }
