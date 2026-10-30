@@ -20,7 +20,7 @@ export function readEvent(body, ws, cur = {}) {
     title: cur.title, description: cur.description ?? '', kind: cur.kind ?? 'appointment', all_day: cur.all_day ?? 0,
     start_local: cur.start_local, end_local: cur.end_local ?? null, timezone: cur.timezone, recurrence: cur.recurrence ?? 'none',
     recurrence_interval: cur.recurrence_interval ?? 1, recurrence_until: cur.recurrence_until ?? null,
-    project_id: cur.project_id ?? null, card_id: cur.card_id ?? null,
+    project_id: cur.project_id ?? null, card_id: cur.card_id ?? null, reminder_minutes: cur.reminder_minutes ?? null,
   };
   if (body.title !== undefined) v.title = String(body.title).trim().slice(0, 200);
   if (!v.title) return { error: 'title is required' };
@@ -46,6 +46,10 @@ export function readEvent(body, ws, cur = {}) {
   if (body.recurrence_until !== undefined) {
     v.recurrence_until = parseDate(body.recurrence_until);
     if (v.recurrence_until === undefined) return { error: 'recurrence_until must be a valid YYYY-MM-DD date' };
+  }
+  if (body.reminder_minutes !== undefined) {
+    v.reminder_minutes = body.reminder_minutes === null || body.reminder_minutes === '' ? null : Number(body.reminder_minutes);
+    if (v.reminder_minutes !== null && (!Number.isInteger(v.reminder_minutes) || v.reminder_minutes < 0 || v.reminder_minutes > 10080)) return { error: 'reminder_minutes must be 0-10080' };
   }
   if (body.projectId !== undefined) {
     if (body.projectId && !projectInWs(body.projectId, ws)) return { error: 'invalid project' };
@@ -74,7 +78,7 @@ router.get('/', (req, res) => {
       items.push({ id: `event:${e.id}:${o.date}`, source: 'event', kind: e.kind, recurring: e.recurrence !== 'none', event_id: e.id, title: e.title,
         date: o.date, start_local: o.start_local, end_local: o.end_local, all_day: !!e.all_day, timezone: e.timezone, start_utc: o.start_utc,
         project_id: e.project_id, project_name: e.project_name, card_id: e.card_id,
-        description: e.description, series_start: e.start_local, series_end: e.end_local, recurrence: e.recurrence, recurrence_interval: e.recurrence_interval, recurrence_until: e.recurrence_until });
+        description: e.description, series_start: e.start_local, series_end: e.end_local, recurrence: e.recurrence, recurrence_interval: e.recurrence_interval, recurrence_until: e.recurrence_until, reminder_minutes: e.reminder_minutes });
     }
   }
   for (const t of db.prepare(`SELECT c.id, c.title, c.due_date, c.status, p.id AS project_id, p.name AS project_name FROM cards c
@@ -109,9 +113,9 @@ router.post('/events', (req, res) => {
   const id = nanoid();
   const ts = nowIso();
   db.prepare(`INSERT INTO calendar_events (id, workspace_id, title, description, kind, all_day, start_local, end_local, timezone, recurrence,
-      recurrence_interval, recurrence_until, project_id, card_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      recurrence_interval, recurrence_until, project_id, card_id, reminder_minutes, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, req.ws.id, v.title, v.description, v.kind, v.all_day, v.start_local, v.end_local, v.timezone, v.recurrence, v.recurrence_interval,
-      v.recurrence_until, v.project_id, v.card_id, req.user.id, ts, ts);
+      v.recurrence_until, v.project_id, v.card_id, v.reminder_minutes, req.user.id, ts, ts);
   audit(req, 'event.create', 'calendar_event', id);
   res.status(201).json(eventInWs(id, req.ws.id));
 });
@@ -122,9 +126,9 @@ router.patch('/events/:id', (req, res) => {
   if (r.error) return res.status(400).json({ error: r.error });
   const v = r.v;
   db.prepare(`UPDATE calendar_events SET title = ?, description = ?, kind = ?, all_day = ?, start_local = ?, end_local = ?, timezone = ?, recurrence = ?,
-      recurrence_interval = ?, recurrence_until = ?, project_id = ?, card_id = ?, updated_at = ? WHERE id = ?`)
+      recurrence_interval = ?, recurrence_until = ?, project_id = ?, card_id = ?, reminder_minutes = ?, updated_at = ? WHERE id = ?`)
     .run(v.title, v.description, v.kind, v.all_day, v.start_local, v.end_local, v.timezone, v.recurrence, v.recurrence_interval, v.recurrence_until,
-      v.project_id, v.card_id, nowIso(), cur.id);
+      v.project_id, v.card_id, v.reminder_minutes, nowIso(), cur.id);
   audit(req, 'event.update', 'calendar_event', cur.id);
   res.json(eventInWs(cur.id, req.ws.id));
 });

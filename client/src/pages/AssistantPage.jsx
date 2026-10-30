@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Loader2, Send, Sparkles, X } from 'lucide-react';
 import { api } from '../api/client.js';
+import AiSummaryCard from '../components/AiSummaryCard.jsx';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 
 const SUGGESTIONS = [
@@ -43,6 +44,7 @@ export default function AssistantPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState(null);
+  const [tab, setTab] = useState('chat');
   const endRef = useRef(null);
 
   const refreshList = useCallback(() => api.listConversations().then(setConversations).catch(() => {}), []);
@@ -90,7 +92,14 @@ export default function AssistantPage() {
       {status && !status.available && <p className="notice">AI is not configured on this server.</p>}
       {!writable && <p className="notice">Viewers cannot use the assistant. Ask an owner or admin for member access.</p>}
 
-      <section className="panel chat" aria-label="Conversation">
+      <div className="seg seg--tabs" role="group" aria-label="Assistant sections">
+        <button type="button" aria-pressed={tab === 'chat'} onClick={() => setTab('chat')}>Chat</button>
+        <button type="button" aria-pressed={tab === 'weekly'} onClick={() => setTab('weekly')}>Weekly review</button>
+        <button type="button" aria-pressed={tab === 'monthly'} onClick={() => setTab('monthly')}>Monthly review</button>
+      </div>
+      {tab !== 'chat' && <AiSummaryCard key={tab} kind={tab} writable={writable} title={tab === 'weekly' ? 'Weekly review' : 'Monthly review'} />}
+
+      {tab === 'chat' && <section className="panel chat" aria-label="Conversation">
         {messages.length === 0 && (
           <div className="chat__empty">
             <Sparkles size={28} aria-hidden="true" />
@@ -122,7 +131,7 @@ export default function AssistantPage() {
             value={text} onChange={(e) => setText(e.target.value)} disabled={!writable || busy} />
           <button type="submit" className="btn btn-primary" disabled={!writable || busy || !text.trim()}><Send size={16} aria-hidden="true" /> Send</button>
         </form>
-      </section>
+      </section>}
     </div>
   );
 }

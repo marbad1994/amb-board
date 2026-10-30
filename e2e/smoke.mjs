@@ -33,6 +33,10 @@ const fakeAi = createServer((req, res) => {
       res.setHeader('content-type', 'application/json');
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }], usage: {} }));
     }
+    if (msgs[0].content.includes('"accomplishments"')) {
+      res.setHeader('content-type', 'application/json');
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ headline: 'Weekly review from fake provider', accomplishments: ['Chose flooring'], suggestions: ['Rest'] }) } }], usage: {} }));
+    }
     const daily = msgs[0].content.includes('"headline"');
     const out = daily
       ? { headline: 'Briefing from fake provider', priorities: ['Finish flooring'], upcoming: [], attention: [], suggested_focus: 'Start early.' }
@@ -374,6 +378,75 @@ try {
     await page.getByText(/Budget attention: Apartment Renovation/).waitFor();
     await page.getByRole('region', { name: 'Daily briefing' }).waitFor();
     await shot(page, '14-my-day');
+  });
+
+  await step('finance depth: category budget, emergency fund, debt payments', async () => {
+    await page.getByRole('link', { name: 'Finance & Budget' }).click();
+    await page.getByRole('button', { name: 'Monthly budget' }).click();
+    await page.getByLabel('Budget category').selectOption({ label: 'Food' });
+    await page.getByLabel('Budget amount').fill('500');
+    await page.getByLabel('Budget currency').fill('EUR');
+    await page.getByRole('button', { name: 'Set budget' }).click();
+    await page.getByText('Food (EUR)').waitFor();
+    await page.getByText(/€500\.00 left/).waitFor();
+    await page.getByRole('button', { name: 'Savings' }).click();
+    await page.getByLabel('Savings goal name').fill('Emergency fund');
+    await page.getByLabel('Savings target').fill('3000');
+    await page.getByLabel('Savings currency').fill('EUR');
+    await page.getByLabel('Emergency fund').check();
+    await page.getByRole('button', { name: 'Add goal' }).click();
+    await page.getByLabel('Amount for Emergency fund').fill('600');
+    await page.getByRole('button', { name: 'Deposit' }).click();
+    await page.getByText('(20%)').waitFor();
+    await page.getByLabel('Amount for Emergency fund').fill('999999');
+    await page.getByRole('button', { name: 'Withdraw' }).click();
+    await page.getByText('withdrawal exceeds the current balance').waitFor();
+    await page.getByRole('button', { name: 'Debts' }).click();
+    await page.getByLabel('Debt name').fill('Car loan');
+    await page.getByLabel('Original amount').fill('10000');
+    await page.getByLabel('Debt currency').fill('EUR');
+    await page.getByRole('button', { name: 'Add debt' }).click();
+    await page.getByLabel('Payment for Car loan').fill('2500');
+    await page.getByRole('button', { name: 'Record payment' }).click();
+    await page.getByText(/€7,500\.00/).first().waitFor();
+    await page.getByText(/25% paid/).waitFor();
+    await shot(page, '15-finance-depth');
+  });
+
+  await step('calendar week and day views; event reminder reaches the notification bell', async () => {
+    await page.getByRole('link', { name: 'Calendar' }).click();
+    await page.getByRole('button', { name: 'Week', exact: true }).click();
+    assert.equal(await page.getByRole('gridcell').count(), 7, 'seven day columns');
+    await page.getByRole('button', { name: 'Day', exact: true }).click();
+    assert.equal(await page.getByRole('gridcell').count(), 1);
+    const soon = new Date(Date.now() + 5 * 60_000);
+    const hhmm = soon.toISOString().slice(11, 16);
+    await page.getByRole('button', { name: 'New event' }).click();
+    await page.getByLabel('Title').fill('Standup reminder');
+    await page.getByLabel('Starts').fill(hhmm);
+    await page.getByLabel('Time zone').fill('UTC');
+    await page.getByLabel('Reminder').selectOption('10');
+    await page.getByRole('button', { name: 'Add event', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: /Standup reminder/ }).first().waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.getByRole('button', { name: /Notifications, [1-9]\d* unread/ }).waitFor();
+    await page.getByRole('button', { name: /Notifications/ }).click();
+    await page.getByRole('region', { name: 'Notifications' }).getByText('Standup reminder starts in 10 min').waitFor();
+    await shot(page, '16-bell');
+    await page.getByRole('button', { name: 'Mark all read' }).click();
+    await page.getByRole('button', { name: 'Notifications, 0 unread' }).waitFor();
+    await page.keyboard.press('Escape');
+  });
+
+  await step('assistant weekly review (mocked provider) states its period and facts', async () => {
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByRole('button', { name: 'Weekly review' }).click();
+    await page.getByRole('button', { name: 'Generate' }).click();
+    await page.getByText('Weekly review from fake provider').waitFor();
+    await page.getByText(/Covers \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}/).waitFor();
+    await page.getByText('Facts used').click();
+    await page.getByText(/tasks completed/).waitFor();
   });
 
   await step('idea converts to a project and stays linked', async () => {

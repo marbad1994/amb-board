@@ -1947,3 +1947,24 @@ input[type='month'], input[type='date'], input[type='time'], input[type='number'
 .dots i { width: 10px; height: 10px; border-radius: 3px; background: var(--color-border); }
 .dots i.on { background: var(--color-accent); }
 .note__body { white-space: pre-wrap; font-size: 13px; margin: 0 0 8px; max-height: 220px; overflow: auto; }
+
+/* ---------- Calendar week/day, bell ---------- */
+.cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; background: var(--color-surface); }
+.cal-dayview { border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); }
+.cal-day--tall { min-height: 280px; }
+.cal-dayview .cal-day { min-height: 200px; border: 0; }
+.cal-add { align-self: flex-start; margin-top: auto; background: transparent; border: 1px dashed var(--color-border); border-radius: 6px; color: var(--color-text-muted); padding: 2px 6px; }
+@media (max-width: 860px) { .cal-week { grid-template-columns: minmax(0, 1fr); } .cal-day--tall { min-height: 0; } .cal-chip__kind { display: inline; } }
+.bell { position: relative; }
+.bell > .btn { position: relative; }
+.bell__badge { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #d92d20; color: #fff; font-size: 10px; font-weight: 800; display: grid; place-items: center; }
+.bell__menu { position: absolute; right: 0; top: calc(100% + 6px); width: min(360px, 92vw); max-height: 420px; overflow-y: auto; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-elevated); z-index: 60; }
+.bell__head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--color-border); }
+.bell__menu ul { list-style: none; margin: 0; padding: 0; }
+.bell__menu li button { display: block; width: 100%; padding: 10px 12px; background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 13px; }
+.bell__menu li button.is-unread { background: #e9f9f6; font-weight: 700; }
+.bell__menu small { display: block; font-weight: 400; color: var(--color-text-muted); font-size: 11px; margin-top: 2px; }
+
+/* sidebar: brand, workspace and menu scroll together; the user footer stays pinned */
+.sidebar__scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sidebar__nav { flex: none; overflow: visible; }

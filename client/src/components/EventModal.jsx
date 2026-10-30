@@ -17,6 +17,7 @@ export default function EventModal({ event, date, writable, onClose, onSaved }) 
     timezone: event?.timezone || browserTz(),
     recurrence: event?.recurrence || 'none', interval: event?.recurrence_interval || 1, until: event?.recurrence_until || '',
     projectId: event?.project_id || '', description: event?.description || '',
+    reminder: event?.reminder_minutes != null ? String(event.reminder_minutes) : '',
   }));
   const [error, setError] = useState('');
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
@@ -31,6 +32,7 @@ export default function EventModal({ event, date, writable, onClose, onSaved }) 
       start_local: f.all_day ? f.startDate : `${f.startDate}T${f.start}`,
       end_local: f.all_day ? (event?.series_end || null) : (f.endTime ? `${f.startDate}T${f.endTime}` : null),
       recurrence: f.recurrence, recurrence_interval: Number(f.interval) || 1, recurrence_until: f.until || null, projectId: f.projectId || null,
+      reminder_minutes: !f.all_day && f.reminder !== '' ? Number(f.reminder) : null,
     };
     if (editing && event.all_day && !event.series_end) body.end_local = null;
     try {
@@ -81,6 +83,13 @@ export default function EventModal({ event, date, writable, onClose, onSaved }) 
               </div>
             )}
             {editing && event.recurring && <p className="hint">Edits change the whole series. Recurrence settings can be changed by recreating the event.</p>}
+            {!f.all_day && (
+              <div className="field"><label htmlFor="ev-rem">Reminder</label>
+                <select id="ev-rem" value={f.reminder} onChange={set('reminder')}>
+                  <option value="">No reminder</option><option value="0">At start time</option><option value="10">10 minutes before</option>
+                  <option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select>
+                <small className="hint">Shown in the notification bell for everyone in the workspace.</small></div>
+            )}
             <div className="field"><label htmlFor="ev-project">Linked project</label>
               <select id="ev-project" value={f.projectId} onChange={set('projectId')}><option value="">None</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
           </fieldset>

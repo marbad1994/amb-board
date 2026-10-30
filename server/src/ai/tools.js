@@ -4,6 +4,7 @@ import { todayUtc, parseDate, escapeLike } from '../validate.js';
 import { projectBudgetMetrics } from '../finance/calc.js';
 import { occurrences } from '../calendar/recurrence.js';
 import { projectFacts } from './facts.js';
+import { monthBudget } from '../finance/budget.js';
 
 // Read-only tools the model may call. Each runs with the CALLER's workspace and is scoped by workspace_id.
 // The model never sees SQL, never chooses a workspace, and cannot call anything not listed here.
@@ -80,6 +81,20 @@ export const TOOLS = {
       }
       return { month, currencies: Object.values(by) };
     },
+  },
+  month_budget: {
+    doc: 'month_budget {month: YYYY-MM} -> category budgets vs actual spending for the month (minor units), plus unbudgeted spending',
+    run: (ws, args) => monthBudget(ws, /^\d{4}-(0[1-9]|1[0-2])$/.test(String(args.month)) ? String(args.month) : todayUtc().slice(0, 7)),
+  },
+  list_savings_and_debts: {
+    doc: 'list_savings_and_debts {} -> savings goals (balance, target) and debts (remaining), minor units',
+    run: (ws) => ({
+      savings: db.prepare(`SELECT g.name, g.currency, g.target_minor, g.is_emergency_fund,
+          COALESCE((SELECT SUM(CASE kind WHEN 'deposit' THEN amount_minor ELSE -amount_minor END) FROM savings_entries WHERE goal_id = g.id), 0) AS balance_minor
+        FROM savings_goals g WHERE g.workspace_id = ? AND g.archived_at IS NULL LIMIT 20`).all(ws),
+      debts: db.prepare(`SELECT d.name, d.currency, d.original_minor, MAX(0, d.original_minor - COALESCE((SELECT SUM(amount_minor) FROM debt_payments WHERE debt_id = d.id), 0)) AS remaining_minor
+        FROM debts d WHERE d.workspace_id = ? AND d.archived_at IS NULL LIMIT 20`).all(ws),
+    }),
   },
   search: {
     doc: 'search {q} -> projects, tasks and ideas matching text',

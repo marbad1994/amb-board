@@ -21,12 +21,30 @@ const SCHEMAS = {
 "upcoming": string[] (next 7 days), "attention": string[] (blocked or at-risk items), "suggested_focus": string (one sentence, advice)}`,
 };
 
+SCHEMAS.weekly = `JSON shape: {"headline": string (one sentence),"accomplishments": string[] (from completed_tasks),"incomplete": string[] (from incomplete_tasks_due_in_period and overdue_now),
+"project_progress": string[] (from active_projects),"finances": string[] (from finance_posted; never combine currencies),"habits": string[] (from habits: completions vs expected),
+"upcoming": string[] (from upcoming_deadlines_next_7_days),"suggestions": string[] (up to 3 improvements, clearly advice)}
+If period.in_progress is true, say the week is not over. Do not claim an accomplishment that is not in the data.`;
+SCHEMAS.monthly = `JSON shape: {"headline": string (one sentence),"completed": string[] (projects_completed and notable completed_tasks),"goals": string[] (from goals),
+"budget": string[] (from budget_performance rows: category, budget, actual, status; unbudgeted spending separately),"spending": string[] (finance_posted vs finance_previous_month, same currency only),
+"savings_and_debts": string[] (from savings and debts),"pending_decisions": string[] (only things evidenced in the data such as overdue work or over-budget categories),
+"next_steps": string[] (up to 4, clearly advice)}
+If period.in_progress is true, say the month is not over. Amounts are minor units: divide by 100 and name the currency.`;
+
 const strings = (v, max = 12) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').map((x) => x.slice(0, 400)).slice(0, max) : []);
 const str = (v, max = 800) => (typeof v === 'string' ? v.slice(0, max) : '');
 
 function normalise(kind, raw) {
   if (kind === 'project') {
     return { overview: str(raw.overview), completed: strings(raw.completed), remaining: strings(raw.remaining), risks: strings(raw.risks), suggestions: strings(raw.suggestions, 3) };
+  }
+  if (kind === 'weekly') {
+    return { headline: str(raw.headline), accomplishments: strings(raw.accomplishments), incomplete: strings(raw.incomplete), project_progress: strings(raw.project_progress),
+      finances: strings(raw.finances), habits: strings(raw.habits), upcoming: strings(raw.upcoming), suggestions: strings(raw.suggestions, 3) };
+  }
+  if (kind === 'monthly') {
+    return { headline: str(raw.headline), completed: strings(raw.completed), goals: strings(raw.goals), budget: strings(raw.budget), spending: strings(raw.spending),
+      savings_and_debts: strings(raw.savings_and_debts), pending_decisions: strings(raw.pending_decisions), next_steps: strings(raw.next_steps, 4) };
   }
   return { headline: str(raw.headline), priorities: strings(raw.priorities), upcoming: strings(raw.upcoming), attention: strings(raw.attention), suggested_focus: str(raw.suggested_focus) };
 }

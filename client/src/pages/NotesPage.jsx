@@ -14,6 +14,10 @@ export default function NotesPage() {
   const [error, setError] = useState('');
   const [form, setForm] = useState({ title: '', body: '', privacy: 'workspace', entry_date: today() });
   const [editing, setEditing] = useState(null); // { id, title, body }
+  const [projects, setProjects] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [link, setLink] = useState({ projectId: '', goalId: '' });
+  useEffect(() => { api.listProjects().then(setProjects).catch(() => {}); api.listGoals().then(setGoals).catch(() => {}); }, []);
 
   const load = useCallback(() => {
     const params = { kind };
@@ -45,12 +49,14 @@ export default function NotesPage() {
 
       {writable && (
         <form className="panel" style={{ marginBottom: 16 }} aria-label={journal ? 'New journal entry' : 'New note'}
-          onSubmit={(e) => { e.preventDefault(); act(async () => { await api.createNote({ kind, title: form.title, body: form.body, privacy: form.privacy, entry_date: journal ? form.entry_date : undefined }); setForm({ ...form, title: '', body: '' }); }); }}>
+          onSubmit={(e) => { e.preventDefault(); act(async () => { await api.createNote({ kind, title: form.title, body: form.body, privacy: form.privacy, entry_date: journal ? form.entry_date : undefined, projectId: link.projectId || null, goalId: link.goalId || null }); setForm({ ...form, title: '', body: '' }); }); }}>
           {!journal && <div className="field"><label htmlFor="n-title">Title</label><input id="n-title" type="text" maxLength={200} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>}
           {journal && <div className="field"><label htmlFor="n-date">Date</label><input id="n-date" type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} /></div>}
           <div className="field"><label htmlFor="n-body">{journal ? 'Entry' : 'Text'}</label><textarea id="n-body" rows={4} maxLength={50000} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></div>
           <div className="inline-form inline-form--wide">
             {!journal && <select aria-label="Visibility" value={form.privacy} onChange={(e) => setForm({ ...form, privacy: e.target.value })}><option value="workspace">Shared with workspace</option><option value="private">Only me</option></select>}
+            <select aria-label="Link to project" value={link.projectId} onChange={(e) => setLink({ ...link, projectId: e.target.value })}><option value="">No project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+            <select aria-label="Link to goal" value={link.goalId} onChange={(e) => setLink({ ...link, goalId: e.target.value })}><option value="">No goal</option>{goals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}</select>
             {journal && <span className="hint"><Lock size={12} aria-hidden="true" /> Private to you</span>}
             <button type="submit" className="btn btn-primary" disabled={!form.body.trim() && !form.title.trim()}>Save</button>
           </div>

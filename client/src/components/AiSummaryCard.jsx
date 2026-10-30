@@ -5,6 +5,8 @@ import { api } from '../api/client.js';
 const SECTIONS = {
   project: [['completed', 'Completed'], ['remaining', 'Remaining'], ['risks', 'Risks'], ['suggestions', 'Suggestions (advice)']],
   daily: [['priorities', 'Priorities today'], ['upcoming', 'Next 7 days'], ['attention', 'Needs attention']],
+  weekly: [['accomplishments', 'Accomplished'], ['incomplete', 'Incomplete'], ['project_progress', 'Project progress'], ['finances', 'Finances'], ['habits', 'Habits'], ['upcoming', 'Coming up'], ['suggestions', 'Suggestions (advice)']],
+  monthly: [['completed', 'Completed'], ['goals', 'Goals'], ['budget', 'Budget'], ['spending', 'Spending'], ['savings_and_debts', 'Savings and debts'], ['pending_decisions', 'Pending decisions'], ['next_steps', 'Next steps (advice)']],
 };
 
 // kind: 'project' | 'daily'. Text is rendered as plain text only.
@@ -14,8 +16,9 @@ export default function AiSummaryCard({ kind, projectId, writable, title }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchStored = kind === 'project' ? () => api.getProjectSummary(projectId) : () => api.getBriefing();
-  const generate = (refresh) => (kind === 'project' ? api.generateProjectSummary(projectId, refresh) : api.generateBriefing(refresh));
+  const isReview = kind === 'weekly' || kind === 'monthly';
+  const fetchStored = kind === 'project' ? () => api.getProjectSummary(projectId) : isReview ? () => api.getReview(kind) : () => api.getBriefing();
+  const generate = (refresh) => (kind === 'project' ? api.generateProjectSummary(projectId, refresh) : isReview ? api.generateReview(kind, refresh) : api.generateBriefing(refresh));
 
   useEffect(() => {
     let stale = false;
@@ -60,6 +63,7 @@ export default function AiSummaryCard({ kind, projectId, writable, title }) {
       {c && (
         <div className="ai-card__body">
           <p className="ai-card__lead">{kind === 'project' ? c.overview : c.headline}</p>
+          {isReview && facts?.period && <p className="hint">Covers {facts.period.start} to {facts.period.end}{facts.period.in_progress ? ' (not over yet)' : ''}.</p>}
           {SECTIONS[kind].map(([key, label]) => c[key]?.length > 0 && (
             <div key={key}><h4>{label}</h4><ul>{c[key].map((t, i) => <li key={i}>{t}</li>)}</ul></div>
           ))}
@@ -76,6 +80,13 @@ export default function AiSummaryCard({ kind, projectId, writable, title }) {
                 <li>{facts.progress.overdue} overdue, {facts.progress.blocked} blocked</li>
                 <li>Schedule: {facts.schedule.assessment.replace('_', ' ')}{facts.schedule.days_to_target !== undefined ? `, ${facts.schedule.days_to_target} days to target` : ''}</li>
                 <li>Not tracked yet: {facts.not_available.join('; ')}</li>
+              </ul>
+            ) : isReview ? (
+              <ul className="facts">
+                <li>{facts.completed_tasks.length} tasks completed, {facts.incomplete_tasks_due_in_period.length} due in the period and not done, {facts.overdue_now} overdue now</li>
+                <li>{facts.finance_posted.map((f) => `${f.currency}: spent ${(f.expenses_minor / 100).toFixed(2)}, income ${(f.income_minor / 100).toFixed(2)}`).join(' | ') || 'No posted transactions'}</li>
+                <li>{facts.appointments_in_period} appointments</li>
+                <li>Not included: {facts.not_available.join('; ')}</li>
               </ul>
             ) : (
               <ul className="facts">

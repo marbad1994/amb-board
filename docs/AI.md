@@ -15,6 +15,9 @@
 - Conversations and proposals are private to the user who created them, even inside a shared workspace. Viewers cannot chat (it spends AI budget) and cannot approve.
 - Every turn is metered like other AI calls (up to 4 provider calls per message) against `AI_DAILY_LIMIT`.
 
+## Reviews
+`GET|POST /api/ai/review/weekly|monthly[?date=YYYY-MM-DD]` builds deterministic facts (`ai/reviews.js`: completed and incomplete tasks, project progress, posted finance per currency, the requesting user's habits, appointments, upcoming deadlines; monthly adds completed projects, goals, category budget performance, previous-month comparison, savings and debts) and asks the model only to phrase them. Cached per user and period; flagged stale when facts change; in-progress periods say so. Journal and notes are excluded.
+
 ## Safety design
 - Prompt structure: fixed system prompt (rules + output schema); user data only inside `<data>` as JSON with `<` escaped so text like `</data>` cannot close the block. The system prompt tells the model the data is untrusted.
 - Scope: facts queries are all `workspace_id`-bound; tested that another workspace's text never reaches a prompt.

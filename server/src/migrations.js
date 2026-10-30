@@ -455,6 +455,102 @@ const lifeTables = `
   CREATE INDEX idx_documents_ws ON documents(workspace_id, created_at);
 `;
 
+const depthTables = `
+  ALTER TABLE calendar_events ADD COLUMN reminder_minutes INTEGER CHECK (reminder_minutes IS NULL OR reminder_minutes BETWEEN 0 AND 10080);
+
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    link TEXT NOT NULL DEFAULT '',
+    dedupe_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    read_at TEXT,
+    UNIQUE (user_id, dedupe_key)               -- generating the same notification twice is a no-op
+  );
+  CREATE INDEX idx_notifications_user ON notifications(user_id, workspace_id, created_at);
+
+  CREATE TABLE notification_preferences (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    event_reminders INTEGER NOT NULL DEFAULT 1,
+    task_due INTEGER NOT NULL DEFAULT 1,
+    budget_alerts INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE TABLE monthly_budgets (
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,
+    category_id TEXT NOT NULL REFERENCES transaction_categories(id) ON DELETE CASCADE,
+    currency TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor >= 0),
+    PRIMARY KEY (workspace_id, month, category_id, currency)
+  );
+
+  CREATE TABLE savings_goals (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    target_minor INTEGER NOT NULL CHECK (target_minor > 0),
+    target_date TEXT,
+    is_emergency_fund INTEGER NOT NULL DEFAULT 0,
+    archived_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE savings_entries (
+    id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL REFERENCES savings_goals(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('deposit','withdrawal')),
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    date TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_savings_entries_goal ON savings_entries(goal_id);
+
+  CREATE TABLE debts (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    original_minor INTEGER NOT NULL CHECK (original_minor > 0),
+    interest_rate_bps INTEGER CHECK (interest_rate_bps IS NULL OR interest_rate_bps BETWEEN 0 AND 100000),
+    min_payment_minor INTEGER CHECK (min_payment_minor IS NULL OR min_payment_minor > 0),
+    archived_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE debt_payments (
+    id TEXT PRIMARY KEY,
+    debt_id TEXT NOT NULL REFERENCES debts(id) ON DELETE CASCADE,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    date TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_debt_payments_debt ON debt_payments(debt_id);
+
+  -- weekly and monthly reviews join the summary kinds (SQLite cannot alter a CHECK, so rebuild the table)
+  CREATE TABLE ai_summaries_new (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('project','daily','weekly','monthly')),
+    subject_id TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    content TEXT NOT NULL,
+    facts TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    UNIQUE (workspace_id, kind, subject_id)
+  );
+  INSERT INTO ai_summaries_new SELECT * FROM ai_summaries;
+  DROP TABLE ai_summaries;
+  ALTER TABLE ai_summaries_new RENAME TO ai_summaries;
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -476,6 +572,7 @@ export const migrations = [
   } },
   { id: '006_assistant', up: (db) => db.exec(assistantTables) },
   { id: '007_life', up: (db) => db.exec(lifeTables) },
+  { id: '008_depth', up: (db) => db.exec(depthTables) },
 ];
 
 function appliedIds(db) {
