@@ -146,3 +146,20 @@ test('the whole life: habits, goals, challenges, ideas and money show up in the 
   const other = await signUp(srv.base, 'DashLifeOther');
   assert.deepEqual((await other.c.get('/api/dashboard')).json.habits, [], 'habits are personal');
 });
+
+test('a stored plan from another version (unknown, duplicate or missing widgets) is repaired instead of crashing the dashboard', async () => {
+  aiOff();
+  const { db } = await import('../src/db.js');
+  const u = await signUp(srv.base, 'DashStale');
+  const first = (await u.c.get('/api/dashboard/plan')).json;
+  const row = db.prepare('SELECT * FROM dashboard_plans WHERE source = ? ORDER BY created_at DESC LIMIT 1').get('rules');
+  const plan = JSON.parse(row.plan);
+  // as an older build could have stored it: a widget this build does not know, a duplicate, and one known widget missing
+  plan.widgets = [{ id: 'tasks-legacy', size: 'normal', reason: 'old', facts: 'old' }, ...plan.widgets.filter((w) => w.id !== 'ideas'), plan.widgets[0]];
+  db.prepare('UPDATE dashboard_plans SET plan = ? WHERE workspace_id = ? AND user_id = ? AND day = ?').run(JSON.stringify(plan), row.workspace_id, row.user_id, row.day);
+
+  const res = await u.c.get('/api/dashboard/plan');
+  assert.equal(res.status, 200, res.text);
+  assert.deepEqual(res.json.widgets.map((w) => w.id).sort(), first.widgets.map((w) => w.id).sort(), 'every known widget exactly once, the unknown one gone');
+  assert.equal(res.json.adjusted, true);
+});

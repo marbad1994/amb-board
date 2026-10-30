@@ -145,10 +145,21 @@ function limit(widgets, s) {
 }
 
 // The stored plan was made earlier today: widgets that have since emptied shrink, and ones that just got content grow.
+// A stored plan may come from another build (widgets since renamed or removed, or added): keep the ones this build knows,
+// once each, and fill in the rest from the rules, so an old row can never break the dashboard.
+function known(plan, s) {
+  const stored = Array.isArray(plan.widgets) ? plan.widgets : []; const seen = new Set();
+  const kept = stored.filter((w) => WIDGETS.includes(w?.id) && !seen.has(w.id) && seen.add(w.id));
+  const missing = WIDGETS.filter((id) => !seen.has(id));
+  const fill = missing.length ? rulesPlan(s).widgets.filter((w) => missing.includes(w.id)) : [];
+  return { widgets: [...kept, ...fill], repaired: kept.length !== stored.length || fill.length > 0 };
+}
+
 export function reconcile(plan, s) {
-  let heroes = plan.widgets.filter((w) => w.size === 'hero').length; let changed = false;
+  const base = known(plan, s);
+  let heroes = base.widgets.filter((w) => w.size === 'hero').length; let changed = base.repaired;
   const sc = scores(s);
-  const widgets = plan.widgets.map((w) => {
+  const widgets = base.widgets.map((w) => {
     const live = LIVE[w.id](s); const now = reasonFor(w.id, s);
     if (!live && w.size !== 'compact') { changed = true; return { ...w, size: 'compact', reason: now, facts: now }; }
     if (live && w.size === 'compact') { changed = true; const grow = sc[w.id] >= 50 && heroes < MAX_HERO; if (grow) heroes += 1; return { ...w, size: grow ? 'hero' : 'normal', reason: now, facts: now }; }
