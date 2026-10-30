@@ -99,6 +99,13 @@ export const api = {
   updateEvent: (id, data) => request(`/calendar/events/${id}`, json('PATCH', data)),
   deleteEvent: (id) => request(`/calendar/events/${id}`, { method: 'DELETE' }),
 
+  // AI assistant
+  listConversations: () => request('/ai/assistant/conversations'),
+  getConversation: (id) => request(`/ai/assistant/conversations/${id}`),
+  chat: (message, conversationId) => request('/ai/assistant/chat', json('POST', { message, conversationId })),
+  approveProposal: (id) => request(`/ai/assistant/proposals/${id}/approve`, { method: 'POST' }),
+  rejectProposal: (id) => request(`/ai/assistant/proposals/${id}/reject`, { method: 'POST' }),
+
   // AI insights
   aiStatus: () => request('/ai/status'),
   getProjectSummary: (id) => request(`/ai/projects/${id}/summary`),

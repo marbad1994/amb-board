@@ -23,7 +23,7 @@ const NAV = [
   { label: 'Personal', items: [
     { to: '/finance', icon: Landmark, text: 'Finance & Budget' },
     { icon: NotebookPen, text: 'Notes & Journal' },
-    { icon: Sparkles, text: 'AI Assistant' },
+    { to: '/assistant', icon: Sparkles, text: 'AI Assistant' },
   ] },
   { label: 'System', items: [
     { to: '/settings', icon: Settings, text: 'Workspace' },

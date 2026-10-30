@@ -47,18 +47,20 @@ Master-prompt sections. Evidence column is filled only for tested items.
 | 11 | Week/day views, reminders, external calendar sync (no provider adapters built) | TODO | |
 | 12 | My Day | TODO | |
 | 13 | AI summaries: project + daily briefing (grounded, cached, traceable facts) | PARTIAL | mocked tests only; live providers unverified (`docs/AI.md`). Weekly/monthly/financial TODO |
-| 14 | AI assistant (chat, tools, action proposals, approvals) | TODO | AI gateway built; legacy AI task helper preserved |
+| 14 | AI assistant: chat, read-only tools over authorised data, action proposals with explicit approval, audit | DONE (Phase 4) | `assistant.test.js` (mocked provider), E2E. Live model behaviour unverified |
+| 14 | Assistant: weekly/monthly summaries, scheduling suggestions beyond single proposals, automation policies | TODO | |
 | 15 | Idea Board + convert to project (idea kept and linked, one-time) | DONE (Phase 2) | `core.test.js`, E2E |
 | 15 | Idea labels/AI organisation | TODO | |
 | 16 | Habits/Goals/Challenges | TODO | |
 | 17 | Notes/Journal/Documents | TODO | card attachments only |
 | 18 | Priority/urgency/activity-type attributes | TODO | |
 | 19 | UI shell per mockup (navy sidebar, teal accent), responsive, global search, Quick Add Task | PARTIAL | shell, dashboard, life areas, projects board, tasks, settings |
+| 20 | AI safety: high-impact actions impossible, approval required for every AI change | DONE | `assistant.test.js` |
 | 20 | Auth, sessions, rate limiting, RBAC, server-side scoping, CSRF, headers, secure files | PARTIAL | see SECURITY.md; MFA, email verification, password recovery not implemented |
 | 21 | Automations: recurring expenses -> planned transactions and recurring tasks (idempotent, lazy, no scheduler); computed budget alerts | PARTIAL | persisted notifications, scheduler/jobs, rules engine, retries TODO |
 | 22 | Billing/entitlements | TODO | |
 
-| 24 | Tests | PARTIAL | 48 API tests (`npm test`; 9 use a mocked AI provider) + 18-step browser E2E (`npm run e2e`). Covered: 1-3, 5-13 (AI mocked), 15, 16, 17, 18, 20-23; partly 14, 19, 24. Not covered: 4 (partly), 25 (backup/restore procedure), live AI |
+| 24 | Tests | PARTIAL | 59 API tests (`npm test`; 20 use a mocked AI provider) + 19-step browser E2E (`npm run e2e`). Covered: 1-3, 5-13 (AI mocked), 15, 16, 17, 18, 20-23; partly 14, 19, 24. Not covered: 4 (partly), 25 (backup/restore procedure), live AI |
 | 25 | Docs | PARTIAL | this file, DECISIONS, SECURITY |
 
 ## 4. Proposed architecture (summary)

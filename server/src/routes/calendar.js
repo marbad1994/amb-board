@@ -8,14 +8,14 @@ import { isValidTimeZone, occurrences } from '../calendar/recurrence.js';
 const router = Router();
 const KINDS = ['appointment', 'personal'];
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
-const eventInWs = (id, ws) => db.prepare('SELECT * FROM calendar_events WHERE id = ? AND workspace_id = ?').get(String(id), ws);
+export const eventInWs = (id, ws) => db.prepare('SELECT * FROM calendar_events WHERE id = ? AND workspace_id = ?').get(String(id), ws);
 
 router.param('id', (req, res, next, id) => {
   if (!eventInWs(id, req.ws.id)) return res.status(404).json({ error: 'not found' });
   next();
 });
 
-function readEvent(body, ws, cur = {}) {
+export function readEvent(body, ws, cur = {}) {
   const v = {
     title: cur.title, description: cur.description ?? '', kind: cur.kind ?? 'appointment', all_day: cur.all_day ?? 0,
     start_local: cur.start_local, end_local: cur.end_local ?? null, timezone: cur.timezone, recurrence: cur.recurrence ?? 'none',

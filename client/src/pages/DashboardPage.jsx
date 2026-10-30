@@ -10,7 +10,7 @@ import { LifeAreaIcon } from '../lib/lifeAreaIcons.jsx';
 
 const ACTION_LABELS = {
   'project.create': 'created a project', 'project.archive': 'archived a project', 'project.restore': 'restored a project',
-  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'ai.project_summary': 'generated an AI project summary', 'transaction.create': 'recorded a transaction', 'transaction.void': 'voided a transaction', 'budget.set': 'set a project budget', 'event.create': 'added a calendar event', 'event.update': 'updated a calendar event', 'event.delete': 'deleted a calendar event', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
+  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'ai.project_summary': 'generated an AI project summary', 'ai.action_executed': 'approved an AI suggestion', 'ai.action_rejected': 'rejected an AI suggestion', 'transaction.create': 'recorded a transaction', 'transaction.void': 'voided a transaction', 'budget.set': 'set a project budget', 'event.create': 'added a calendar event', 'event.update': 'updated a calendar event', 'event.delete': 'deleted a calendar event', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
   'lifearea.archive': 'archived a life area', 'lifearea.restore': 'restored a life area', 'workspace.create': 'created this workspace',
   'invitation.create': 'invited someone', 'invitation.accept': 'joined the workspace', 'member.role_change': 'changed a role',
   'member.remove': 'removed a member', 'member.leave': 'left the workspace', 'workspace.rename': 'renamed the workspace',
@@ -120,7 +120,7 @@ export default function DashboardPage() {
 
             <section className="panel panel--note" aria-labelledby="dash-soon">
               <div className="panel__title"><h2 id="dash-soon">Coming next</h2></div>
-              <p className="muted">My Day, Notes and the AI Assistant are planned but not built yet. They are shown disabled in the sidebar and will appear here as they ship.</p>
+              <p className="muted">My Day, Habits, Notes and Documents are planned but not built yet. They are shown disabled in the sidebar and will appear here as they ship.</p>
             </section>
           </div>
         </>

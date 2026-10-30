@@ -22,7 +22,18 @@ const fakeAi = createServer((req, res) => {
   let b = '';
   req.on('data', (c) => (b += c));
   req.on('end', () => {
-    const daily = JSON.parse(b).messages[0].content.includes('"headline"');
+    const msgs = JSON.parse(b).messages;
+    if (msgs[0].content.includes('assistant inside AMB Board')) {
+      const user = msgs[1].content;
+      const out = user.includes('"tool_results":[]')
+        ? { type: 'tool', calls: [{ tool: 'list_projects', args: {} }] }
+        : { type: 'final', answer: 'Focus on your renovation project today.', proposals: [
+            { type: 'create_task', args: { project_id: /"id":"([^"]+)"/.exec(user)[1], title: 'Call the contractor', due_date: '2027-01-15', priority: 'high' } },
+            { type: 'delete_project', args: { project_id: 'x' } }] };
+      res.setHeader('content-type', 'application/json');
+      return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }], usage: {} }));
+    }
+    const daily = msgs[0].content.includes('"headline"');
     const out = daily
       ? { headline: 'Briefing from fake provider', priorities: ['Finish flooring'], upcoming: [], attention: [], suggested_focus: 'Start early.' }
       : { overview: 'Overview from fake provider', completed: ['Chose flooring'], remaining: [], risks: [], suggestions: ['Order tiles'] };
@@ -285,6 +296,25 @@ try {
     await page.getByRole('button', { name: 'Generate' }).click();
     await page.getByText('Briefing from fake provider').waitFor();
     await shot(page, '07-briefing');
+  });
+
+  await step('AI assistant: answers from data, proposes changes, nothing changes until Approve; disallowed proposal discarded', async () => {
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByRole('button', { name: 'What should I focus on today?' }).click();
+    await page.getByText('Focus on your renovation project today.').waitFor();
+    await page.getByText('Looked at: list projects').waitFor();
+    await page.getByText('1 suggested change was not allowed').waitFor();
+    await page.getByText('Create task "Call the contractor" in project "Apartment Renovation"').waitFor();
+    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('link', { name: 'Order tiles' }).waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Call the contractor' }).count(), 0, 'not created before approval');
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByLabel('Conversation').first().selectOption({ index: 1 });
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByText('Applied.').waitFor();
+    await shot(page, '11-assistant');
+    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('link', { name: 'Call the contractor' }).waitFor();
   });
 
   await step('idea converts to a project and stays linked', async () => {

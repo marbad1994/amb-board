@@ -9,6 +9,7 @@ import ProjectsPage from './pages/ProjectsPage.jsx';
 import BoardPage from './pages/BoardPage.jsx';
 import FinancePage from './pages/FinancePage.jsx';
 import CalendarPage from './pages/CalendarPage.jsx';
+import AssistantPage from './pages/AssistantPage.jsx';
 import TasksPage from './pages/TasksPage.jsx';
 import IdeaBoardPage from './pages/IdeaBoardPage.jsx';
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/projects/:projectId" element={<BoardPage />} />
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/assistant" element={<AssistantPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/ideas" element={<IdeaBoardPage />} />
         <Route path="/settings" element={<WorkspaceSettingsPage />} />

@@ -21,3 +21,7 @@
 | D17 | Recurring expenses and tasks materialise lazily (on summary read / on completion), idempotent via external_ref / spawned marker | No scheduler yet; deterministic and testable | Implemented; replace with jobs in hardening |
 | D18 | Event times stored as wall-clock + IANA zone; occurrences keep wall time across DST | Matches how people schedule; UTC instant computed per occurrence | Implemented |
 | D19 | Voiding a transaction (not deleting) | Audit trail; excluded from all totals | Implemented |
+| D20 | Assistant tool loop uses JSON replies (tool / final) instead of provider-native function calling | Works identically on DeepSeek and Grok; fewer provider-specific behaviours to verify | Implemented |
+| D21 | EVERY AI-proposed change needs approval; allow-list of 4 action types; no executors for anything else | Spec 3.5 / 14: human control, no silent irreversible or sensitive actions | Implemented |
+| D22 | Proposal text shown to the user is generated server-side from validated payload | Model wording cannot disguise what will happen | Implemented |
+| D23 | Assistant conversations are private per user; viewers cannot chat | Journal-grade privacy default; AI usage costs money | Implemented |
