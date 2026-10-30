@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Lock, Trash2, Users } from 'lucide-react';
+import { Lock, Plus, Trash2, Users } from 'lucide-react';
 import { api } from '../api/client.js';
 import CopyToWorkspace from '../components/CopyToWorkspace.jsx';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
@@ -10,6 +10,7 @@ export default function NotesPage() {
   const { active } = useAuth();
   const writable = canWrite(active?.role);
   const [kind, setKind] = useState('note');
+  const [formOpen, setFormOpen] = useState(null);   // null = open only while the list is empty
   const [q, setQ] = useState('');
   const [items, setItems] = useState(null);
   const [error, setError] = useState('');
@@ -41,16 +42,17 @@ export default function NotesPage() {
       </div>
       <div className="filter-row">
         <div className="seg" role="group" aria-label="Type">
-          <button type="button" aria-pressed={!journal} onClick={() => { setItems(null); setKind('note'); }}>Notes</button>
-          <button type="button" aria-pressed={journal} onClick={() => { setItems(null); setKind('journal'); }}>Journal</button>
+          <button type="button" aria-pressed={!journal} onClick={() => { setItems(null); setKind('note'); setFormOpen(null); }}>Notes</button>
+          <button type="button" aria-pressed={journal} onClick={() => { setItems(null); setKind('journal'); setFormOpen(null); }}>Journal</button>
         </div>
         <input type="search" aria-label="Search notes" placeholder="Search" style={{ maxWidth: 260 }} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
 
-      {writable && (
+      {writable && !(formOpen ?? (items && items.length === 0)) && <button type="button" className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setFormOpen(true)}><Plus size={16} aria-hidden="true" /> {journal ? 'New entry' : 'New note'}</button>}
+      {writable && (formOpen ?? (items && items.length === 0)) && (
         <form className="panel" style={{ marginBottom: 16 }} aria-label={journal ? 'New journal entry' : 'New note'}
-          onSubmit={(e) => { e.preventDefault(); act(async () => { await api.createNote({ kind, title: form.title, body: form.body, privacy: form.privacy, entry_date: journal ? form.entry_date : undefined, projectId: link.projectId || null, goalId: link.goalId || null }); setForm({ ...form, title: '', body: '' }); }); }}>
+          onSubmit={(e) => { e.preventDefault(); act(async () => { await api.createNote({ kind, title: form.title, body: form.body, privacy: form.privacy, entry_date: journal ? form.entry_date : undefined, projectId: link.projectId || null, goalId: link.goalId || null }); setForm({ ...form, title: '', body: '' }); setFormOpen(false); }); }}>
           {!journal && <div className="field"><label htmlFor="n-title">Title</label><input id="n-title" type="text" maxLength={200} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>}
           {journal && <div className="field"><label htmlFor="n-date">Date</label><input id="n-date" type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} /></div>}
           <div className="field"><label htmlFor="n-body">{journal ? 'Entry' : 'Text'}</label><textarea id="n-body" rows={4} maxLength={50000} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} /></div>
@@ -59,7 +61,7 @@ export default function NotesPage() {
             <select aria-label="Link to project" value={link.projectId} onChange={(e) => setLink({ ...link, projectId: e.target.value })}><option value="">No project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
             <select aria-label="Link to goal" value={link.goalId} onChange={(e) => setLink({ ...link, goalId: e.target.value })}><option value="">No goal</option>{goals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}</select>
             {journal && <span className="hint"><Lock size={12} aria-hidden="true" /> Private to you</span>}
-            <button type="submit" className="btn btn-primary" disabled={!form.body.trim() && !form.title.trim()}>Save</button>
+            <button type="submit" className="btn btn-primary" disabled={!form.body.trim() && !form.title.trim()}>Save</button>{items && items.length > 0 && <button type="button" className="btn" onClick={() => setFormOpen(false)}>Cancel</button>}
           </div>
         </form>
       )}

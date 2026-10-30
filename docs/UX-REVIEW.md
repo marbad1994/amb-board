@@ -28,17 +28,25 @@ What changed, once for the whole app: muted text, overdue red and link colours h
 
 ## Page notes from the screenshots
 
-Reviewed by eye: Dashboard, Project board, Finance, Tasks, Calendar, Workspace and account. Not yet reviewed by eye: My Day, Life Areas, Goals and Habits, Notes, Idea Board, Documents, Reports, Projects list, Assistant page.
+Reviewed by eye (screenshots in light, dark and phone width): every page, in two rounds. Automations and the assistant were reviewed in their own design rounds.
 
 - **Dashboard:** "Needs attention" is now first (it is the actionable part); activity shows "5 min ago" or "Yesterday, 14:05" instead of a full timestamp with seconds; the life-area list shows only areas that have projects (twelve rows of "0" were noise).
 - **Workspace and account:** one long page with eleven sections is now five tabs (Workspace, Notifications, Assistant, Connect other AI tools, Security), the address keeps the tab (`?tab=`), and the autonomy checkboxes sit in a grid.
 - **Calendar:** month cells no longer repeat "TASK DUE" on every chip (it is still read by screen readers and shown in the tooltip).
 - **Tasks:** on phones the date and priority wrap under the title instead of squeezing it.
 
+- **My Day, Dashboard:** with no AI key the large dark "Daily briefing" block is now one quiet line ("Daily briefing is off: no AI key is set on this server.").
+- **Life Areas:** twelve cards each carried an input and a lone plus button; now a small "Add subcategory" button opens the input in place.
+- **Goals:** the milestone row (title, date, plus) is one row instead of stacked.
+- **Notes and Journal:** the compose form no longer sits above the list. Once there are notes, a "New note" or "New entry" button opens it; with an empty list it is open.
+- **Idea Board:** an "Add idea" field at the top (type, Enter); the round plus button is only for phones, so desktop no longer shows two floating circles.
+- **Finance:** the add-transaction form opens from an "Add transaction" button once the month has transactions (it opens by itself on an empty month and when the assistant prefills one).
+- **Projects:** the red trash icon on every card is neutral; it still asks before deleting.
+- **Documents, Reports:** checked; no structural problems found (empty states are clear, controls fit one row).
+
 ## Still open (design decisions, not defects)
 
-1. Finance: the add-transaction form sits above the transaction list and takes more room than the list. Collapse it behind an "Add transaction" button?
-2. Dashboard: with no AI key the "Daily briefing" block is a large dark box saying it is not configured. Hide it for non-admins, or make it a one-line notice?
-3. Assistant: a near-duplicate automation suggested by the assistant is not detected (only the editor checks for equal names).
-4. The eight per-tab questions from the first audit (dashboard goals view, briefing duplication, default categories, goal target number, life areas count, notes form collapse, documents preview and search, idea board button) were never answered.
-5. The remaining pages listed above need the same by-eye pass.
+1. The assistant does not detect a near-duplicate automation it is about to suggest (only the editor checks for equal names).
+2. The eight per-tab questions from the first audit (dashboard goals view, briefing duplication, default categories, goal target number, life areas count, notes form collapse, documents preview and search, idea board button) were never answered. Several are now settled by this pass (briefing, notes, idea board, life areas); the rest remain.
+3. Dashboard: the grid leaves an empty gap under "Upcoming events" when "Recent projects" is taller. A masonry layout would close it.
+4. Documents has no preview or search; Reports has no "last generated" ordering control. Both are feature questions, not layout problems.

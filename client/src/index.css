@@ -2529,3 +2529,16 @@ small { font-size: max(12px, 0.8em); }
   .task-list li { flex-wrap: wrap; }
   .task-list__main { flex: 1 1 60%; min-width: 0; }
 }
+
+/* review pass 2 */
+.ai-off { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: 13px; color: var(--color-text-muted); }
+.inline-form--nowrap { flex-wrap: nowrap; }
+.inline-form--nowrap input { flex: 1; min-width: 0; }
+.ms-form { flex-wrap: nowrap; }
+.ms-form input[type='text'] { flex: 1; min-width: 0; }
+.ms-form input[type='date'] { flex: none; width: 150px; }
+@media (max-width: 480px) { .ms-form { flex-wrap: wrap; } .ms-form input[type='date'] { width: auto; flex: 1; } }
+.btn-small { min-height: 32px; padding: 0 10px; font-size: 13px; }
+.idea-quick { display: flex; gap: 8px; margin: 0 0 18px; max-width: 640px; }
+.idea-quick input { flex: 1; min-width: 0; }
+@media (min-width: 901px) { .idea-board__fab { display: none; } }

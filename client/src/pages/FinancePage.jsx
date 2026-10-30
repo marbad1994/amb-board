@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download, Trash2, FileBarChart } from 'lucide-react';
+import { Download, Plus, Trash2, FileBarChart } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
@@ -55,13 +55,14 @@ export default function FinancePage() {
   useEffect(() => {
     const t = location.state?.prefillTx;
     if (!t) return;
-    setTab('overview');
+    setTab('overview'); setAddOpen(true);
     setForm((f) => ({ ...f, type: t.type, status: t.status || 'posted', amount: (t.amount_minor / 100).toFixed(2), currency: t.currency, date: t.date, description: t.description || '', categoryId: t.category_id || '', projectId: t.project_id || '' }));
     navigate('/finance', { replace: true, state: null });
   }, [location.state, navigate]);
   const makeReport = async () => {
     try { const r = await api.createReport({ kind: 'monthly_finance', month }); navigate(`/reports/${r.id}`); } catch (err) { setError(err.message); }
   };
+  const [addOpen, setAddOpen] = useState(false);   // the add form opens on request, or when the month has nothing yet
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const add = (e) => {
@@ -135,7 +136,8 @@ export default function FinancePage() {
         </section>
       ))}
 
-      {writable && (
+      {writable && !addOpen && !(summary && summary.currencies.length === 0) && <button type="button" className="btn btn-primary" style={{ marginBottom: 16 }} onClick={() => setAddOpen(true)}><Plus size={16} aria-hidden="true" /> Add transaction</button>}
+      {writable && (addOpen || (summary && summary.currencies.length === 0)) && (
         <form className="panel" onSubmit={add} aria-label="Add transaction" style={{ marginBottom: 16 }}>
           <div className="panel__title"><h2>Add transaction</h2></div>
           <div className="inline-form inline-form--wide">

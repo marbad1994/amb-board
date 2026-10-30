@@ -124,7 +124,7 @@ export default function ProjectsPage() {
           </button>
           <button type="button" className="btn btn-icon btn-ghost" onClick={() => deleteProject(project.id)}
             title="Delete project" aria-label={`Delete ${project.name}`}>
-            <Trash2 size={16} color="var(--color-danger)" />
+            <Trash2 size={16} color="var(--color-text-muted)" />
           </button>
         </div>
       )}

@@ -43,6 +43,9 @@ export default function AiSummaryCard({ kind, projectId, writable, title }) {
   const c = summary?.content;
   const facts = summary?.facts;
 
+  // no AI key on this server: one quiet line instead of a large empty block
+  if (!available && !summary) return <p className="ai-off" role="note"><Sparkles size={14} aria-hidden="true" /> {title} is off: no AI key is set on this server.</p>;
+
   return (
     <section className="ai-card" aria-label={title}>
       <div className="ai-card__head">
