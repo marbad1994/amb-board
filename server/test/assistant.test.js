@@ -113,7 +113,7 @@ test('rejecting a proposal does nothing; rejected/decided proposals cannot be ap
   assert.equal((await u.c.get(`/api/projects/${p.id}/columns`)).json[0].cards.length, 1, 'only the seeded task exists');
 });
 
-test('S20 high-impact actions are impossible: budget, delete, member and permission proposals are dropped', async () => {
+test('S20 what stays impossible (roles, members, email, unknown types) is dropped; a delete is only a pending proposal', async () => {
   const { u, p, card, ask } = await world('Drop');
   reset([{ type: 'final', answer: 'Done!', proposals: [
     { type: 'set_budget', args: { project_id: p.id, approved_minor: 999999999 } },
@@ -122,11 +122,13 @@ test('S20 high-impact actions are impossible: budget, delete, member and permiss
     { type: 'send_email', args: { to: 'x@example.com' } },
     { type: 'create_task', args: { project_id: p.id, title: 'ok' } }] }]);
   const res = await ask('wipe everything');
-  assert.equal(res.json.message.proposals.length, 1, 'only the allowed type survives');
-  assert.deepEqual(res.json.dropped.map((d) => d.type), ['set_budget', 'delete_project', 'change_role', 'send_email']);
+  assert.deepEqual(res.json.dropped.map((d) => d.type), ['set_budget', 'change_role', 'send_email']);
+  assert.deepEqual(res.json.message.proposals.map((x) => [x.type, x.status]), [['delete_project', 'pending'], ['create_task', 'pending']]);
+  assert.match(res.json.message.proposals[0].description, /^DELETE project/);
   assert.equal((await u.c.get(`/api/projects/${p.id}/finance`)).json.budget.has_budget, false);
-  assert.equal((await u.c.get(`/api/projects/${p.id}`)).status, 200);
+  assert.equal((await u.c.get(`/api/projects/${p.id}`)).status, 200, 'nothing is deleted before approval');
   assert.equal((await u.c.get(`/api/cards/${card.id}`)).status, 200);
+  assert.equal((await u.c.post(`/api/ai/assistant/proposals/${res.json.message.proposals[0].id}/reject`)).status, 200);
 });
 
 test('invalid or foreign proposals are dropped at proposal time (bad dates, foreign project/task)', async () => {
