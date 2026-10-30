@@ -44,7 +44,7 @@ const mcp = Router();
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
 const ok = (id, result) => ({ jsonrpc: '2.0', id, result });
 
-const NOT_FOR_CLIENTS = new Set(['external_tools', 'call_external_tool', 'web_search', 'read_web_page']);   // a person's own connected servers are not shared with token holders
+const NOT_FOR_CLIENTS = new Set(['external_tools', 'call_external_tool', 'web_search', 'read_web_page', 'browser_status', 'browser_snapshot', 'browser_fill', 'browser_click']);   // a person's own connected servers are not shared with token holders
 const readTools = () => Object.entries(TOOLS).filter(([name]) => !NOT_FOR_CLIENTS.has(name)).map(([name, t]) => ({
   name, description: `[${t.kind || 'read'}] ${t.doc}`, inputSchema: { type: 'object', additionalProperties: true },
 }));

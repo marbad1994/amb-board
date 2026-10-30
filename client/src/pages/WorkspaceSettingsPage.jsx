@@ -137,6 +137,39 @@ function McpTokens() {
 const AUTO_LABEL = { create_task: 'Create tasks', update_task: 'Change tasks', reschedule_task: 'Reschedule tasks', add_subtask: 'Add subtasks', add_comment: 'Add comments',
   create_note: 'Write notes', create_event: 'Add calendar events', create_habit: 'Create habits', add_milestone: 'Add goal milestones' };
 
+function BrowserAssistant() {
+  const [list, setList] = useState(null);
+  const [name, setName] = useState('');
+  const [fresh, setFresh] = useState(null);
+  const [err, setErr] = useState('');
+  const load = () => api.listPairings().then(setList).catch(() => setList([]));
+  useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
+  const create = async (e) => { e.preventDefault(); setErr(''); try { setFresh(await api.createPairing(name)); setName(''); load(); } catch (x) { setErr(x.message); } };
+  return (
+    <section className="panel" aria-labelledby="ba-h" style={{ gridColumn: '1 / -1' }}>
+      <div className="panel__title"><h2 id="ba-h">Browser assistant (Chrome extension)</h2></div>
+      <p className="hint">Lets the assistant find and fill in fields in other web applications, in YOUR browser, using your own logins. You choose one tab to share; the assistant sees only that tab, never fills passwords or payment details, and asks you on the page before clicking anything. What it reads on that page is sent to your AI provider. Nothing runs unless you share a tab.</p>
+      <ol className="hint" style={{ paddingLeft: 18 }}>
+        <li><a href="/api/browser/pairings/extension.zip" download>Download the extension</a>, unzip it, open <b>chrome://extensions</b>, switch on Developer mode and choose Load unpacked.</li>
+        <li>Create a pairing token below and paste it, with this address ({window.location.origin}), into the extension.</li>
+        <li>On any page, click the extension and press <b>Share this tab</b>, then ask the assistant, for example "fill in my delivery details on this page".</li>
+      </ol>
+      {list && list.length > 0 && (
+        <ul className="plain-list" aria-label="Paired browsers">{list.map((p) => (
+          <li key={p.id}><span><b>{p.name}</b> <small className="muted">{p.prefix}...</small> {p.online ? (p.shared_origin ? <span className="badge status-done">Sharing {new URL(p.shared_origin).hostname}</span> : <span className="badge">Connected, no tab shared</span>) : <small className="muted">Not connected</small>}</span>
+            <button type="button" className="btn btn-icon btn-ghost" aria-label={`Remove ${p.name}`} onClick={async () => { await api.deletePairing(p.id); load(); }}><Trash2 size={16} color="var(--color-danger)" /></button></li>
+        ))}</ul>
+      )}
+      <form className="flow-row" onSubmit={create} aria-label="Pair a browser">
+        <label className="field"><span className="field__label">Name of this browser</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="e.g. Work laptop" required /></label>
+        <div style={{ alignSelf: 'end' }}><button type="submit" className="btn btn-primary">Create pairing token</button></div>
+      </form>
+      {err && <p className="form-error" role="alert">{err}</p>}
+      {fresh && <p className="notice" role="status">Pairing token for "{fresh.name}" (shown once): <code>{fresh.token}</code></p>}
+    </section>
+  );
+}
+
 function AssistantSettings() {
   const [auto, setAuto] = useState(null);
   const [conns, setConns] = useState(null);
@@ -276,6 +309,7 @@ export default function WorkspaceSettingsPage() {
 
         <McpTokens />
         <AssistantSettings />
+        <BrowserAssistant />
 
         <section className="panel" aria-labelledby="sec-h">
           <div className="panel__title"><h2 id="sec-h">Security</h2></div>

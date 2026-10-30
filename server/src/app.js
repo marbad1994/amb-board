@@ -20,6 +20,7 @@ import financeExtraRouter from './routes/financeExtra.js';
 import financeAiRouter from './routes/financeAi.js';
 import automationsRouter from './routes/automations.js';
 import transferRouter from './routes/transfer.js';
+import { pairingsRouter, extRouter } from './routes/browser.js';
 import mcpRouter, { tokensRouter } from './routes/mcp.js';
 import reportsRouter from './routes/reports.js';
 import notificationsRouter from './routes/notifications.js';
@@ -52,6 +53,8 @@ export function createApp() {
   app.use('/api/auth', authRouter);
   // MCP authenticates with its own bearer token, not the session cookie (and is exempt from the Origin check: no cookies involved).
   app.use('/api/mcp', mcpRouter);
+  // the browser extension: bearer pairing token, no cookies
+  app.use('/api/browser-ext', extRouter);
 
   // Everything below requires a session.
   app.use('/api', requireAuth);
@@ -70,6 +73,7 @@ export function createApp() {
   app.use('/api/reports', reportsRouter);
   app.use('/api/automations', automationsRouter);
   app.use('/api/transfer', transferRouter);
+  app.use('/api/browser/pairings', pairingsRouter);
   app.use('/api/tokens', tokensRouter);
   app.use('/api/finance', financeRouter);
   app.use('/api/finance', financeExtraRouter);

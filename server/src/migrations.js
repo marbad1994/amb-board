@@ -632,6 +632,7 @@ export const migrations = [
   { id: '012_email_notifications', up: (db) => db.exec(emailNotifications) },
   { id: '013_column_settings', up: (db) => db.exec(columnSettings) },
   { id: '014_assistant_connections', up: (db) => db.exec(assistantConnections) },
+  { id: '015_browser_assistant', up: (db) => db.exec(browserTables) },
 ];
 
 const automationsTables = `
@@ -680,6 +681,20 @@ CREATE TABLE ai_user_settings (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   auto_approve TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (user_id, workspace_id)
 );
+`;
+
+const browserTables = `
+CREATE TABLE browser_pairings (
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, prefix TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT, last_seen_at TEXT,
+  shared_origin TEXT, shared_title TEXT, shared_at TEXT, last_snapshot TEXT
+);
+CREATE INDEX idx_browser_pairings_user ON browser_pairings (user_id, workspace_id);
+CREATE TABLE browser_commands (
+  id TEXT PRIMARY KEY, pairing_id TEXT NOT NULL REFERENCES browser_pairings(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  kind TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', result TEXT, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, done_at TEXT
+);
+CREATE INDEX idx_browser_commands_pending ON browser_commands (pairing_id, status, created_at);
 `;
 
 function appliedIds(db) {

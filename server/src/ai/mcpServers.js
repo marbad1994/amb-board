@@ -10,3 +10,6 @@ const seen = new Map();
 export const cachedTools = (id) => seen.get(id) ?? null;
 export async function toolsOf(server) { const t = await listTools(server); seen.set(server.id, t); return t; }
 export const forget = (id) => seen.delete(id);
+
+import { registerExternalLookup } from '../automations/spec.js';
+registerExternalLookup((ws, userId, name) => { const s = userId ? findServer(ws, userId, name) : null; return s ? { name: s.name, tools: cachedTools(s.id) } : null; });

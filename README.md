@@ -123,6 +123,10 @@ Do not set `NODE_ENV=production` unless the site is served over HTTPS: productio
 
 Set the SMTP values in `server/.env` (see `server/.env.example`; Zoho EU: `smtppro.zoho.eu`, port 465, SSL, sender `admin@makketing.com`, `SMTP_USER` is the full mailbox address and `SMTP_PASS` its password or application-specific password). Restart with `sudo bash deploy.sh`. Each person then turns on "Also email me these notifications" under Workspace & account and can send themselves a test email. Only notifications created after they turn it on are mailed.
 
+## Browser assistant
+
+The assistant can help fill in fields in other web applications through a Chrome extension. In AMB Board open Workspace & account, Browser assistant: download the extension, unzip it, open `chrome://extensions`, enable Developer mode, Load unpacked, create a pairing token and paste it with the site address into the extension. Then click the extension on a tab and press Share this tab. See `docs/AI.md` for what it can and cannot do.
+
 ## Tests
 
 ```bash

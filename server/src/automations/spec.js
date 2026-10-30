@@ -17,10 +17,12 @@ export const STEP_DOCS = {
   create_note: '{"title":"","body":""}',
   create_event: '{"title":"","in_days":1,"time":"HH:mm","timezone":"IANA zone","reminder_minutes":30}',
   notify: '{"title":"may use {{placeholders}}","body":"","link":"/tasks"}',
+  use_tool: '{"tool":"web_search|read_web_page|<a built-in skill such as list_tasks, analyze_spending, project_health, month_summary>|external","args":{"query":"..."},"server":"(external only) name of a connected server","external_tool":"(external only) tool name","allow_write":false,"save_as":"short_name"} runs the tool; later steps can use its text as {{result.short_name}}. A connected tool that is not read-only needs allow_write true',
+  ai_text: '{"instruction":"what to write, e.g. Summarise the news in 3 bullet points","input":"{{result.news}}","save_as":"short_name"} lets the AI write text from the input; use it as {{result.short_name}} (counts against the daily AI limit)',
   generate_report: '{"kind":"overview|monthly_finance|workload|project_status","project_id":""}',
 };
 export const STEP_TYPES = Object.keys(STEP_DOCS);
-export const PLACEHOLDERS = ['date', 'weekday', 'trigger.title', 'trigger.project', 'trigger.priority', 'trigger.description', 'trigger.amount', 'trigger.currency'];
+export const PLACEHOLDERS = ['result.NAME (from a tool or AI step)', 'date', 'weekday', 'trigger.title', 'trigger.project', 'trigger.priority', 'trigger.description', 'trigger.amount', 'trigger.currency'];
 
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -55,7 +57,15 @@ export function validateTrigger(t, role = 'schedule') {
 
 // Structural validation at save time. Templated values cannot be fully checked until a run, so ids that must exist are
 // checked now and the rest is re-validated by the normal action validators when the flow runs.
-export function validateSteps(steps, ws, trigger) {
+// built-in skill names, registered by ai/tools.js (avoids an import cycle)
+let toolNames = () => [];
+export const registerToolNames = (fn) => { toolNames = fn; };
+let externalLookup = () => null;   // (ws, userId, server) -> { name, cached tools or null }
+export const registerExternalLookup = (fn) => { externalLookup = fn; };
+const NAME_RE = /^[a-z][a-z0-9_]{0,19}$/;
+const NOT_IN_FLOWS = new Set(['call_external_tool', 'external_tools', 'generate_report', 'browser_status', 'browser_snapshot', 'browser_fill', 'browser_click']);   // external tools have their own form; reports their own step
+
+export function validateSteps(steps, ws, trigger, userId = null) {
   if (!Array.isArray(steps) || steps.length === 0) return { error: 'at least one step is required' };
   if (steps.length > MAX_STEPS) return { error: `at most ${MAX_STEPS} steps` };
   const out = [];
@@ -95,6 +105,29 @@ export function validateSteps(steps, ws, trigger) {
       const link = str(a.link, 200);
       if (link && !link.startsWith('/')) return { error: `${at}: link must be an app path such as /tasks` };
       out.push({ type, args: { title: str(a.title, 200), body: str(a.body, 500), link } });
+    } else if (type === 'use_tool') {
+      const tool = str(a.tool, 60);
+      const saveAs = str(a.save_as, 20).toLowerCase();
+      if (saveAs && !NAME_RE.test(saveAs)) return { error: `${at}: save_as must be a short lower-case name (letters, digits, underscore)` };
+      const args = a.args && typeof a.args === 'object' && !Array.isArray(a.args) ? a.args : {};
+      if (JSON.stringify(args).length > 2000) return { error: `${at}: arguments too large` };
+      const base = { tool, args, save_as: saveAs };
+      if (tool === 'external') {
+        const info = externalLookup(ws, userId, a.server);
+        if (!info) return { error: `${at}: unknown connected server (connect it first under Workspace & account)` };
+        const t = info.tools?.find((x) => x.name === str(a.external_tool, 80));
+        if (!info.tools) return { error: `${at}: list that server's tools first (the builder does this; the assistant uses the external_tools skill)` };
+        if (!t) return { error: `${at}: unknown tool on that server` };
+        if (!t.read_only && a.allow_write !== true) return { error: `${at}: "${t.name}" may change data outside AMB Board, so the step needs allow_write to confirm it` };
+        out.push({ type, args: { ...base, server: info.name, external_tool: t.name, allow_write: !t.read_only && a.allow_write === true } });
+      } else {
+        if (!toolNames().includes(tool) || NOT_IN_FLOWS.has(tool)) return { error: `${at}: unknown tool "${tool}"` };
+        out.push({ type, args: base });
+      }
+    } else if (type === 'ai_text') {
+      const instruction = str(a.instruction, 1000); if (!instruction) return { error: `${at}: instruction required` };
+      const saveAs = str(a.save_as, 20).toLowerCase(); if (!NAME_RE.test(saveAs)) return { error: `${at}: save_as is required (a short lower-case name)` };
+      out.push({ type, args: { instruction, input: str(a.input, 4000), save_as: saveAs } });
     } else if (type === 'generate_report') {
       if (!['overview', 'monthly_finance', 'workload', 'project_status'].includes(a.kind)) return { error: `${at}: unknown report kind` };
       if (a.kind === 'project_status' && !db.prepare('SELECT 1 FROM projects WHERE id = ? AND workspace_id = ?').get(str(a.project_id, 40), ws)) return { error: `${at}: unknown project` };
@@ -134,7 +167,7 @@ export function describeTrigger(t) {
 }
 
 export function fill(text, ctx) {
-  return String(text ?? '').replace(/\{\{\s*([a-z.]+)\s*\}\}/g, (_, k) => String(ctx[k] ?? ''));
+  return String(text ?? '').replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/g, (_, k) => String(ctx[k] ?? ''));
 }
 
 import { nanoid } from 'nanoid';
