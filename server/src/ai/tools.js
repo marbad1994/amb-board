@@ -33,6 +33,8 @@ export const TOOLS = {
       const r = await generateReport({ workspaceId: ws, user, params: a });
       return { report_id: r.id, title: r.title, kind: r.kind, open_in_app: `/reports/${r.id}`, artifact: { type: 'report', id: r.id, title: r.title } };
     } },
+  list_workspaces: { kind: 'read', doc: 'list_workspaces {} -> every workspace the user belongs to (name, kind personal/shared, their role, which one is current, whether they can copy into it)',
+    run: (ws, a, user) => { const d = workspaceDigest(ws, user?.id); return { current: d.current_workspace, workspaces: d.my_workspaces }; } },
   // ---- the web ----
   web_search: { kind: 'read', async: true, doc: 'web_search {query} -> up to 8 results (title, url, snippet) from the web. The query is sent to an outside search service: never include private data (names of people, amounts, addresses, notes). Use it for facts, documentation, and to find the address of an MCP server',
     run: (ws, a, user) => webSearch(a.query, user?.id) },

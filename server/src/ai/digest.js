@@ -12,7 +12,11 @@ export function workspaceDigest(ws, userId, big = false) {
   const projects = db.prepare(`SELECT p.id, p.name, p.status, p.target_date, la.name AS life_area,
       (SELECT COUNT(*) FROM cards c JOIN columns col ON col.id = c.column_id WHERE col.project_id = p.id AND c.status <> 'done') AS open_tasks
     FROM projects p LEFT JOIN life_areas la ON la.id = p.life_area_id WHERE p.workspace_id = ? AND p.archived_at IS NULL ORDER BY p.created_at DESC LIMIT ?`).all(ws, n);
+  const mine = db.prepare(`SELECT w.id, w.name, w.kind, m.role FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id WHERE m.user_id = ? AND w.archived_at IS NULL ORDER BY w.kind DESC, w.name`).all(userId);
+  const current = mine.find((w) => w.id === ws) || db.prepare('SELECT id, name, kind FROM workspaces WHERE id = ?').get(ws);
   return {
+    current_workspace: current && { id: current.id, name: current.name, kind: current.kind, your_role: current.role },
+    my_workspaces: mine.map((w) => ({ id: w.id, name: w.name, kind: w.kind, your_role: w.role, current: w.id === ws, can_copy_into: w.id !== ws && ['owner', 'admin', 'member'].includes(w.role) })),
     counts: {
       active_projects: one('SELECT COUNT(*) AS n FROM projects WHERE workspace_id = ? AND archived_at IS NULL', ws).n,
       open_tasks: one(`SELECT COUNT(*) AS n FROM cards c JOIN columns col ON col.id = c.column_id JOIN projects p ON p.id = col.project_id WHERE p.workspace_id = ? AND p.archived_at IS NULL AND c.status <> 'done'`, ws).n,

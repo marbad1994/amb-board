@@ -41,7 +41,7 @@ const fakeAi = createServer((req, res) => {
         : user.includes('"tool_results":[]')
         ? { type: 'tool', calls: [{ tool: 'list_projects', args: {} }] }
         : { type: 'final', answer: 'Focus on your renovation project today.', proposals: [
-            { type: 'create_task', args: { project_id: /"id":"([^"]+)"/.exec(user)[1], title: 'Call the contractor', due_date: '2027-01-15', priority: 'high' } },
+            { type: 'create_task', args: { project_id: /"projects":\[\{"id":"([^"]+)"/.exec(user)[1], title: 'Call the contractor', due_date: '2027-01-15', priority: 'high' } },
             { type: 'delete_project', args: { project_id: 'x' } }] };
       res.setHeader('content-type', 'application/json');
       return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }], usage: {} }));
@@ -338,7 +338,7 @@ try {
     await page.getByRole('button', { name: 'What should I focus on today?' }).click();
     await page.getByText('Focus on your renovation project today.').waitFor();
     await page.getByText('Looked at: list projects').waitFor();
-    await page.getByText('1 suggested change was not allowed').waitFor();
+    await page.getByText(/1 suggested change was discarded because it did not match your data/).waitFor();
     await page.getByText('Create task "Call the contractor" in project "Apartment Renovation"').waitFor();
     await page.getByRole('link', { name: 'Tasks', exact: true }).click();
     await page.getByRole('link', { name: 'Order tiles' }).waitFor();
