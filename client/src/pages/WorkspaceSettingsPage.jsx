@@ -142,9 +142,9 @@ function NotificationPrefs() {
   return (
     <section className="panel" aria-labelledby="np-h">
       <div className="panel__title"><h2 id="np-h">Notifications</h2></div>
-      {!prefs ? <p className="muted">Loading…</p> : rows.map(([k, l]) => (
+      {!prefs ? <p className="muted">Loading…</p> : <div className="notify-prefs">{rows.map(([k, l]) => (
         <label key={k} className="check"><input type="checkbox" checked={prefs[k]} onChange={(e) => set(k, e.target.checked)} /> {l}</label>
-      ))}
+      ))}</div>}
       <p className="hint">In-app only for now. Email and push delivery are not set up.</p>
     </section>
   );

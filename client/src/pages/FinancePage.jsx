@@ -36,6 +36,13 @@ export default function FinancePage() {
   }, [month]);
 
   useEffect(() => { load(); }, [load]);
+  // first run: offer the currency the data is actually in, not a hard-coded EUR
+  useEffect(() => {
+    const first = summary?.currencies?.[0]?.currency;
+    if (!first) return;
+    try { if (localStorage.getItem('amb-board.currency')) return; } catch { /* storage unavailable */ }
+    setForm((f) => ({ ...f, currency: first })); setRec((r) => ({ ...r, currency: first }));
+  }, [summary]);
   // refresh whenever the Overview tab is (re)opened, e.g. after the AI wizard imported a statement
   useEffect(() => { if (tab === 'overview') { api.financeTrend(6).then(setTrend).catch(() => {}); load(); } }, [tab, load]);
   useEffect(() => {

@@ -73,6 +73,10 @@ export function BudgetBars({ rows, currency }) {
 }
 
 // points: [{ month, income_minor, expenses_minor }]
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLabel = (ym) => { const [y, m] = String(ym).split('-'); return `${MONTHS[Number(m) - 1] || ym}${m === '01' ? ` ${y.slice(2)}` : ''}`; };
+const compact = (minor) => { const v = Math.abs(minor) / 100; return v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(v >= 1e4 ? 0 : 1)}k` : String(Math.round(v)); };
+
 export function TrendBars({ points, currency }) {
   const max = Math.max(...points.flatMap((p) => [p.income_minor, p.expenses_minor]), 1);
   const W = 420; const H = 150; const base = H - 22; const group = W / points.length; const bw = Math.min(22, group / 3);
@@ -82,12 +86,14 @@ export function TrendBars({ points, currency }) {
         <line x1="0" x2={W} y1={base} y2={base} stroke="var(--color-border)" />
         {points.map((p, i) => {
           const x = i * group + group / 2;
-          const hi = (p.income_minor / max) * (base - 8); const he = (Math.max(p.expenses_minor, 0) / max) * (base - 8);
+          const hi = (p.income_minor / max) * (base - 20); const he = (Math.max(p.expenses_minor, 0) / max) * (base - 20);
           return (
             <g key={p.month}>
               <rect x={x - bw - 1} y={base - hi} width={bw} height={hi} rx={2} fill="#0b7a70"><title>{`${p.month} income ${fmt(p.income_minor, currency)}`}</title></rect>
               <rect x={x + 1} y={base - he} width={bw} height={he} rx={2} fill="#e0a526"><title>{`${p.month} expenses ${fmt(p.expenses_minor, currency)}`}</title></rect>
-              <text x={x} y={H - 6} textAnchor="middle" className="chart__label">{p.month.slice(2)}</text>
+              <text x={x} y={H - 6} textAnchor="middle" className="chart__label">{monthLabel(p.month)}</text>
+              {p.income_minor > 0 && <text x={x - bw / 2 - 1} y={base - hi - 3} textAnchor="middle" className="chart__label chart__label--value">{compact(p.income_minor)}</text>}
+              {p.expenses_minor > 0 && <text x={x + bw / 2 + 1} y={base - he - 3} textAnchor="middle" className="chart__label chart__label--value">{compact(p.expenses_minor)}</text>}
             </g>
           );
         })}

@@ -67,13 +67,14 @@ export default function IdeaBoardPage() {
   };
 
   return (
-    <div className="page">
+    <div className="page page--wide">
       <div className="page-header">
-        <h1>Idea board</h1>
+        <div>
+          <div className="eyebrow">LOOSE THOUGHTS</div>
+          <h1>Idea board</h1>
+          <p className="page-sub">Quick notes from everyone. Speak in English, Romanian or Swedish; notes are saved in English. Turn a good one into a project with "To project".</p>
+        </div>
       </div>
-      <p style={{ color: 'var(--color-text-muted)', marginTop: -8, fontSize: 13 }}>
-        Loose thoughts and ideas from everyone. Speak in English, Romanian or Swedish — notes are saved in English.
-      </p>
 
       {error && <p style={{ color: 'var(--color-danger)' }}>{error}</p>}
 

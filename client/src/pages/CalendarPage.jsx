@@ -26,7 +26,7 @@ export default function CalendarPage() {
   const { active } = useAuth();
   const writable = canWrite(active?.role);
   const [cursor, setCursor] = useState(today());
-  const [view, setView] = useState('month');
+  const [view, setView] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 600 ? 'agenda' : 'month')); // a phone cannot read a month grid
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [modal, setModal] = useState(null);

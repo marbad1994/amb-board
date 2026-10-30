@@ -17,7 +17,7 @@ const NAV = [
     { to: '/life-areas', icon: Layers, text: 'Life Areas' },
   ] },
   { label: 'Manage', items: [
-    { to: '/projects', icon: FolderKanban, text: 'Projects Board' },
+    { to: '/projects', icon: FolderKanban, text: 'Projects' },
     { to: '/tasks', icon: ListChecks, text: 'Tasks' },
     { to: '/goals', icon: Target, text: 'Goals & Habits' },
     { to: '/ideas', icon: StickyNote, text: 'Idea Board' },

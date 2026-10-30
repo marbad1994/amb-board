@@ -94,6 +94,15 @@ router.post('/columns/:columnId/cards', (req, res) => {
   res.status(201).json(fullCard(id));
 });
 
+// A column named like a status keeps card status and column in step (both directions). Custom column names change nothing.
+const COLUMN_STATUS = [['done', /^(done|complete[d]?|finished|closed|gata|terminat)/i], ['blocked', /^block/i], ['doing', /^(in progress|doing|working|ongoing|in curs)/i], ['todo', /^(backlog|to ?do|planned|open|de facut)/i]];
+const statusForColumn = (name) => COLUMN_STATUS.find(([, re]) => re.test(String(name).trim()))?.[0] ?? null;
+function columnForStatus(card, status) {
+  const cols = db.prepare('SELECT c.id, c.name FROM columns c JOIN columns cur ON cur.project_id = c.project_id WHERE cur.id = ? ORDER BY c.position').all(card.column_id);
+  if (statusForColumn(cols.find((c) => c.id === card.column_id)?.name) === status) return null; // already in a matching column
+  return cols.find((c) => statusForColumn(c.name) === status)?.id ?? null;
+}
+
 router.patch('/:id', (req, res) => {
   const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id);
   if (!card) return res.status(404).json({ error: 'not found' });
@@ -126,6 +135,10 @@ router.patch('/:id', (req, res) => {
   db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, due_date = ?, priority = ?, completed_at = ?, recurrence = ?, updated_at = ? WHERE id = ?`)
     .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), dueDate, priority, completedAt, recurrence, ts, req.params.id);
   if (updated.status === 'done' && card.status !== 'done') spawnNextOccurrence({ ...card, recurrence, due_date: dueDate, title: updated.title, description: updated.description, owner: updated.owner, labels: JSON.stringify(labels), priority }, ts);
+  if (updated.status !== card.status) {
+    const target = columnForStatus(card, updated.status);
+    if (target) db.prepare('UPDATE cards SET column_id = ?, position = (SELECT COALESCE(MAX(position), -1) + 1 FROM cards WHERE column_id = ?) WHERE id = ?').run(target, target, req.params.id);
+  }
   res.json(fullCard(req.params.id));
 });
 
@@ -138,6 +151,13 @@ router.post('/:id/move', (req, res) => {
   const targetColumn = columnId || card.column_id;
 
   db.prepare('UPDATE cards SET column_id = ? WHERE id = ?').run(targetColumn, req.params.id);
+  // dropping a card into "In Progress" / "Done" ... updates its status too
+  const newStatus = statusForColumn(db.prepare('SELECT name FROM columns WHERE id = ?').get(targetColumn)?.name);
+  if (newStatus && newStatus !== card.status) {
+    const ts = nowIso();
+    db.prepare('UPDATE cards SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?').run(newStatus, newStatus === 'done' ? (card.completed_at || ts) : null, ts, req.params.id);
+    if (newStatus === 'done') spawnNextOccurrence({ ...card, status: 'done' }, ts);
+  }
 
   if (Array.isArray(order)) {
     const stmt = db.prepare('UPDATE cards SET position = ? WHERE id = ? AND column_id = ?');

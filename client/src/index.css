@@ -335,7 +335,7 @@ textarea {
 
 .page {
   padding: 16px;
-  padding-bottom: 32px;
+  padding-bottom: 96px; /* keeps the last row clear of the floating assistant button */
   max-width: 960px;
   margin: 0 auto;
   width: 100%;
@@ -343,6 +343,7 @@ textarea {
 
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1468,7 +1469,8 @@ input[type='password'] {
 
 .stat-card__num {
   margin-top: 10px;
-  font-size: 30px;
+  font-size: clamp(17px, 1.75vw, 28px);
+  white-space: nowrap;
   font-weight: 800;
   letter-spacing: -0.04em;
 }
@@ -2019,3 +2021,21 @@ code { background: var(--color-surface-alt); padding: 1px 5px; border-radius: 4p
 
 /* the dock button sits bottom-right; keep the idea board's own button clear of it */
 .idea-board__fab { bottom: 92px !important; }
+
+.page-header > div:first-child { min-width: min(100%, 240px); flex: 1 1 260px; }
+.page-header .inline-form { flex-wrap: wrap; }
+@media (max-width: 600px) { .page-header .inline-form > * { flex: 1 1 140px; } }
+.attention li { display: flex; justify-content: space-between; gap: 8px; }
+.attention .is-overdue { color: var(--color-danger); font-weight: 600; }
+
+input[type='file'] { font: inherit; color: var(--color-text-muted); max-width: 100%; }
+input[type='file']::file-selector-button {
+  font: inherit; font-weight: 600; margin-right: 10px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: var(--color-text);
+}
+input[type='file']::file-selector-button:hover { background: var(--color-surface-alt); }
+.notify-prefs { display: flex; flex-direction: column; gap: 10px; }
+
+.status-col.is-over { outline: 2px dashed var(--color-primary); outline-offset: -4px; background: #edf8f6; }
+.is-dragging { opacity: 0.55; }
+.project-card__open { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--color-primary); font-weight: 600; }

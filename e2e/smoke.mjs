@@ -119,7 +119,7 @@ try {
   });
 
   await step('create a project in a life area, open its board, add a task', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByLabel('New project name').fill('Apartment Renovation');
     await page.getByLabel('Life area for new project').selectOption({ label: 'Home & Living' });
     await page.getByRole('button', { name: 'Add', exact: true }).click();
@@ -159,9 +159,18 @@ try {
   });
 
   await step('project board by status: move a project to In Progress; progress shows', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByLabel('Show archived').uncheck();
-    await page.getByLabel('Status of Apartment Renovation').selectOption({ label: 'In Progress' });
+    // default view lists every project; each project opens its own board
+    await page.locator('.project-grid .project-card', { hasText: 'Apartment Renovation' }).getByText('Open board').waitFor();
+    await page.getByRole('button', { name: 'By status' }).click();
+    // drag the project card into the In Progress column
+    const src = await page.locator('.status-col .project-card', { hasText: 'Apartment Renovation' }).boundingBox();
+    const dst = await page.locator('section[aria-label="In Progress"]').boundingBox();
+    await page.mouse.move(src.x + 40, src.y + 20); await page.mouse.down();
+    await page.mouse.move(src.x + 60, src.y + 30, { steps: 5 });
+    await page.mouse.move(dst.x + dst.width / 2, dst.y + 80, { steps: 15 });
+    await page.mouse.up();
     await page.locator('section[aria-label="In Progress"]').getByText('Apartment Renovation').waitFor();
     assert.equal(await page.locator('section[aria-label="To Do"] .project-card').count(), 0);
     await page.getByRole('progressbar', { name: 'Apartment Renovation progress' }).waitFor();
@@ -222,7 +231,7 @@ try {
   });
 
   await step('project budget: set 12,000, add paid 2,500 and planned 10,000 -> remaining, forecast overrun, dashboard alert', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();
     await page.getByRole('button', { name: /Details/ }).click();
     await page.getByText('No budget set.').waitFor();
@@ -298,7 +307,7 @@ try {
   });
 
   await step('AI project summary and daily briefing (mocked provider) show facts and labelling', async () => {
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();
     await page.getByRole('button', { name: /Details/ }).click();
     await page.getByText('Nothing generated yet.').waitFor();
@@ -527,7 +536,7 @@ try {
     assert.match(dl.suggestedFilename(), /^E2E[ -]overview\.html$/);
     await shot(page, '19-report');
     // the dock follows you: on a project board it knows which project you are looking at
-    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).click();
     await page.getByRole('button', { name: /Open assistant/ }).click();
     await page.getByRole('complementary', { name: 'AI assistant' }).getByText('Looking at: A project board').waitFor();
@@ -600,7 +609,7 @@ try {
     await p2.getByLabel('Password').fill(password);
     await p2.getByRole('button', { name: 'Create account' }).click();
     await p2.getByRole('heading', { name: 'Hello, Second' }).waitFor();
-    await p2.getByRole('link', { name: 'Projects Board' }).click();
+    await p2.getByRole('link', { name: 'Projects', exact: true }).click();
     await p2.getByText('No projects here yet.').waitFor();
     assert.equal(await p2.getByText('Apartment Renovation').count(), 0);
     await other.close();
