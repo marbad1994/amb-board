@@ -10,7 +10,7 @@ const SECTIONS = {
 };
 
 // kind: 'project' | 'daily'. Text is rendered as plain text only.
-export default function AiSummaryCard({ kind, projectId, writable, title }) {
+export default function AiSummaryCard({ kind, projectId, writable, title, brief = false }) {
   const [summary, setSummary] = useState(undefined); // undefined = loading, null = none yet
   const [available, setAvailable] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -67,9 +67,9 @@ export default function AiSummaryCard({ kind, projectId, writable, title }) {
         <div className="ai-card__body">
           <p className="ai-card__lead">{kind === 'project' ? c.overview : c.headline}</p>
           {isReview && facts?.period && <p className="hint">Covers {facts.period.start} to {facts.period.end}{facts.period.in_progress ? ' (not over yet)' : ''}.</p>}
-          {SECTIONS[kind].map(([key, label]) => c[key]?.length > 0 && (
+          {(() => { const sections = SECTIONS[kind].map(([key, label]) => c[key]?.length > 0 && (
             <div key={key}><h4>{label}</h4><ul>{c[key].map((t, i) => <li key={i}>{t}</li>)}</ul></div>
-          ))}
+          )); return brief && sections.some(Boolean) ? <details className="ai-more"><summary>Show the full briefing</summary>{sections}</details> : sections; })()}
           {kind === 'daily' && c.suggested_focus && <div><h4>Suggested focus (advice)</h4><p>{c.suggested_focus}</p></div>}
           {summary.stale && <p className="notice">Your data changed since this was written. {writable ? 'Regenerate to update it.' : ''}</p>}
           <p className="hint">

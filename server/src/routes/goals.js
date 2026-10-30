@@ -28,6 +28,8 @@ function present(goal) {
   return { ...goal, milestones, projects, progress, progress_source: source, linked_habits: habits };
 }
 
+export { present as presentGoal };
+
 router.get('/', (req, res) => {
   const filter = req.query.status && ['active', 'achieved', 'archived'].includes(req.query.status) ? req.query.status : null;
   const rows = db.prepare(`SELECT * FROM goals WHERE workspace_id = ? ${filter ? 'AND status = ?' : "AND status <> 'archived'"} ORDER BY (target_date IS NULL), target_date, created_at`)

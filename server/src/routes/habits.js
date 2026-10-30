@@ -19,6 +19,8 @@ function present(h, today = todayUtc()) {
     recent: dates.filter((d) => d >= addDays(today, -13)).sort(), streak: streakFor(h, dates, today) };
 }
 
+export { present as presentHabit, presentChallenge };
+
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM habits WHERE workspace_id = ? AND user_id = ? AND archived_at IS NULL ORDER BY created_at').all(req.ws.id, req.user.id);
   res.json(rows.map((h) => present(h)));
