@@ -3,7 +3,7 @@ import { Plus, Search, Sparkles, X } from 'lucide-react';
 import { CATALOG, StepIcon, newStep, KIND } from './stepMeta.jsx';
 
 // "Add a step": pick by what it does. `suggest` is an optional { item, why } built from the data the earlier steps produced.
-export default function Picker({ title, taskTrigger, hasServers, insideLoop, suggest, onPick, onClose }) {
+export default function Picker({ title, taskTrigger, hasServers, hasSkills, insideLoop, suggest, onPick, onClose }) {
   const [q, setQ] = useState('');
   const ref = useRef(null);
   useEffect(() => {
@@ -14,9 +14,9 @@ export default function Picker({ title, taskTrigger, hasServers, insideLoop, sug
   }, [onClose]);
   const groups = useMemo(() => CATALOG.map((g) => ({
     ...g,
-    items: g.items.filter((it) => (!it.needs || (it.needs === 'taskTrigger' ? taskTrigger : hasServers)) && !(insideLoop && it.noLoop)
+    items: g.items.filter((it) => (!it.needs || (it.needs === 'taskTrigger' ? taskTrigger : it.needs === 'skills' ? hasSkills : hasServers)) && !(insideLoop && it.noLoop)
       && (!q.trim() || `${it.name} ${it.desc} ${g.group}`.toLowerCase().includes(q.trim().toLowerCase()))),
-  })).filter((g) => g.items.length), [q, taskTrigger, hasServers, insideLoop]);
+  })).filter((g) => g.items.length), [q, taskTrigger, hasServers, hasSkills, insideLoop]);
   return (
     <div className="ab-scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="ab-dialog" role="dialog" aria-modal="true" aria-label="Add a step">
