@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
 import { cardInWs, columnInWs } from '../access.js';
-import { PRIORITIES, parseDate } from '../validate.js';
+import { PRIORITIES, parseDate, todayUtc } from '../validate.js';
+import { addDays, addMonths } from '../finance/money.js';
 
 const router = Router();
 
@@ -28,6 +29,20 @@ export function sanitizeLabels(labels) {
     if (clean.length >= 6) break;
   }
   return clean;
+}
+
+const RECURRENCES = ['none', 'daily', 'weekly', 'monthly'];
+
+// When a recurring task is completed, create the next occurrence once (guarded by recurrence_spawned_at).
+function spawnNextOccurrence(card, ts) {
+  if (card.recurrence === 'none' || card.recurrence_spawned_at) return;
+  const base = card.due_date || todayUtc();
+  const next = card.recurrence === 'daily' ? addDays(base, 1) : card.recurrence === 'weekly' ? addDays(base, 7) : addMonths(base, 1);
+  const pos = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS p FROM cards WHERE column_id = ?').get(card.column_id).p;
+  db.prepare(`INSERT INTO cards (id, column_id, title, description, status, owner, creator, labels, position, created_at, updated_at, due_date, priority, recurrence)
+    VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(nanoid(), card.column_id, card.title, card.description, card.owner, card.creator, card.labels, pos, ts, ts, next, card.priority, card.recurrence);
+  db.prepare('UPDATE cards SET recurrence_spawned_at = ? WHERE id = ?').run(ts, card.id);
 }
 
 function fullCard(id) {
@@ -101,10 +116,16 @@ router.patch('/:id', (req, res) => {
     priority = req.body.priority;
   }
   // completion history: stamped when the card first becomes done, cleared if reopened
+  let recurrence = card.recurrence;
+  if (req.body.recurrence !== undefined) {
+    if (!RECURRENCES.includes(req.body.recurrence)) return res.status(400).json({ error: 'invalid recurrence' });
+    recurrence = req.body.recurrence;
+  }
   const ts = nowIso();
   const completedAt = updated.status === 'done' ? (card.completed_at || ts) : null;
-  db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, due_date = ?, priority = ?, completed_at = ?, updated_at = ? WHERE id = ?`)
-    .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), dueDate, priority, completedAt, ts, req.params.id);
+  db.prepare(`UPDATE cards SET title = ?, description = ?, status = ?, owner = ?, creator = ?, labels = ?, due_date = ?, priority = ?, completed_at = ?, recurrence = ?, updated_at = ? WHERE id = ?`)
+    .run(updated.title, updated.description, updated.status, updated.owner, updated.creator, JSON.stringify(labels), dueDate, priority, completedAt, recurrence, ts, req.params.id);
+  if (updated.status === 'done' && card.status !== 'done') spawnNextOccurrence({ ...card, recurrence, due_date: dueDate, title: updated.title, description: updated.description, owner: updated.owner, labels: JSON.stringify(labels), priority }, ts);
   res.json(fullCard(req.params.id));
 });
 

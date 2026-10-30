@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { FolderKanban, ListChecks, StickyNote, Layers } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { fmt } from '../lib/money.js';
 import AiSummaryCard from '../components/AiSummaryCard.jsx';
 import { canWrite } from '../context/AuthContext.jsx';
 import { LifeAreaIcon } from '../lib/lifeAreaIcons.jsx';
 
 const ACTION_LABELS = {
   'project.create': 'created a project', 'project.archive': 'archived a project', 'project.restore': 'restored a project',
-  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'ai.project_summary': 'generated an AI project summary', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
+  'project.delete': 'deleted a project', 'project.status_change': 'changed a project status', 'idea.convert': 'turned an idea into a project', 'ai.project_summary': 'generated an AI project summary', 'transaction.create': 'recorded a transaction', 'transaction.void': 'voided a transaction', 'budget.set': 'set a project budget', 'event.create': 'added a calendar event', 'event.update': 'updated a calendar event', 'event.delete': 'deleted a calendar event', 'lifearea.create': 'added a life area', 'lifearea.update': 'updated a life area',
   'lifearea.archive': 'archived a life area', 'lifearea.restore': 'restored a life area', 'workspace.create': 'created this workspace',
   'invitation.create': 'invited someone', 'invitation.accept': 'joined the workspace', 'member.role_change': 'changed a role',
   'member.remove': 'removed a member', 'member.leave': 'left the workspace', 'workspace.rename': 'renamed the workspace',
@@ -58,7 +59,28 @@ export default function DashboardPage() {
 
           <AiSummaryCard kind="daily" writable={canWrite(active?.role)} title="Daily briefing" />
 
+          {data.budgetAlerts.length > 0 && (
+            <section className="panel" aria-labelledby="dash-alerts" style={{ marginBottom: 16 }}>
+              <div className="panel__title"><h2 id="dash-alerts">Budget alerts</h2></div>
+              <ul className="plain-list">
+                {data.budgetAlerts.map((a) => (
+                  <li key={a.project_id}><Link to={`/projects/${a.project_id}`}>{a.project_name}</Link>
+                    <span>{{ warning: 'Approaching limit', forecast_over: 'Forecast over budget', over: 'Over budget' }[a.status]}: {fmt(a.actual_minor, a.currency)} of {fmt(a.approved_minor, a.currency)} spent{a.forecast_overrun_minor > 0 ? `, forecast overrun ${fmt(a.forecast_overrun_minor, a.currency)}` : ''}</span></li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <div className="dash-grid">
+            <section className="panel" aria-labelledby="dash-events">
+              <div className="panel__title"><h2 id="dash-events">Upcoming events</h2><Link to="/calendar">Calendar</Link></div>
+              {data.upcomingEvents.length === 0 ? <p className="muted">Nothing in the next 7 days.</p> : (
+                <ul className="activity">{data.upcomingEvents.map((e) => (
+                  <li key={e.id}><b>{e.title}</b><small>{e.all_day ? e.start_local : e.start_local.replace('T', ' ')} ({e.timezone})</small></li>
+                ))}</ul>
+              )}
+            </section>
+
             <section className="panel" aria-labelledby="dash-projects">
               <div className="panel__title"><h2 id="dash-projects">Recent projects</h2><Link to="/projects">View all</Link></div>
               {data.recentProjects.length === 0 ? (
@@ -98,7 +120,7 @@ export default function DashboardPage() {
 
             <section className="panel panel--note" aria-labelledby="dash-soon">
               <div className="panel__title"><h2 id="dash-soon">Coming next</h2></div>
-              <p className="muted">My Day, Calendar, Finance, Notes and the AI Assistant are planned but not built yet. They are shown disabled in the sidebar and will appear here as they ship.</p>
+              <p className="muted">My Day, Notes and the AI Assistant are planned but not built yet. They are shown disabled in the sidebar and will appear here as they ship.</p>
             </section>
           </div>
         </>

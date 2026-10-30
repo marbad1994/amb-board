@@ -43,6 +43,7 @@ export function client(base) {
     get: (p, h) => call('GET', p, undefined, h),
     post: (p, b, h) => call('POST', p, b ?? {}, h),
     patch: (p, b, h) => call('PATCH', p, b ?? {}, h),
+    put: (p, b, h) => call('PUT', p, b ?? {}, h),
     del: (p, h) => call('DELETE', p, undefined, h),
     useWorkspace: (id) => { workspaceId = id; },
     get cookie() { return cookie; },

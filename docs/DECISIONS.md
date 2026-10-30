@@ -14,3 +14,10 @@
 | D10 | Rate limiting is in-process memory | Single node; replace with shared store when scaling | Known limitation |
 | D11 | AI providers: DeepSeek and xAI Grok, behind a provider-independent gateway (Phase 4). Existing Grok helper stays | Owner choice 2026-10-30. API keys still needed (`X_GROK_API_KEY`, DeepSeek key) | Approved, not built |
 | D12 | Button teal darkened for contrast (`#0b7a70`); bright teal `#15baa9` for accents on navy | Owner OK 2026-10-30 | Implemented |
+| D13 | Money = integer minor units, positive amounts, direction by type; 2-decimal currencies only | Avoid float error; JPY-style zero-decimal currencies unsupported for now | Implemented |
+| D14 | Budget maths in `finance/calc.js` (actual = posted expenses - refunds, planned separate, forecast = actual + planned); other currencies reported separately, never converted | Spec section 9/10; no FX source chosen | Implemented |
+| D15 | Budget approval/change requires owner or admin; members may record spending | Spec: AI/members must not silently change approved budgets | Implemented |
+| D16 | Calendar feed is derived (events + task due dates + project dates) rather than copied into events | One source of truth; rescheduling a task/project updates the calendar with no sync step | Implemented |
+| D17 | Recurring expenses and tasks materialise lazily (on summary read / on completion), idempotent via external_ref / spawned marker | No scheduler yet; deterministic and testable | Implemented; replace with jobs in hardening |
+| D18 | Event times stored as wall-clock + IANA zone; occurrences keep wall time across DST | Matches how people schedule; UTC instant computed per occurrence | Implemented |
+| D19 | Voiding a transaction (not deleting) | Audit trail; excluded from all totals | Implemented |

@@ -1,3 +1,6 @@
+import { nanoid } from 'nanoid';
+import { DEFAULT_CATEGORIES } from './finance/defaults.js';
+
 // Versioned, forward-only migrations. Each runs once, in a transaction, and is recorded in schema_migrations.
 
 const baseline = `
@@ -215,6 +218,106 @@ const aiTables = `
   );
 `;
 
+const financeCalendar = `
+  ALTER TABLE workspaces ADD COLUMN default_currency TEXT NOT NULL DEFAULT 'EUR';
+  ALTER TABLE cards ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'none' CHECK (recurrence IN ('none','daily','weekly','monthly'));
+  ALTER TABLE cards ADD COLUMN recurrence_spawned_at TEXT;
+
+  CREATE TABLE financial_accounts (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'checking' CHECK (kind IN ('checking','savings','cash','credit','investment')),
+    archived_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_fin_accounts_ws ON financial_accounts(workspace_id);
+
+  CREATE TABLE transaction_categories (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    parent_id TEXT REFERENCES transaction_categories(id) ON DELETE SET NULL,
+    archived_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_tx_categories_ws ON transaction_categories(workspace_id);
+
+  -- Money is stored as integer minor units (cents). Amounts are always positive; 'type' gives the direction.
+  CREATE TABLE transactions (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('income','expense','refund','transfer')),
+    status TEXT NOT NULL DEFAULT 'posted' CHECK (status IN ('posted','planned')),
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    currency TEXT NOT NULL,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    category_id TEXT REFERENCES transaction_categories(id) ON DELETE SET NULL,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    account_id TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL,
+    to_account_id TEXT REFERENCES financial_accounts(id) ON DELETE SET NULL,
+    external_ref TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    voided_at TEXT
+  );
+  CREATE UNIQUE INDEX idx_tx_external ON transactions(workspace_id, external_ref) WHERE external_ref IS NOT NULL;
+  CREATE INDEX idx_tx_ws_date ON transactions(workspace_id, date);
+  CREATE INDEX idx_tx_project ON transactions(project_id);
+
+  CREATE TABLE project_budgets (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    currency TEXT NOT NULL,
+    approved_minor INTEGER NOT NULL CHECK (approved_minor >= 0),
+    alert_pct INTEGER NOT NULL DEFAULT 80 CHECK (alert_pct BETWEEN 1 AND 100),
+    approved_by TEXT,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE recurring_expenses (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    description TEXT NOT NULL,
+    amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+    currency TEXT NOT NULL,
+    category_id TEXT REFERENCES transaction_categories(id) ON DELETE SET NULL,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    frequency TEXT NOT NULL CHECK (frequency IN ('weekly','monthly','yearly')),
+    anchor_date TEXT NOT NULL,         -- first occurrence; month-end days are clamped from this
+    next_date TEXT NOT NULL,
+    is_subscription INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_recurring_ws ON recurring_expenses(workspace_id);
+
+  CREATE TABLE calendar_events (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'appointment' CHECK (kind IN ('appointment','personal')),
+    all_day INTEGER NOT NULL DEFAULT 0,
+    start_local TEXT NOT NULL,         -- wall-clock time in 'timezone': YYYY-MM-DDTHH:mm (or YYYY-MM-DD when all_day)
+    end_local TEXT,
+    timezone TEXT NOT NULL,
+    recurrence TEXT NOT NULL DEFAULT 'none' CHECK (recurrence IN ('none','daily','weekly','monthly','yearly')),
+    recurrence_interval INTEGER NOT NULL DEFAULT 1 CHECK (recurrence_interval BETWEEN 1 AND 52),
+    recurrence_until TEXT,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    card_id TEXT REFERENCES cards(id) ON DELETE SET NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_events_ws ON calendar_events(workspace_id, start_local);
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -225,6 +328,15 @@ export const migrations = [
   { id: '002_foundation', up: (db) => db.exec(foundation) },
   { id: '003_core_management', up: (db) => db.exec(coreManagement) },
   { id: '004_ai', up: (db) => db.exec(aiTables) },
+  { id: '005_finance_calendar', up: (db) => {
+    db.exec(financeCalendar);
+    // existing workspaces get the same default categories new ones receive
+    const ins = db.prepare('INSERT INTO transaction_categories (id, workspace_id, name, created_at) VALUES (?, ?, ?, ?)');
+    const ts = new Date().toISOString();
+    for (const { id } of db.prepare('SELECT id FROM workspaces').all()) {
+      for (const name of DEFAULT_CATEGORIES) ins.run(nanoid(), id, name, ts);
+    }
+  } },
 ];
 
 function appliedIds(db) {
