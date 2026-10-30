@@ -12,6 +12,7 @@ before(async () => {
     const m = JSON.parse(b || '{}'); res.setHeader('content-type', 'application/json');
     seen.push({ auth: req.headers.authorization, key: req.headers['x-api-key'], method: m.method });
     if (req.headers.authorization === 'Bearer revoked') { res.statusCode = 401; return res.end('{}'); }
+    if (req.headers.authorization === 'Bearer forbidden') { res.statusCode = 403; return res.end(JSON.stringify({ error: { code: 403, message: 'Calendar MCP API has not been used in project 123 before or it is disabled.', status: 'PERMISSION_DENIED', details: [{ reason: 'SERVICE_DISABLED' }] } })); }
     if (m.id === undefined) return res.end('{}');
     if (m.method === 'initialize') return res.end(JSON.stringify({ ...MCP, id: m.id, result: { protocolVersion: '2025-03-26', capabilities: {} } }));
     res.end(JSON.stringify({ ...MCP, id: m.id, result: { tools: [{ name: 'list_events', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }] } }));
@@ -114,7 +115,9 @@ test('oauth: authorize with PKCE, finish in the callback, use the token, refresh
 test('a server that rejects the credentials is reported as such, and old connections keep working after the migration', async () => {
   const u = await signUp(srv.base, 'McpReject');
   const r = await u.c.post('/api/ai/assistant/connections', { name: 'rev', url: url(), auth_type: 'bearer', token: 'revoked' });
-  assert.match(r.json.warning, /refused the sign-in \(401\)/);
+  assert.match(r.json.warning, /refused the request \(401\)/);
+  const f = await u.c.post('/api/ai/assistant/connections', { name: 'forb', url: url(), auth_type: 'bearer', token: 'forbidden' });
+  assert.match(f.json.warning, /403\): Calendar MCP API has not been used in project 123.*PERMISSION_DENIED \/ SERVICE_DISABLED/, 'the server\'s own reason is shown');
   // a row written the old way (token in auth_enc, no auth_type given) is still a bearer connection
   const ws = db.prepare('SELECT workspace_id AS w FROM mcp_servers WHERE name = ?').get('rev').w; const uid = db.prepare('SELECT user_id AS u FROM mcp_servers WHERE name = ?').get('rev').u;
   db.prepare('INSERT INTO mcp_servers (id, workspace_id, user_id, name, url, auth_enc, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run('legacy1', ws, uid, 'legacy', url(), secrets.encryptSecret('tok-legacy'), new Date().toISOString());

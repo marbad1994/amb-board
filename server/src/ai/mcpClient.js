@@ -37,7 +37,12 @@ async function rpc(server, body, session) {
   const sid = res.headers.get('mcp-session-id') || session;
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length > MAX_BYTES) throw new Error('the server sent too much data');
-  if (res.status === 401 || res.status === 403) throw new Error(`the server refused the sign-in (${res.status}); check the credentials${server.auth_type === 'oauth' ? ' or authorize again' : ''}`);
+  if (res.status === 401 || res.status === 403) {
+    // say what the server said (Google names a disabled API, a missing scope or a project to fix); it is untrusted text, so it is cut and cleaned
+    let why = ''; try { const j = JSON.parse(buf.toString('utf8')); const e = j.error || j; why = [e.message || e.error_description || (typeof e === 'string' ? e : ''), e.status, ...(Array.isArray(e.details) ? e.details.map((d) => d.reason || d.metadata?.service || '').filter(Boolean) : [])].filter(Boolean).join(' / '); } catch { why = buf.toString('utf8').slice(0, 200); }
+    why = clean(why, 220).trim();
+    throw new Error(`the server refused the request (${res.status})${why ? `: ${why}` : ''}${server.auth_type === 'oauth' ? '. If this is about permissions or scopes, change the scopes and press Sign in again' : ''}`);
+  }
   if (!res.ok) throw new Error(`the server answered ${res.status}`);
   if (body.id === undefined) return { sid };
   let text = buf.toString('utf8');
@@ -71,7 +76,7 @@ export async function listTools(server, force = false) {
     db.prepare('UPDATE mcp_servers SET last_ok_at = ?, last_error = NULL WHERE id = ?').run(nowIso(), server.id);
     return tools;
   } catch (err) {
-    db.prepare('UPDATE mcp_servers SET last_error = ? WHERE id = ?').run(clean(err.message, 200), server.id);
+    db.prepare('UPDATE mcp_servers SET last_error = ? WHERE id = ?').run(clean(err.message, 320), server.id);
     throw err;
   }
 }
