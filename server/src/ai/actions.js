@@ -78,7 +78,7 @@ export function validateProposal(type, args, ws, user = null) {
     if (automationCount(ws) >= MAX_AUTOMATIONS) return { error: `a workspace can have at most ${MAX_AUTOMATIONS} automations` };
     const t = validateTrigger(a.trigger);
     if (t.error) return { error: t.error };
-    const st = validateSteps(a.steps, ws, t.trigger);
+    const st = validateSteps(a.steps, ws, t.trigger, user?.id ?? null);
     if (st.error) return { error: st.error };
     return { payload: { name, trigger: t.trigger, steps: st.steps }, target: { entity: 'automation', id: null },
       description: `Create automation "${name}": ${describeTrigger(t.trigger)}, then ${st.steps.length} step${st.steps.length === 1 ? '' : 's'} (${st.steps.map((x) => x.type.replace(/_/g, ' ')).join(', ')}), runs as you` };

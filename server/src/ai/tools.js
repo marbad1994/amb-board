@@ -8,7 +8,7 @@ import { monthBudget } from '../finance/budget.js';
 import { crossReference, analyzeSpending, analyzeWorkload, projectHealth, findGaps } from './analysis.js';
 import { generateReport, PRESETS, SECTION_IDS } from '../reports/build.js';
 import { workspaceDigest } from './digest.js';
-import { describeTrigger } from '../automations/spec.js';
+import { describeTrigger, registerToolNames } from '../automations/spec.js';
 import { userServers, findServer, toolsOf } from './mcpServers.js';
 import { callTool } from './mcpClient.js';
 import { webSearch, readWebPage } from './web.js';
@@ -168,6 +168,8 @@ export const TOOLS = {
     },
   },
 };
+
+registerToolNames(() => Object.keys(TOOLS));
 
 export function runTool(name, args, ws, user = null) {
   const tool = Object.hasOwn(TOOLS, name) ? TOOLS[name] : null;

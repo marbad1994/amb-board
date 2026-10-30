@@ -175,6 +175,7 @@ export const api = {
   suggestions: (context) => request(`/ai/assistant/suggestions${context ? `?context=${encodeURIComponent(context)}` : ''}`),
   dismissSuggestion: (key, days = 1) => request('/ai/assistant/suggestions/dismiss', json('POST', { key, days })),
   automationMeta: () => request('/automations/meta'),
+  automationTools: () => request('/automations/tools'),
   listAutomations: () => request('/automations'),
   getAutomation: (id) => request(`/automations/${id}`),
   createAutomation: (data) => request('/automations', json('POST', data)),

@@ -9,12 +9,14 @@ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 const FREQ = [['daily', 'Every day'], ['weekdays', 'Every weekday (Mon to Fri)'], ['weekly', 'Every week'], ['monthly', 'Every month'], ['once', 'Once']];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const LABEL = { create_task: 'Create a task', update_task: 'Change the triggering task', add_comment: 'Comment on the triggering task', create_transaction: 'Record a transaction',
-  create_note: 'Write a note', create_event: 'Add a calendar event', notify: 'Send me a notification', generate_report: 'Generate a report' };
+  create_note: 'Write a note', create_event: 'Add a calendar event', notify: 'Send me a notification', generate_report: 'Generate a report',
+  use_tool: 'Use a tool (web search, built-in skill, connected tool)', ai_text: 'Write text with AI' };
 const REPORTS = [['overview', 'Overview'], ['monthly_finance', 'Monthly finance'], ['workload', 'Workload'], ['project_status', 'Project status']];
 
 const DEFAULT_ARGS = {
   create_task: { project_id: '', title: '', due_in_days: '', priority: 'medium' }, update_task: { status: '', priority: '', due_in_days: '' }, add_comment: { text: '' },
   create_transaction: { type: 'expense', amount: '', currency: 'EUR', description: '', category: '', status: 'planned' }, create_note: { title: '', body: '' },
+  use_tool: { tool: 'web_search', args: { query: '' }, save_as: '' }, ai_text: { instruction: '', input: '', save_as: '' },
   create_event: { title: '', in_days: 1, time: '09:00', timezone: TZ, reminder_minutes: 30 }, notify: { title: '', body: '', link: '/tasks' }, generate_report: { kind: 'overview', project_id: '' },
 };
 
@@ -24,7 +26,40 @@ function Field({ label, children, wide }) {
   return <label className="field" style={wide ? { gridColumn: '1 / -1' } : undefined}><span className="field__label">{label}</span>{children}</label>;
 }
 
-function StepFields({ step, set, projects, categories, trigger }) {
+function ToolFields({ a, set, tools }) {
+  const group = a.tool === 'web_search' || a.tool === 'read_web_page' ? a.tool : a.tool === 'external' ? 'external' : 'internal';
+  const server = tools?.servers?.find((s) => s.name === a.server);
+  const ext = server?.tools?.find((t) => t.name === a.external_tool);
+  const setGroup = (g) => set(g === 'web_search' ? { tool: 'web_search', args: { query: '' }, save_as: a.save_as } : g === 'read_web_page' ? { tool: 'read_web_page', args: { url: '' }, save_as: a.save_as }
+    : g === 'external' ? { tool: 'external', server: tools?.servers?.[0]?.name || '', external_tool: '', args: {}, argsText: '{}', save_as: a.save_as } : { tool: tools?.internal?.[0]?.name || 'list_tasks', args: {}, argsText: '{}', save_as: a.save_as });
+  return (
+    <div className="flow-row">
+      <label className="field"><span className="field__label">Tool</span>
+        <select value={group} onChange={(e) => setGroup(e.target.value)}>
+          <option value="web_search">Search the web</option><option value="read_web_page">Read a web page</option>
+          <option value="internal">Built-in skill (tasks, spending, projects...)</option><option value="external" disabled={!tools?.servers?.length}>Connected tool (MCP){tools?.servers?.length ? '' : ' - none connected'}</option>
+        </select></label>
+      {group === 'web_search' && <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Search for</span><input value={a.args?.query || ''} onChange={(e) => set({ args: { query: e.target.value } })} placeholder="e.g. interest rates Romania today" /></label>}
+      {group === 'read_web_page' && <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Page address (https)</span><input value={a.args?.url || ''} onChange={(e) => set({ args: { url: e.target.value } })} placeholder="https://..." /></label>}
+      {group === 'internal' && (<>
+        <label className="field"><span className="field__label">Skill</span><select value={a.tool} onChange={(e) => set({ tool: e.target.value })}>{(tools?.internal || []).map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}</select></label>
+        <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Arguments (JSON, optional)</span><input value={a.argsText ?? JSON.stringify(a.args || {})} onChange={(e) => set({ argsText: e.target.value })} /></label>
+        <p className="hint" style={{ gridColumn: '1 / -1' }}>{(tools?.internal || []).find((t) => t.name === a.tool)?.doc}</p>
+      </>)}
+      {group === 'external' && (<>
+        <label className="field"><span className="field__label">Server</span><select value={a.server || ''} onChange={(e) => set({ server: e.target.value, external_tool: '' })}>{(tools?.servers || []).map((s) => <option key={s.name}>{s.name}</option>)}</select></label>
+        <label className="field"><span className="field__label">Tool</span><select value={a.external_tool || ''} onChange={(e) => set({ external_tool: e.target.value, allow_write: false })}><option value="">Choose a tool</option>{(server?.tools || []).map((t) => <option key={t.name} value={t.name}>{t.name}{t.read_only ? ' (read-only)' : ' (can change data)'}</option>)}</select></label>
+        <label className="field" style={{ gridColumn: '1 / -1' }}><span className="field__label">Arguments (JSON)</span><input value={a.argsText ?? JSON.stringify(a.args || {})} onChange={(e) => set({ argsText: e.target.value })} /></label>
+        {ext && !ext.read_only && <label className="check" style={{ gridColumn: '1 / -1' }}><input type="checkbox" checked={!!a.allow_write} onChange={(e) => set({ allow_write: e.target.checked })} /> I allow this automation to change data in "{a.server}" every time it runs</label>}
+        {server?.error && <p className="form-error" style={{ gridColumn: '1 / -1' }}>{server.error}</p>}
+      </>)}
+      <label className="field"><span className="field__label">Save the result as</span><input value={a.save_as || ''} maxLength={20} onChange={(e) => set({ save_as: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="e.g. news" /></label>
+      {a.save_as && <p className="hint" style={{ alignSelf: 'end' }}>Later steps can use it as {'{{result.' + a.save_as + '}}'}</p>}
+    </div>
+  );
+}
+
+function StepFields({ step, set, projects, categories, trigger, tools }) {
   const a = step.args; const up = (k) => (e) => set({ ...a, [k]: e.target.value });
   const projectSelect = (k) => <select value={a[k]} onChange={up(k)}><option value="">Choose a project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>;
   const days = (k, label) => <Field label={label}><input type="number" min="0" max="3650" value={a[k] ?? ''} onChange={up(k)} placeholder="no date" /></Field>;
@@ -49,13 +84,19 @@ function StepFields({ step, set, projects, categories, trigger }) {
       <Field label="Remind (minutes before)"><input type="number" min="0" value={a.reminder_minutes ?? ''} onChange={up('reminder_minutes')} /></Field></div>);
     case 'notify': return (<div className="flow-row"><Field label="Title"><input value={a.title} onChange={up('title')} maxLength={200} placeholder="e.g. Plan your week" /></Field><Field label="Message"><input value={a.body} onChange={up('body')} maxLength={500} /></Field>
       <Field label="Opens"><select value={a.link} onChange={up('link')}>{[['/tasks', 'Tasks'], ['/my-day', 'My Day'], ['/finance', 'Finance'], ['/calendar', 'Calendar'], ['/reports', 'Reports'], ['/automations', 'Automations']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field></div>);
+    case 'use_tool': return <ToolFields a={a} set={(patch) => set({ ...a, ...patch })} tools={tools} />;
+    case 'ai_text': return (<div className="flow-row">
+      <Field label="What should the AI write?" wide><input value={a.instruction} onChange={up('instruction')} maxLength={1000} placeholder="e.g. Summarise the news below in 3 bullet points" /></Field>
+      <Field label="Material to use" wide><textarea rows={2} value={a.input} onChange={up('input')} placeholder="e.g. {{result.news}}" /></Field>
+      <Field label="Save the text as"><input value={a.save_as} maxLength={20} onChange={(e) => set({ ...a, save_as: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="e.g. summary" /></Field>
+      <p className="hint" style={{ alignSelf: 'end' }}>Counts against the daily AI limit. Use it later as {'{{result.' + (a.save_as || 'name') + '}}'}</p></div>);
     case 'generate_report': return (<div className="flow-row"><Field label="Report"><select value={a.kind} onChange={up('kind')}>{REPORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
       {a.kind === 'project_status' && <Field label="Project">{projectSelect('project_id')}</Field>}</div>);
     default: return trigger && null;
   }
 }
 
-function Builder({ initial, projects, categories, meta, onSave, onCancel }) {
+function Builder({ initial, projects, categories, meta, tools, onSave, onCancel }) {
   const [f, setF] = useState(initial || blank());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -77,7 +118,15 @@ function Builder({ initial, projects, categories, meta, onSave, onCancel }) {
     e.preventDefault(); setBusy(true); setError('');
     const clean = (a) => Object.fromEntries(Object.entries(a).map(([k, v]) => [k, v === '' ? (k.endsWith('_days') || k === 'reminder_minutes' ? null : v) : v]));
     const trigger = t.type === 'event' ? { type: 'event', event: t.event || 'task_done', conditions: t.conditions || {} } : t;
-    try { await onSave({ name: f.name, trigger, steps: f.steps.map((s) => ({ type: s.type, args: clean(s.args) })) }); } catch (err) { setError(err.message); setBusy(false); }
+    try {
+      const steps = f.steps.map((s, i) => {
+        const args = clean(s.args);
+        if (s.type === 'use_tool' && args.argsText !== undefined) { try { args.args = args.argsText.trim() ? JSON.parse(args.argsText) : {}; } catch { throw new Error(`Step ${i + 1}: the arguments are not valid JSON`); } }
+        delete args.argsText;
+        return { type: s.type, args };
+      });
+      await onSave({ name: f.name, trigger, steps });
+    } catch (err) { setError(err.message); setBusy(false); }
   };
 
   return (
@@ -128,7 +177,7 @@ function Builder({ initial, projects, categories, meta, onSave, onCancel }) {
               <button type="button" className="btn btn-icon btn-ghost" disabled={i === f.steps.length - 1} onClick={() => move(i, 1)} aria-label={`Move step ${i + 1} down`}><ArrowDown size={16} /></button>
               <button type="button" className="btn btn-icon btn-ghost" disabled={f.steps.length === 1} onClick={() => setF((x) => ({ ...x, steps: x.steps.filter((_, j) => j !== i) }))} aria-label={`Remove step ${i + 1}`}><X size={16} /></button>
             </div>
-            <StepFields step={s} set={(args) => setStep(i, args)} projects={projects} categories={categories} trigger={t} />
+            <StepFields step={s} set={(args) => setStep(i, args)} projects={projects} categories={categories} trigger={t} tools={tools} />
           </div>
         ))}
         {f.steps.length < 10 && <button type="button" className="btn" onClick={() => setF((x) => ({ ...x, steps: [...x.steps, { type: 'notify', args: { ...DEFAULT_ARGS.notify } }] }))}><Plus size={16} aria-hidden="true" /> Add a step</button>}
@@ -153,6 +202,7 @@ export default function AutomationsPage() {
   const [meta, setMeta] = useState(null);
   const [projects, setProjects] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [tools, setTools] = useState(null);
   const [editing, setEditing] = useState(null);   // null | 'new' | automation
   const [error, setError] = useState('');
   const [result, setResult] = useState({});
@@ -163,6 +213,7 @@ export default function AutomationsPage() {
     api.automationMeta().then(setMeta).catch(() => {});
     api.listProjects().then(setProjects).catch(() => {});
     api.listCategories().then(setCategories).catch(() => {});
+    api.automationTools().then(setTools).catch(() => {});
   }, [load]);
 
   const save = async (body) => {
@@ -189,7 +240,7 @@ export default function AutomationsPage() {
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
 
-      {editing && <Builder initial={editing === 'new' ? null : { name: editing.name, trigger: editing.trigger, steps: editing.steps }} projects={projects} categories={categories} meta={meta} onSave={save} onCancel={() => setEditing(null)} />}
+      {editing && <Builder initial={editing === 'new' ? null : { name: editing.name, trigger: editing.trigger, steps: editing.steps }} projects={projects} categories={categories} meta={meta} tools={tools} onSave={save} onCancel={() => setEditing(null)} />}
 
       {!editing && items === null && !error && <p>Loading...</p>}
       {!editing && items && items.length === 0 && (
