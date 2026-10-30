@@ -2204,7 +2204,7 @@ input[type='file']::file-selector-button:hover { background: var(--color-surface
 .ac-card--rejected, .ac-card--expired { background: var(--color-surface-alt); border-color: var(--color-border); }
 .ac-card--rejected .ac-card__label, .ac-card--expired .ac-card__label { color: var(--color-text-muted); }
 .ac-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.ac-btn { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); font: 600 14px inherit; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.ac-btn { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); font-family: inherit; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .ac-btn:hover:not(:disabled) { border-color: var(--color-primary); }
 .ac-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .ac-btn--primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
@@ -2213,9 +2213,9 @@ input[type='file']::file-selector-button:hover { background: var(--color-surface
 .ac-test { align-self: stretch; background: var(--color-surface); border: 1px solid var(--ac-line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .ac-test p { margin: 0; font-size: 13px; }
 .ac-test small { font-size: 12px; color: var(--color-text-muted); }
-.ac-test__out { margin: 0; max-height: 220px; overflow: auto; background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 12px; font: inherit; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ac-test__out { margin: 0; max-height: 220px; overflow: auto; background: var(--color-surface-alt); border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 12px; font-family: inherit; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ac-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.ac-chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--color-primary); background: var(--color-surface); color: var(--color-text); font: 500 13px inherit; display: inline-flex; align-items: center; text-align: left; cursor: pointer; }
+.ac-chip { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--color-primary); background: var(--color-surface); color: var(--color-text); font-family: inherit; font-weight: 500; font-size: 13px; display: inline-flex; align-items: center; text-align: left; cursor: pointer; }
 .ac-chip:hover, .ac-chip:focus-visible { background: var(--color-primary); color: #fff; }
 .ac-rate { display: flex; gap: 2px; align-items: center; margin-left: -6px; }
 .ac-rate small { font-size: 11px; color: var(--color-text-muted); margin-left: 6px; }
@@ -2232,7 +2232,7 @@ input[type='file']::file-selector-button:hover { background: var(--color-surface
 .ac-can > div { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px 12px; font-size: 12px; line-height: 1.5; color: var(--color-text-muted); }
 .ac-can b { display: block; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; color: var(--color-text); }
 .ac-start { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.ac-task { min-height: 56px; text-align: left; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 8px 12px; font: 600 13px inherit; color: var(--color-text); display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.ac-task { min-height: 56px; text-align: left; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 8px 12px; font-family: inherit; font-weight: 600; font-size: 13px; color: var(--color-text); display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .ac-task:hover:not(:disabled) { border-color: var(--color-primary); }
 .ac-task__i { width: 30px; height: 30px; border-radius: 8px; background: var(--ac-tint); color: var(--color-primary); display: grid; place-items: center; flex: none; }
 .ac-hint { font-size: 11px; color: var(--color-text-muted); }
@@ -2242,12 +2242,27 @@ input[type='file']::file-selector-button:hover { background: var(--color-surface
 .ac-menu small { font-size: 12px; color: var(--color-text-muted); }
 .ac-composer { padding: 10px 16px 14px; background: var(--color-surface); border-top: 1px solid var(--color-border); }
 .ac-field { display: flex; gap: 8px; align-items: flex-end; }
-.ac-field textarea { flex: 1; min-height: 48px; max-height: 140px; resize: none; border: 1px solid var(--color-border); border-radius: 12px; padding: 12px 14px; font: inherit; font-size: 14px; line-height: 1.4; background: var(--color-surface); color: var(--color-text); box-sizing: border-box; }
+.ac-field textarea { flex: 1; min-height: 48px; max-height: 140px; resize: none; border: 1px solid var(--color-border); border-radius: 12px; padding: 12px 14px; font-family: inherit; font-size: 14px; line-height: 1.4; background: var(--color-surface); color: var(--color-text); box-sizing: border-box; }
 .ac-field textarea:focus { outline: 2px solid var(--color-primary); outline-offset: 0; }
-.ac-send, .ac-stop { min-height: 48px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; font: 600 14px inherit; }
+.ac-send, .ac-stop { min-height: 48px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 14px; }
 .ac-send { width: 48px; background: var(--color-primary); color: #fff; border: 0; }
 .ac-send:disabled { background: var(--color-border); cursor: not-allowed; }
 .ac-stop { padding: 0 16px; background: var(--color-surface); color: var(--color-text); border: 2px solid var(--color-text); }
 .ac-composer .ac-hint { margin-top: 8px; }
 .ac--compact .ac-u, .ac--compact .ac-b { font-size: 14px; }
 @media (max-width: 480px) { .ac-can, .ac-start { grid-template-columns: 1fr; } }
+
+/* conversation: less chrome, one bubble per answer, answer options as a list */
+.ac-trust { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--ac-tint); color: var(--color-text); font-size: 12px; line-height: 1.4; }
+.ac-trust svg { flex: none; color: var(--color-primary); margin-top: 1px; }
+.ac-skill { padding: 6px 12px; gap: 10px; }
+.ac-skill__name { flex-direction: row; align-items: baseline; gap: 8px; }
+.ac-skill__name b { font-size: 13px; }
+.ac-skill .ac-btn--small { min-height: 32px; }
+.ac-thread { padding: 12px 14px; gap: 8px; }
+.ac-intro { padding-top: 0; }
+.dock__head { padding-top: 10px; padding-bottom: 10px; }
+.ac-opts { display: flex; flex-direction: column; gap: 6px; align-self: stretch; margin-top: 2px; }
+.ac-opt { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-surface); color: var(--color-text); font-family: inherit; font-weight: 500; font-size: 14px; line-height: 1.35; text-align: left; cursor: pointer; }
+.ac-opt:hover, .ac-opt:focus-visible { border-color: var(--color-primary); background: var(--ac-tint); }
+.ac-opt kbd { flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--color-surface-alt); color: var(--color-text-muted); display: grid; place-items: center; font-family: inherit; font-weight: 600; font-size: 12px; }

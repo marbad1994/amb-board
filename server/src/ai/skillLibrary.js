@@ -6,7 +6,7 @@ const CREATE_AUTOMATION = `Goal: take the user from an idea to an automation tha
 
 How to work:
 1. On the first turn call automation_guide (once) and workspace_overview if you need ids. Read what the user already told you, including pasted documentation, and treat everything stated as answered. Never ask something the user already said.
-2. Keep a DRAFT in your head with: name, when it runs (trigger), steps in order, what each step uses (built-in skill, web search, a connected tool, AI text), and where the result goes (notification, email, task, note, report). Start every answer with the draft in one or two lines ("So far: every Monday 08:00, search TikTok trends, summarise, email you").
+2. Keep a DRAFT in your head with: name, when it runs (trigger), steps in order, what each step uses (built-in skill, web search, a connected tool, AI text), and where the result goes (notification, email, task, note, report). Once at least one thing is decided, begin the answer with the draft in one line ("So far: every Monday 08:00, search TikTok trends, email you"). While nothing is decided, do not write a "So far" line at all.
    Steps you can combine: use_tool (web search, built-in skills, connected tools), scrape (fetch a page as text, links, feed, json or meta), parse (turn raw text into clean JSON or another format; preselected JSON, or a custom parsing prompt), loop (run steps for every item of a list), ai_text, notify, send_email, create_*. Output of one step is the input of the next: {{result.NAME}}, {{result.NAME.0.field}}, {{item.field}} inside loops.
 3. Each turn do exactly ONE of these:
    - ask the single most important missing question, with 2-4 "suggestions" that are real, complete answers the user can click (for example "Every weekday at 08:00", "Every Monday at 09:00", "When a task is completed"). The user can always type something else.
@@ -18,6 +18,13 @@ How to work:
 6. If the user asks something unrelated, answer it briefly and bring them back to the current step. If the user changes their mind, update the draft and continue. If something fails (a dropped proposal, an unknown tool), say what, fix it, and continue.
 7. Do not end any answer without either a question with suggestions, a proposal for the user to approve, or "done".
 
+HARD FORMAT (every answer while this skill runs):
+- At most 3 short sentences, plus the "So far" line when something is decided.
+- Exactly ONE question, always the last sentence. Never ask two things, never ask about something already answered or something that comes later.
+- Do not describe the workspace, the tools you loaded or what you could build. Do not list ideas or alternatives in the text: the clickable "suggestions" are the alternatives.
+- "suggestions" are 2-4 complete answers to YOUR question, never "something else" or "I will describe it" (the user can always type).
+- Go one step at a time. Never jump ahead to the next topic before this one is answered.
+
 Set "done": true only when the automation exists and the user has nothing left to change, or the user says they are finished.`;
 
 const ADD_TRANSACTION = `Goal: record ONE transaction correctly with as few questions as possible. You drive; never end a turn without a question with suggestions, the proposal, or "done".
@@ -25,23 +32,37 @@ Slots: type (expense, income or refund), amount, currency, date, description, ca
 1. Take everything the user already said ("45 euro on groceries today"). Defaults: date today, currency the one used in recent transactions (see the workspace data) or ask once, status posted for past dates and planned for future ones.
 2. Ask ONLY for what is missing, one question per turn, with 2-4 clickable suggestions (for example likely categories from the workspace list, or "Today" and "Yesterday"). Use an existing category name exactly; if none fits, offer to create one with create_category first.
 3. When all slots are known, restate them in one line and propose create_transaction. Suggestions: "Yes, record it", "Change something", "Add another".
-4. After "Add another" start again; after the user is satisfied set "done": true.`;
+4. After "Add another" start again; after the user is satisfied set "done": true.
+
+HARD FORMAT: at most 3 short sentences; exactly ONE question as the last sentence; no lists of ideas in the text; "suggestions" are 2-4 complete answers to your question, never "something else"; one step at a time.`;
 
 const ADD_TASK = `Goal: create ONE task with a sensible project, due date and priority. You drive; never end a turn without a question with suggestions, the proposal, or "done".
 Slots: title, project, due date, priority.
 1. Take what the user already said ("call the plumber tomorrow"). Convert relative dates to YYYY-MM-DD and say which date you chose. If the title is vague, keep it as the user wrote it.
 2. Project: if the current view is a project, use it; otherwise propose the 2-3 most likely projects from the workspace data as suggestions. Ask only if you really cannot tell.
 3. Due date and priority: do not ask unless the user hinted at urgency or a deadline; offer them as optional suggestions on the final confirmation ("Add a due date", "Make it high priority").
-4. Propose create_task. Suggestions: "Yes, add it", "Add a due date", "Add another task". Set "done": true when the user is finished.`;
+4. Propose create_task. Suggestions: "Yes, add it", "Add a due date", "Add another task". Set "done": true when the user is finished.
+
+HARD FORMAT: at most 3 short sentences; exactly ONE question as the last sentence; no lists of ideas in the text; "suggestions" are 2-4 complete answers to your question, never "something else"; one step at a time.`;
 
 const ADD_EVENT = `Goal: put ONE event on the calendar with the right local time. You drive; never end a turn without a question with suggestions, the proposal, or "done".
 Slots: title, date, start time, end time or duration, time zone (default: the user's), reminder.
 1. Take what the user already said ("dentist on Friday at 10"). Convert relative dates to YYYY-MM-DD and state the date you chose. Assume 1 hour when no end is given and say so.
 2. Ask only what is missing, one question per turn, with clickable suggestions (for example "Friday 10:00", "Friday 14:00"). Check list_events for the same time and warn about a clash.
 3. Restate in one line and propose create_event with a reminder of 30 minutes unless told otherwise. Suggestions: "Yes, add it", "Change the time", "Add another".
-4. Set "done": true when the user is finished.`;
+4. Set "done": true when the user is finished.
+
+HARD FORMAT: at most 3 short sentences; exactly ONE question as the last sentence; no lists of ideas in the text; "suggestions" are 2-4 complete answers to your question, never "something else"; one step at a time.`;
 
 const PROGRESS = '\n\nIn every answer include "progress":{"step":n,"of":N}: which step of how many (for example question 2 of 4) you are on, so the user sees how far along they are.';
+
+// Fixed first message when a skill is started without details: instant, always the same, and never ahead of itself.
+const OPENING = {
+  'create-automation': { answer: 'What should this automation do? One sentence is enough, for example "every Monday, email me a project digest".', suggestions: ['Email me a weekly digest', 'Alert me about a big expense', 'Search the web every morning and email it', 'Fix an automation that failed'], progress: { step: 1, of: 4 } },
+  'add-transaction': { answer: 'What did you spend or receive? For example "45 euro on groceries today".', suggestions: [], progress: { step: 1, of: 3 } },
+  'add-task': { answer: 'What is the task? For example "call the plumber tomorrow".', suggestions: [], progress: { step: 1, of: 3 } },
+  'add-event': { answer: 'What is the event, and when? For example "dentist on Friday at 10".', suggestions: [], progress: { step: 1, of: 3 } },
+};
 
 export const BUILTIN_SKILLS = [
   { name: 'add-transaction', description: 'Record an expense or income, asking only for what is missing', body: ADD_TRANSACTION + PROGRESS },
@@ -50,3 +71,5 @@ export const BUILTIN_SKILLS = [
   { name: 'create-automation', description: 'Guided interview that designs and creates an automation, step by step, until it is done', body: CREATE_AUTOMATION + PROGRESS },
   { name: 'amb-workflow', description: 'How to review, plan and change the workspace: reviews, finance, projects, automations, careful money handling', body: AMB_WORKFLOW },
 ];
+
+for (const sk of BUILTIN_SKILLS) if (OPENING[sk.name]) sk.opening = OPENING[sk.name];

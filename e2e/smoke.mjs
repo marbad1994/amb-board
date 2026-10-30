@@ -591,6 +591,7 @@ try {
     await page.getByRole('button', { name: 'Send' }).click();
     await page.getByText('When should it run?').waitFor();
     await page.getByText('/create-automation', { exact: true }).waitFor();
+    await shot(page, '27-guided');
     await page.getByRole('button', { name: 'Every Monday at 08:00' }).click();
     await page.getByText('Scheduled for Mondays. All set.').waitFor();
     await page.getByText('/create-automation', { exact: true }).waitFor({ state: 'detached' });
