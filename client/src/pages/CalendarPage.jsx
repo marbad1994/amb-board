@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, TriangleAlert } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
@@ -31,6 +31,13 @@ export default function CalendarPage() {
   const [error, setError] = useState('');
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('all');
+  const location = useLocation();
+  const navigate = useNavigate();
+  // "Edit first" from the assistant: open the new-event form with the proposed values filled in
+  useEffect(() => {
+    const pre = location.state?.prefillEvent;
+    if (pre) { setModal({ date: pre.start_local?.slice(0, 10) || today(), prefill: pre }); navigate('/calendar', { replace: true, state: null }); }
+  }, [location.state, navigate]);
 
   const dates = rangeFor(view, cursor);
   const from = dates[0];
@@ -114,7 +121,7 @@ export default function CalendarPage() {
         </section>
       )}
 
-      {modal && <EventModal event={modal.event} date={modal.date} writable={writable} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
+      {modal && <EventModal event={modal.event} prefill={modal.prefill} date={modal.date} writable={writable} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
     </div>
   );
 }

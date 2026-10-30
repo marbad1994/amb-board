@@ -4,6 +4,9 @@ import { can, audit } from '../access.js';
 import { AiUnavailableError, AiLimitError, AiFailureError } from '../ai/gateway.js';
 import { chat, listConversations, getConversation, presentProposal, expireOld } from '../ai/assistant.js';
 import { executeProposal } from '../ai/actions.js';
+import { computeSuggestions, dismiss } from '../ai/suggestions.js';
+import { TOOLS } from '../ai/tools.js';
+import { ACTION_TYPES, PROPOSAL_DOCS } from '../ai/actions.js';
 
 const router = Router();
 
@@ -29,7 +32,7 @@ router.post('/chat', async (req, res) => {
   if (!message) return res.status(400).json({ error: 'message is required' });
   if (message.length > 2000) return res.status(400).json({ error: 'message is too long (2000 characters max)' });
   try {
-    const out = await chat({ workspaceId: req.ws.id, user: req.user, role: req.ws.role, conversationId: req.body.conversationId, message });
+    const out = await chat({ workspaceId: req.ws.id, user: req.user, role: req.ws.role, conversationId: req.body.conversationId, message, context: req.body.context });
     if (out.notFound) return res.status(404).json({ error: 'not found' });
     res.json(out);
   } catch (err) { fail(res, err); }
@@ -69,6 +72,29 @@ router.post('/proposals/:id/reject', (req, res) => {
   db.prepare("UPDATE ai_action_proposals SET status = 'rejected', decided_at = ?, decided_by = ? WHERE id = ?").run(nowIso(), req.user.id, p.id);
   audit(req, 'ai.action_rejected', 'proposal', p.id, { type: p.type });
   res.json(presentProposal(db.prepare('SELECT * FROM ai_action_proposals WHERE id = ?').get(p.id)));
+});
+
+// Proactive next steps. Free (no AI call); `context=project:<id>` or `context=finance` adds page-specific ones.
+router.get('/suggestions', (req, res) => {
+  const [page, id] = String(req.query.context || '').split(':');
+  res.json({ suggestions: computeSuggestions({ workspaceId: req.ws.id, userId: req.user.id, role: req.ws.role, context: page ? { page, id } : null }) });
+});
+
+// body: { days: 1 | 7 }
+router.post('/suggestions/dismiss', (req, res) => {
+  const key = String(req.body.key || '').trim();
+  const days = [1, 7, 30].includes(Number(req.body.days)) ? Number(req.body.days) : 1;
+  if (!key) return res.status(400).json({ error: 'key is required' });
+  dismiss(req.user.id, req.ws.id, key, days);
+  res.status(204).end();
+});
+
+// The skill catalogue, for the UI ("what can the assistant do") and for MCP clients.
+router.get('/skills', (req, res) => {
+  res.json({
+    read: Object.entries(TOOLS).map(([name, t]) => ({ name, kind: t.kind || 'read', description: t.doc })),
+    write: ACTION_TYPES.map((name) => ({ name, kind: 'write', requires_approval: true, arguments: PROPOSAL_DOCS[name] })),
+  });
 });
 
 export default router;

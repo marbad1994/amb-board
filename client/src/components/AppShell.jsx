@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Layers, FolderKanban, StickyNote, Settings, Sun, ListChecks, Calendar, Landmark,
-  NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus, Target, FileText,
+  NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus, Target, FileText, BarChart3,
 } from 'lucide-react';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import SearchBox from './SearchBox.jsx';
 import QuickAddTask from './QuickAddTask.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import AssistantDock from './AssistantDock.jsx';
 
 const NAV = [
   { label: 'Overview', items: [
@@ -26,6 +27,7 @@ const NAV = [
     { to: '/finance', icon: Landmark, text: 'Finance & Budget' },
     { to: '/notes', icon: NotebookPen, text: 'Notes & Journal' },
     { to: '/documents', icon: FileText, text: 'Documents' },
+    { to: '/reports', icon: BarChart3, text: 'Reports' },
     { to: '/assistant', icon: Sparkles, text: 'AI Assistant' },
   ] },
   { label: 'System', items: [
@@ -38,6 +40,12 @@ export default function AppShell({ children }) {
   const [navOpen, setNavOpen] = useState(false);
   const [wsOpen, setWsOpen] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
+  const [prefill, setPrefill] = useState(null);
+  useEffect(() => {
+    const h = (e) => { setPrefill(e.detail || null); setQuickAdd(true); };
+    window.addEventListener('amb:quick-add', h);
+    return () => window.removeEventListener('amb:quick-add', h);
+  }, []);
   const wsRef = useRef(null);
   const location = useLocation();
 
@@ -144,7 +152,8 @@ export default function AppShell({ children }) {
           </div>
         </header>
         <main className="app"><div className="main">{children}</div></main>
-        {quickAdd && <QuickAddTask key="qa" onClose={() => setQuickAdd(false)} />}
+        {quickAdd && <QuickAddTask key={prefill?.title || 'qa'} prefill={prefill} onClose={() => { setQuickAdd(false); setPrefill(null); }} />}
+        {location.pathname !== '/assistant' && <AssistantDock key={active?.id} />}
       </div>
     </div>
   );

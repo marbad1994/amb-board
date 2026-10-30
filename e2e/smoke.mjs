@@ -25,7 +25,10 @@ const fakeAi = createServer((req, res) => {
     const msgs = JSON.parse(b).messages;
     if (msgs[0].content.includes('assistant inside AMB Board')) {
       const user = msgs[1].content;
-      const out = user.includes('"tool_results":[]')
+      const wantsReport = /<question>[^<]*report/i.test(user);
+      const out = wantsReport
+        ? (user.includes('"tool_results":[]') ? { type: 'tool', calls: [{ tool: 'generate_report', args: { kind: 'overview', title: 'E2E overview' } }] } : { type: 'final', answer: 'Report is ready under Reports.', proposals: [] })
+        : user.includes('"tool_results":[]')
         ? { type: 'tool', calls: [{ tool: 'list_projects', args: {} }] }
         : { type: 'final', answer: 'Focus on your renovation project today.', proposals: [
             { type: 'create_task', args: { project_id: /"id":"([^"]+)"/.exec(user)[1], title: 'Call the contractor', due_date: '2027-01-15', priority: 'high' } },
@@ -500,6 +503,65 @@ try {
     await page.getByText(/Covers \d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}/).waitFor();
     await page.getByText('Facts used').click();
     await page.getByText(/tasks completed/).waitFor();
+  });
+
+  await step('assistant dock on every page: context, suggestions, report artifact, Edit first prefills the real form', async () => {
+    await page.getByRole('link', { name: 'Dashboard' }).click();
+    await page.getByRole('button', { name: /Open assistant/ }).click();
+    const dock = page.getByRole('complementary', { name: 'AI assistant' });
+    await dock.getByText('Looking at: Dashboard').waitFor();
+    await dock.getByRole('region', { name: 'Suggested next steps' }).waitFor();
+    const before = await dock.getByRole('region', { name: 'Suggested next steps' }).locator('li').count();
+    await dock.getByRole('button', { name: /Hide suggestion/ }).first().click();
+    await page.waitForFunction((n) => document.querySelectorAll('[aria-label="Suggested next steps"] li').length < n, before);
+    await dock.getByLabel('Message').fill('Make me a report of everything');
+    await dock.getByRole('button', { name: 'Send' }).click();
+    await dock.getByText('Report is ready under Reports.').waitFor();
+    await dock.getByRole('link', { name: /Report ready: E2E overview/ }).click();
+    await page.getByRole('heading', { name: 'E2E overview', level: 1 }).waitFor();
+    const frame = page.frameLocator('iframe.report-frame');
+    await frame.getByRole('heading', { name: 'E2E overview' }).waitFor();
+    await frame.getByRole('heading', { name: 'At a glance' }).waitFor();
+    assert.equal(await page.locator('iframe.report-frame').getAttribute('sandbox'), '', 'report preview is sandboxed (no scripts)');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download HTML' }).click()]);
+    assert.match(dl.suggestedFilename(), /^E2E[ -]overview\.html$/);
+    await shot(page, '19-report');
+    // the dock follows you: on a project board it knows which project you are looking at
+    await page.getByRole('link', { name: 'Projects Board' }).click();
+    await page.getByRole('link', { name: /Apartment Renovation/ }).click();
+    await page.getByRole('button', { name: /Open assistant/ }).click();
+    await page.getByRole('complementary', { name: 'AI assistant' }).getByText('Looking at: A project board').waitFor();
+    await page.getByLabel('Message').fill('What should I focus on?');
+    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Edit first' }).first().click();
+    await page.getByRole('dialog', { name: 'Quick add task' }).waitFor();
+    assert.equal(await page.getByLabel('Task', { exact: true }).inputValue(), 'Call the contractor', 'the proposed values are in the real form');
+    assert.equal(await page.getByLabel('Due date').inputValue(), '2027-01-15');
+    await page.getByRole('dialog', { name: 'Quick add task' }).getByRole('button', { name: 'Close' }).click();
+    await shot(page, '20-dock');
+  });
+
+  await step('MCP: create a token in settings; an external client reads, analyses and proposes; approval happens in the app', async () => {
+    await page.getByRole('link', { name: 'Workspace' }).click();
+    await page.getByLabel('Token name').fill('e2e-client');
+    await page.getByRole('button', { name: 'Create token' }).click();
+    const token = await page.getByLabel('New token').inputValue();
+    assert.match(token, /^amb_pat_/);
+    const rpc = async (method, params) => (await fetch(`${base}/api/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json();
+    const tools = (await rpc('tools/list', {})).result.tools.map((t) => t.name);
+    assert.ok(tools.includes('generate_report') && tools.includes('analyze_spending') && tools.includes('propose_create_task'));
+    const projects = JSON.parse((await rpc('tools/call', { name: 'list_projects', arguments: {} })).result.content[0].text);
+    assert.ok(projects.some((p) => p.name === 'Apartment Renovation'));
+    const pid = projects.find((p) => p.name === 'Apartment Renovation').id;
+    const prop = JSON.parse((await rpc('tools/call', { name: 'propose_create_task', arguments: { project_id: pid, title: 'Proposed over MCP', due_date: '2027-02-01' } })).result.content[0].text);
+    assert.equal(prop.status, 'pending_approval');
+    await page.getByRole('link', { name: 'AI Assistant' }).click();
+    await page.getByLabel('Conversation').first().selectOption({ label: 'External assistant (MCP)' });
+    await page.getByText('Create task "Proposed over MCP" in project').last().waitFor();
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await page.getByText('Applied.').waitFor();
+    await page.getByRole('link', { name: 'Tasks', exact: true }).click();
+    await page.getByRole('link', { name: 'Proposed over MCP' }).waitFor();
   });
 
   await step('idea converts to a project and stays linked', async () => {

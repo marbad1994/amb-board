@@ -4,10 +4,10 @@ import { X } from 'lucide-react';
 import { api } from '../api/client.js';
 import { PRIORITIES } from '../lib/labels.js';
 
-export default function QuickAddTask({ onClose }) {
+export default function QuickAddTask({ onClose, prefill }) {
   const navigate = useNavigate();
   const [projects, setProjects] = useState(null);
-  const [form, setForm] = useState({ title: '', projectId: '', due_date: '', priority: 'medium' });
+  const [form, setForm] = useState({ title: prefill?.title || '', projectId: prefill?.projectId || '', due_date: prefill?.due_date || '', priority: prefill?.priority || 'medium' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -15,7 +15,7 @@ export default function QuickAddTask({ onClose }) {
   useEffect(() => {
     api.listProjects().then((list) => {
       setProjects(list);
-      setForm((f) => ({ ...f, projectId: list[0]?.id || '' }));
+      setForm((f) => ({ ...f, projectId: f.projectId && list.some((p) => p.id === f.projectId) ? f.projectId : list[0]?.id || '' }));
     }).catch((err) => setError(err.message));
   }, []);
 

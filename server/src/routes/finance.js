@@ -79,7 +79,7 @@ const TX_SELECT = `SELECT t.*, c.name AS category_name, p.name AS project_name F
   LEFT JOIN transaction_categories c ON c.id = t.category_id LEFT JOIN projects p ON p.id = t.project_id`;
 
 // Validates a body against current values; returns { error } or { v }.
-function readTransaction(body, ws, cur = {}) {
+export function readTransaction(body, ws, cur = {}) {
   const v = {
     type: cur.type ?? body.type, status: cur.status ?? 'posted', amount_minor: cur.amount_minor, currency: cur.currency,
     date: cur.date, description: cur.description ?? '', notes: cur.notes ?? '', category_id: cur.category_id ?? null,

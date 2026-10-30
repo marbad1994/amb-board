@@ -1988,3 +1988,34 @@ input[type='month'], input[type='date'], input[type='time'], input[type='number'
 .table-wrap { overflow-x: auto; }
 .table input[type='text'] { min-height: 36px; padding: 4px 8px; }
 .table tr.is-off { opacity: 0.45; }
+
+/* ---------- Assistant dock, artifacts, reports ---------- */
+.dock-fab { position: fixed; right: 20px; bottom: 20px; z-index: 70; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--color-primary); color: #fff; display: grid; place-items: center; box-shadow: 0 8px 24px rgba(11, 122, 112, 0.45); }
+.dock-fab.has-news { animation: pulse 2.4s ease-out 2; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(21, 186, 169, 0.6); } 100% { box-shadow: 0 0 0 16px rgba(21, 186, 169, 0); } }
+.dock-fab__badge { position: absolute; top: -2px; right: -2px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #d92d20; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.dock { position: fixed; right: 0; top: 0; bottom: 0; z-index: 65; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--color-surface); border-left: 1px solid var(--color-border); box-shadow: -12px 0 40px rgba(16, 29, 53, 0.18); }
+.dock__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; background: var(--color-navy); color: #fff; }
+.dock__head strong { display: flex; align-items: center; gap: 6px; }
+.dock__head small { display: block; color: #9fb4c9; font-size: 11px; }
+.dock__head .btn-ghost { color: #fff; }
+.dock__suggest { padding: 12px 14px; border-bottom: 1px solid var(--color-border); background: var(--color-surface-alt); max-height: 38%; overflow-y: auto; }
+.dock__suggest h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+.dock__suggest ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dock__suggest li { padding: 10px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; font-size: 13px; }
+.dock__suggest li small { display: block; color: var(--color-text-muted); font-size: 11px; margin-top: 2px; }
+.dock__suggest-actions { display: flex; gap: 6px; margin-top: 8px; }
+.dock__suggest-actions .btn { min-height: 34px; font-size: 12px; padding: 0 10px; }
+.dock__chat { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
+.chat-wrap--compact .bubble { max-width: 100%; font-size: 13px; }
+.chat-wrap--compact .chat__form { position: sticky; bottom: 0; background: var(--color-surface); padding-top: 8px; }
+.artifact { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--color-accent); border-radius: 10px; background: var(--color-surface); text-decoration: none; font-size: 13px; }
+.report-frame { width: 100%; height: 78vh; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+.skill-list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 8px; }
+.skill-list li { padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 13px; }
+.skill-list small { display: block; color: var(--color-text-muted); font-size: 11px; margin-top: 2px; word-break: break-word; }
+code { background: var(--color-surface-alt); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+@media (max-width: 860px) { .dock-fab { bottom: 76px; } }
+
+/* the dock button sits bottom-right; keep the idea board's own button clear of it */
+.idea-board__fab { bottom: 92px !important; }

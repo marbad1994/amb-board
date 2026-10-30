@@ -38,3 +38,8 @@
 | D34 | Day-first date interpretation for ambiguous DD/MM/YYYY CSV dates (European default) unless the first number cannot be a day | Matches the owner's locale (RO/EU); documented | Implemented |
 | D35 | Bank CSV only (no XLSX/PDF/OFX); 2 MB / 5000 rows | Simple, auditable parsing; larger formats later | Implemented |
 | D36 | Charts are dependency-free SVG with text equivalents (legend, aria-label with all values) | No new libraries; not colour-only | Implemented |
+| D37 | One skill registry drives the assistant prompt, the skills page and the MCP tools; analysis is deterministic code | No drift; the model never does arithmetic | Implemented |
+| D38 | Reports are private to their creator, stored as HTML text, rendered only inside a sandboxed iframe or downloaded with a sandbox CSP | Reports contain workspace data; inert content only | Implemented |
+| D39 | MCP write tools create proposals (approval in the app), never execute; tokens are workspace-bound and re-check membership each call | Human control (spec 3.5) extends to external AI clients | Implemented |
+| D40 | Suggestions are rule-based (no AI call) and only the click on "Ask AI" spends AI budget | Always-on assistant must be free and predictable | Implemented |
+| D41 | deploy.sh: pull as the git user, sync to /opt/amb-board3 (never touching server/.env, server/data, server/uploads), back up data, npm install/build/start in its own process group, health-check | Owner request 2026-10-30 | Implemented; rsync path untested in the sandbox (tar fallback tested) |

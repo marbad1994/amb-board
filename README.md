@@ -97,6 +97,17 @@ All API routes now require a signed-in account. The first account registered ado
 Set `NODE_ENV=production` (or `COOKIE_SECURE=true`) when served over HTTPS, e.g. via `tailscale serve`.
 Optional env: `ALLOWED_ORIGINS`, `CORS_ORIGIN`, `TRUST_PROXY=true`, `REGISTER_RATE_MAX`.
 
+## Deploying to /opt/amb-board3
+
+`deploy.sh` (run as root) pulls the latest code as `marcus` in `~marcus/amb-board`, syncs it to `/opt/amb-board3`, runs `npm install`, `npm run build` and starts the server in the background (stopping the previous instance first, waiting for `/api/health`). It never overwrites `server/.env`, `server/data` or `server/uploads`, and copies the data folder to `/opt/amb-board3.backups/` before each deploy.
+
+```bash
+sudo bash deploy.sh
+```
+
+Options (environment variables): `GIT_USER`, `SRC_DIR`, `DEST_DIR`, `BRANCH`, `PORT`, `RUN_AS` (run npm and the server as another user), `KEEP_BACKUPS`, `HEALTH_TIMEOUT`. Logs go to `/opt/amb-board3/amb-board.log`.
+Do not set `NODE_ENV=production` unless the site is served over HTTPS: production mode makes the session cookie `Secure`, so logins fail over plain HTTP.
+
 ## Tests
 
 ```bash

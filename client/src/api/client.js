@@ -163,10 +163,26 @@ export const api = {
   getReview: (period) => request(`/ai/review/${period}`),
   generateReview: (period, refresh = false) => request(`/ai/review/${period}`, json('POST', { refresh })),
 
+  // assistant platform: suggestions, reports, tokens
+  suggestions: (context) => request(`/ai/assistant/suggestions${context ? `?context=${encodeURIComponent(context)}` : ''}`),
+  dismissSuggestion: (key, days = 1) => request('/ai/assistant/suggestions/dismiss', json('POST', { key, days })),
+  listReports: () => request('/reports'),
+  createReport: (data) => request('/reports', json('POST', data)),
+  getReport: (id) => request(`/reports/${id}`),
+  deleteReport: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
+  downloadReport: async (id) => {
+    const res = await fetch(`${BASE}/reports/${id}/download`, { headers: workspaceId ? { 'x-workspace-id': workspaceId } : {} });
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    return res.blob();
+  },
+  listTokens: () => request('/tokens'),
+  createToken: (name) => request('/tokens', json('POST', { name })),
+  revokeToken: (id) => request(`/tokens/${id}`, { method: 'DELETE' }),
+
   // AI assistant
   listConversations: () => request('/ai/assistant/conversations'),
   getConversation: (id) => request(`/ai/assistant/conversations/${id}`),
-  chat: (message, conversationId) => request('/ai/assistant/chat', json('POST', { message, conversationId })),
+  chat: (message, conversationId, context) => request('/ai/assistant/chat', json('POST', { message, conversationId, context })),
   approveProposal: (id) => request(`/ai/assistant/proposals/${id}/approve`, { method: 'POST' }),
   rejectProposal: (id) => request(`/ai/assistant/proposals/${id}/reject`, { method: 'POST' }),
 

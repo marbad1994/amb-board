@@ -18,6 +18,8 @@ import documentsRouter from './routes/documents.js';
 import myDayRouter from './routes/myday.js';
 import financeExtraRouter from './routes/financeExtra.js';
 import financeAiRouter from './routes/financeAi.js';
+import mcpRouter, { tokensRouter } from './routes/mcp.js';
+import reportsRouter from './routes/reports.js';
 import notificationsRouter from './routes/notifications.js';
 import tasksRouter, { searchRouter } from './routes/tasks.js';
 import projectsRouter from './routes/projects.js';
@@ -46,6 +48,8 @@ export function createApp() {
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRouter);
+  // MCP authenticates with its own bearer token, not the session cookie (and is exempt from the Origin check: no cookies involved).
+  app.use('/api/mcp', mcpRouter);
 
   // Everything below requires a session.
   app.use('/api', requireAuth);
@@ -61,6 +65,8 @@ export function createApp() {
   app.use('/api/life-areas', lifeAreasRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/search', searchRouter);
+  app.use('/api/reports', reportsRouter);
+  app.use('/api/tokens', tokensRouter);
   app.use('/api/finance', financeRouter);
   app.use('/api/finance', financeExtraRouter);
   app.use('/api/finance', financeAiRouter);

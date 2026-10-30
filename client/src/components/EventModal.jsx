@@ -5,19 +5,19 @@ import { api } from '../api/client.js';
 const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; } };
 
 // event: existing event item (has event_id) or null for new. date: preselected YYYY-MM-DD.
-export default function EventModal({ event, date, writable, onClose, onSaved }) {
+export default function EventModal({ event, date, writable, onClose, onSaved, prefill }) {
   const editing = !!event;
   const [projects, setProjects] = useState([]);
   const [f, setF] = useState(() => ({
-    title: event?.title || '', kind: event?.kind === 'personal' ? 'personal' : 'appointment', all_day: event?.all_day || false,
+    title: event?.title || prefill?.title || '', kind: (event?.kind || prefill?.kind) === 'personal' ? 'personal' : 'appointment', all_day: event?.all_day ?? !!prefill?.all_day,
     // when editing, use the stored series (not the clicked occurrence) so a repeating event keeps its start
-    start: event ? (event.all_day ? '09:00' : event.series_start.slice(11, 16)) : '09:00',
-    startDate: event ? event.series_start.slice(0, 10) : date,
-    endTime: event?.series_end && !event.all_day ? event.series_end.slice(11, 16) : '',
-    timezone: event?.timezone || browserTz(),
+    start: event ? (event.all_day ? '09:00' : event.series_start.slice(11, 16)) : (prefill?.start_local?.slice(11, 16) || '09:00'),
+    startDate: event ? event.series_start.slice(0, 10) : (prefill?.start_local?.slice(0, 10) || date),
+    endTime: event?.series_end && !event.all_day ? event.series_end.slice(11, 16) : (prefill?.end_local?.slice(11, 16) || ''),
+    timezone: event?.timezone || prefill?.timezone || browserTz(),
     recurrence: event?.recurrence || 'none', interval: event?.recurrence_interval || 1, until: event?.recurrence_until || '',
-    projectId: event?.project_id || '', description: event?.description || '',
-    reminder: event?.reminder_minutes != null ? String(event.reminder_minutes) : '',
+    projectId: event?.project_id || prefill?.project_id || '', description: event?.description || prefill?.description || '',
+    reminder: event?.reminder_minutes != null ? String(event.reminder_minutes) : (prefill?.reminder_minutes != null ? String(prefill.reminder_minutes) : ''),
   }));
   const [error, setError] = useState('');
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));

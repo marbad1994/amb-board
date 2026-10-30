@@ -34,7 +34,7 @@ export function sanitizeLabels(labels) {
 const RECURRENCES = ['none', 'daily', 'weekly', 'monthly'];
 
 // When a recurring task is completed, create the next occurrence once (guarded by recurrence_spawned_at).
-function spawnNextOccurrence(card, ts) {
+export function spawnNextOccurrence(card, ts) {
   if (card.recurrence === 'none' || card.recurrence_spawned_at) return;
   const base = card.due_date || todayUtc();
   const next = card.recurrence === 'daily' ? addDays(base, 1) : card.recurrence === 'weekly' ? addDays(base, 7) : addMonths(base, 1);
