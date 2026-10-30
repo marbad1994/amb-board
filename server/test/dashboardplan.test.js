@@ -33,7 +33,7 @@ test('rules: a new workspace starts with the first project; overdue work takes t
   const empty = await signUp(srv.base, 'DashEmpty');
   const e = (await empty.c.get('/api/dashboard/plan')).json;
   assert.equal(e.source, 'rules'); assert.equal(e.ai_available, false);
-  assert.equal(e.widgets.length, 8); assert.deepEqual(e.widgets.map((w) => w.id).sort(), ['activity', 'areas', 'attention', 'briefing', 'budget', 'events', 'projects', 'today']);
+  assert.equal(e.widgets.length, 12); assert.deepEqual(e.widgets.map((w) => w.id).sort(), ['activity', 'areas', 'attention', 'briefing', 'challenges', 'events', 'goals', 'habits', 'ideas', 'money', 'projects', 'today']);
   assert.equal(byId(e).projects.size, 'hero'); assert.match(byId(e).projects.reason, /start here/i);
   assert.equal(byId(e).attention.size, 'compact');
 
@@ -46,7 +46,7 @@ test('rules: a new workspace starts with the first project; overdue work takes t
   assert.equal(b.widgets[0].id, 'attention'); assert.equal(b.widgets[0].size, 'hero');
   assert.match(b.widgets[0].reason, /2 tasks overdue/);
   assert.equal(b.widgets.filter((w) => w.size === 'hero').length, 2, 'at most two heroes');
-  assert.equal(byId(b).budget.size, 'compact'); assert.equal(byId(b).events.size, 'compact');
+  assert.equal(byId(b).money.size, 'compact'); assert.equal(byId(b).events.size, 'compact');
   assert.match(b.headline, /2 tasks overdue and 1 due today/);
   assert.equal(byId(b).briefing.size, 'compact'); assert.match(byId(b).briefing.reason, /not set up/, 'no AI on the server: the briefing does not take room');
 });
@@ -65,7 +65,7 @@ test('ai: the model decides, its answer is validated, numbers must come from the
   const p = (await u.c.get('/api/dashboard/plan')).json;
   assert.equal(calls, 1); assert.equal(p.source, 'ai');
   assert.deepEqual(p.widgets.slice(0, 3).map((w) => w.id), ['projects', 'events', 'attention'], 'the model\'s order is kept');
-  assert.equal(p.widgets.length, 8, 'unknown and duplicate ids dropped, missing widgets added');
+  assert.equal(p.widgets.length, 12, 'unknown and duplicate ids dropped, missing widgets added');
   const m = byId(p);
   assert.equal(m.events.size, 'compact', 'no events: cannot be bigger than compact');
   assert.equal(m.projects.size, 'hero'); assert.equal(m.attention.size, 'hero');
@@ -88,7 +88,7 @@ test('ai: reasons that only use real numbers are kept; heroes are capped; unread
 
   const second = await workspace('DashJunk'); reply = 'not json at all';
   const j = (await second.u.c.get('/api/dashboard/plan')).json;
-  assert.equal(j.source, 'rules'); assert.equal(j.widgets.length, 8);
+  assert.equal(j.source, 'rules'); assert.equal(j.widgets.length, 12);
   const third = await workspace('DashDown'); reply = 'fail';
   assert.equal((await third.u.c.get('/api/dashboard/plan')).json.source, 'rules');
 });
@@ -105,7 +105,7 @@ test('live adjustment: a plan made earlier today shrinks widgets that emptied an
   assert.notEqual(byId(later).attention.size, 'compact', 'a new overdue task is not hidden by an older plan');
   assert.match(byId(later).attention.reason, /1 task overdue/);
 });
-const WIDGETS_ALL = ['today', 'attention', 'events', 'budget', 'briefing', 'projects', 'areas', 'activity'];
+const WIDGETS_ALL = ['today', 'attention', 'events', 'habits', 'goals', 'challenges', 'money', 'ideas', 'briefing', 'projects', 'areas', 'activity'];
 
 test('refresh: five rearrangements a day, per person, viewers only get the rules', async () => {
   aiOn(); reply = JSON.stringify({ headline: 'Calm.', widgets: WIDGETS_ALL.map((id) => ({ id, size: 'normal', reason: 'ok' })) });
@@ -117,4 +117,32 @@ test('refresh: five rearrangements a day, per person, viewers only get the rules
   const over = await u.c.post('/api/dashboard/plan/refresh'); assert.equal(over.status, 429); assert.match(over.json.error, /5 times a day/);
   const other = await signUp(srv.base, 'DashOther'); assert.equal((await other.c.get('/api/dashboard/plan')).json.refreshes_left, 5, 'limits and plans are per person');
   assert.equal((await u.c.get('/api/dashboard/plan')).json.refreshes_left, 0, 'reading never costs a refresh');
+});
+
+test('the whole life: habits, goals, challenges, ideas and money show up in the data and shape the arrangement', async () => {
+  aiOff();
+  const { u } = await workspace('DashLife');
+  const empty = (await u.c.get('/api/dashboard')).json;
+  assert.deepEqual([empty.habits, empty.challenges, empty.goals, empty.money], [[], [], [], null]); assert.equal(empty.ideas.total, 0);
+  const h = (await u.c.post('/api/habits', { title: 'Walk' })).json;
+  for (const d of [-3, -2, -1]) await u.c.put(`/api/habits/${h.id}/entries/${iso(d)}`, { done: true });
+  const ch = await u.c.post('/api/habits/challenges', { title: 'Walk 6 days', habitId: h.id, start_date: iso(-3), end_date: iso(2) }); assert.equal(ch.status, 201, ch.text);
+  assert.equal((await u.c.post('/api/goals', { title: 'Run a 10k', target_date: iso(12) })).status, 201);
+  await u.c.post('/api/ideas', { text: 'Build a bird feeder' });
+  await u.c.post('/api/finance/transactions', { type: 'expense', currency: 'EUR', date: iso(0), amount_minor: 4200, status: 'posted', description: 'Groceries' });
+  const d = (await u.c.get('/api/dashboard')).json;
+  assert.equal(d.habits[0].title, 'Walk'); assert.equal(d.habits[0].done_today, false); assert.equal(d.habits[0].streak, 3);
+  assert.equal(d.challenges[0].title, 'Walk 6 days'); assert.equal(d.challenges[0].completed_days, 3); assert.equal(d.challenges[0].days_left, 2);
+  assert.equal(d.goals[0].title, 'Run a 10k'); assert.equal(d.goals[0].days_left, 12);
+  assert.equal(d.ideas.total, 1); assert.equal(d.ideas.latest[0].text, 'Build a bird feeder');
+  assert.equal(d.money.currency, 'EUR'); assert.equal(d.money.spent_minor, 4200);
+  const p = (await u.c.get('/api/dashboard/plan')).json; const m = byId(p);
+  assert.notEqual(m.habits.size, 'compact'); assert.match(m.habits.reason, /streak/);
+  assert.notEqual(m.challenges.size, 'compact'); assert.match(m.challenges.reason, /ending within 3 days/);
+  assert.notEqual(m.goals.size, 'compact'); assert.match(m.goals.reason, /due within 30 days/);
+  assert.notEqual(m.money.size, 'compact'); assert.notEqual(m.ideas.size, 'compact');
+  await u.c.put(`/api/habits/${h.id}/entries/${iso(0)}`, { done: true });
+  assert.match(byId((await u.c.get('/api/dashboard/plan')).json).habits.reason, /Every habit is done today/, 'ticking a habit changes the reason at once');
+  const other = await signUp(srv.base, 'DashLifeOther');
+  assert.deepEqual((await other.c.get('/api/dashboard')).json.habits, [], 'habits are personal');
 });

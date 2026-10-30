@@ -4,7 +4,7 @@ import { getPlan, refreshPlan, PlanLimitError } from '../dashboard/plan.js';
 
 const router = Router();
 
-router.get('/', (req, res) => res.json(dashboardData(req.ws.id)));
+router.get('/', (req, res) => res.json(dashboardData(req.ws.id, req.user)));
 
 // Which parts of the dashboard get more or less room today. Chosen by the AI once a day (rules when the AI is unavailable),
 // adjusted live when something appears or empties, and the person can ask for a fresh arrangement a few times a day.

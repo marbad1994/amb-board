@@ -47,7 +47,7 @@ export const MORE_DOCS = {
   update_email_template: '{"template_id":"","name":"","subject":"","body":""} (only fields to change)',
   delete_email_template: '{"template_id":""} refused while a flow uses it',
   run_automation: '{"automation_id":"your scheduled automation"} runs it now',
-  connect_mcp_server: '{"name":"short name","url":"https://... the server\'s MCP address"} sets up a connection for the assistant. Do NOT ask for or include any token in chat: the user types it into the approval card. Servers that need a browser login (OAuth) are not supported, only access tokens or open servers',
+  connect_mcp_server: '{"name":"short name","url":"https://... the server\'s MCP address"} sets up a connection for the assistant. Do NOT ask for or include any token in chat: the user types it into the approval card. Servers that need an OAuth login (for example Google Calendar) cannot be set up here: tell the person to add them under Settings, Assistant, Connected tools, where they can enter the OAuth client and authorize in the browser',
   disconnect_mcp_server: '{"name":"name of a connected server"}',
   copy_to_workspace: '{"entity":"project|goal|note|idea","id":"","workspace":"name of the other workspace"} makes an independent copy there; the original stays (attachments, budgets and links are not copied, journals never)',
 };

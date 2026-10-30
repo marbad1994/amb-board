@@ -7,6 +7,7 @@ import { chat, listConversations, getConversation, presentProposal, expireOld } 
 import { executeProposalAsync, AUTO_APPROVABLE } from '../ai/actions.js';
 import { userServers, findServer, toolsOf, forget } from '../ai/mcpServers.js';
 import { assertSafeUrl } from '../ai/mcpClient.js';
+import { AUTH_TYPES, TRANSPORTS, PRESETS, parseAuth, describeAuth, startOAuth } from '../ai/mcpAuth.js';
 import { encryptSecret } from '../secrets.js';
 import { computeSuggestions, dismiss } from '../ai/suggestions.js';
 import { TOOLS } from '../ai/tools.js';
@@ -199,21 +200,34 @@ router.put('/settings', (req, res) => {
 });
 
 // ---- other MCP servers the assistant may use (private to the person who added them) ----
-const present = (s) => ({ id: s.id, name: s.name, url: s.url, has_token: !!s.auth_enc, last_ok_at: s.last_ok_at, last_error: s.last_error });
+const present = (s) => ({ id: s.id, name: s.name, url: s.url, ...describeAuth(s), last_ok_at: s.last_ok_at, last_error: s.last_error });
+const redirectUri = (req) => `${(process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '')}/api/oauth/mcp/callback`;
 router.get('/connections', (req, res) => res.json(userServers(req.ws.id, req.user.id).map(present)));
+router.get('/connections/options', (req, res) => res.json({ auth_types: AUTH_TYPES, transports: TRANSPORTS, presets: PRESETS, redirect_uri: redirectUri(req) }));
 router.post('/connections', async (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 40);
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (userServers(req.ws.id, req.user.id).length >= 10) return res.status(409).json({ error: 'at most 10 connected servers' });
   if (findServer(req.ws.id, req.user.id, name)) return res.status(409).json({ error: 'you already have a server with that name' });
+  if (req.body.transport && !TRANSPORTS.some((t) => t.id === req.body.transport)) return res.status(400).json({ error: 'only the Streamable HTTP transport is supported' });
   try { await assertSafeUrl(String(req.body.url || '')); } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  const auth = parseAuth(req.body);
+  if (auth.error) return res.status(400).json({ error: auth.error });
   const id = nanoid();
-  db.prepare('INSERT INTO mcp_servers (id, workspace_id, user_id, name, url, auth_enc, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, req.ws.id, req.user.id, name, String(req.body.url).trim(), encryptSecret(String(req.body.token || '').trim()), nowIso());
-  audit(req, 'ai.connection_added', 'mcp_server', id, { name });
-  const server = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id);
-  try { const tools = await toolsOf(server); res.status(201).json({ ...present(db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id)), tools: tools.length }); }
-  catch (e) { res.status(201).json({ ...present(db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id)), tools: 0, warning: `Saved, but the server could not be reached: ${String(e.message).slice(0, 120)}` }); }
+  db.prepare('INSERT INTO mcp_servers (id, workspace_id, user_id, name, url, auth_enc, auth_type, auth_meta_enc, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, req.ws.id, req.user.id, name, String(req.body.url).trim(), auth.auth_enc, auth.auth_type, Object.keys(auth.meta).length ? encryptSecret(JSON.stringify(auth.meta)) : '', nowIso());
+  audit(req, 'ai.connection_added', 'mcp_server', id, { name, auth: auth.auth_type });
+  const row = () => db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id);
+  if (auth.auth_type === 'oauth') return res.status(201).json({ ...present(row()), tools: 0, needs_authorization: true });
+  try { const tools = await toolsOf(row()); res.status(201).json({ ...present(row()), tools: tools.length }); }
+  catch (e) { res.status(201).json({ ...present(row()), tools: 0, warning: `Saved, but the server could not be reached: ${String(e.message).slice(0, 120)}` }); }
+});
+// OAuth: the address to open in the browser. The provider sends the person back to /api/oauth/mcp/callback.
+router.post('/connections/:id/authorize', (req, res) => {
+  const s = findServer(req.ws.id, req.user.id, req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  if (s.auth_type !== 'oauth') return res.status(400).json({ error: 'this connection does not use OAuth' });
+  res.json({ url: startOAuth(s, redirectUri(req)) });
 });
 router.post('/connections/:id/test', async (req, res) => {
   const s = findServer(req.ws.id, req.user.id, req.params.id);

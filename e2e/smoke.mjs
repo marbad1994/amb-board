@@ -168,7 +168,9 @@ try {
     await page.getByRole('heading', { name: 'Hello, Marcus' }).waitFor();
     await page.locator('.stat-card__num').first().waitFor();
     assert.equal(await page.locator('.stat-card__num').first().innerText(), '1');
-    assert.equal(await page.locator('.stat-card__num').nth(1).innerText(), '1', 'one task on boards');
+    assert.match(await page.locator('.stat-card').first().innerText(), /Open tasks/);
+    await page.getByRole('heading', { name: 'Habits today' }).waitFor();
+    await page.getByRole('heading', { name: 'Idea board' }).waitFor();
     await page.getByRole('link', { name: /Apartment Renovation/ }).waitFor();
     await page.locator('.area-list a', { hasText: 'Home & Living' }).click();
     await page.getByRole('link', { name: /Apartment Renovation/ }).waitFor();
@@ -283,7 +285,7 @@ try {
     await shot(page, '08-budget');
     await page.getByRole('button', { name: 'Close' }).click();
     await page.getByRole('link', { name: 'Dashboard' }).click();
-    await page.getByRole('heading', { name: 'Budget alerts' }).waitFor();
+    await page.getByRole('heading', { name: 'Money this month' }).waitFor();
     await page.getByText(/Forecast over budget: €2,500\.00 of €12,000\.00 spent, forecast overrun €500\.00/).waitFor();
   });
 

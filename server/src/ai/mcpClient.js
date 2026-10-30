@@ -1,7 +1,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { db, nowIso } from '../db.js';
-import { decryptSecret } from '../secrets.js';
+import { authHeaders } from './mcpAuth.js';
 
 // Minimal MCP client (Streamable HTTP, JSON-RPC 2.0) so the assistant can use tools of servers the user connected.
 // Everything a server returns is untrusted text. Calls are bounded (time, size, no redirects) and may not reach private networks.
@@ -31,13 +31,13 @@ export async function assertSafeUrl(raw) {
 async function rpc(server, body, session) {
   const u = await assertSafeUrl(server.url);
   const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-protocol-version': PROTOCOL };
-  const token = decryptSecret(server.auth_enc);
-  if (token) headers.authorization = `Bearer ${token}`;
+  Object.assign(headers, await authHeaders(server));
   if (session) headers['mcp-session-id'] = session;
   const res = await fetch(u, { method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) });
   const sid = res.headers.get('mcp-session-id') || session;
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.length > MAX_BYTES) throw new Error('the server sent too much data');
+  if (res.status === 401 || res.status === 403) throw new Error(`the server refused the sign-in (${res.status}); check the credentials${server.auth_type === 'oauth' ? ' or authorize again' : ''}`);
   if (!res.ok) throw new Error(`the server answered ${res.status}`);
   if (body.id === undefined) return { sid };
   let text = buf.toString('utf8');
