@@ -106,9 +106,12 @@ sudo bash deploy.sh
 ```
 
 Options (environment variables): `GIT_USER`, `SRC_DIR`, `DEST_DIR`, `BRANCH`, `PORT`, `RUN_AS` (run npm and the server as another user), `KEEP_BACKUPS`, `HEALTH_TIMEOUT`. Logs go to `/opt/amb-board3/amb-board.log`.
-The deploy also serves `amb.makketing.com` through Caddy, which fetches and renews the HTTPS certificate by itself. Install Caddy once (`sudo pacman -S caddy`), point the domain's DNS record at the server and keep ports 80 and 443 open. The deploy writes `/etc/caddy/sites/amb-board.caddy`, makes sure `/etc/caddy/Caddyfile` imports that folder (the original is kept as `Caddyfile.bak-deploy`), validates the config and reloads Caddy. Options: `DOMAIN=other.example.com` to change the domain, `DOMAIN=` to skip it, `ACME_EMAIL=you@example.com` for certificate expiry notices. If an older nginx site from a previous deploy exists, the script tells you how to remove it so it does not hold port 80.
+The deploy adds `amb.makketing.com` to the web server that already owns ports 80/443 (it never starts a second one). It detects nginx or Caddy, or you can force it with `PROXY=nginx|caddy|none`. The domain's DNS record must point at the server.
+- **nginx:** writes `/etc/nginx/conf.d/amb-board.conf` (or `sites-available` plus a symlink), tests the config and reloads. HTTPS: `sudo ACME_EMAIL=you@example.com bash deploy.sh` (needs `certbot` and `certbot-nginx`) or `SSL_CERT=/path/fullchain.pem SSL_KEY=/path/privkey.pem` if you already have a certificate that covers the subdomain (for example a wildcard for `*.makketing.com`). Without either it stays on plain HTTP and says so.
+- **Caddy:** writes `/etc/caddy/sites/amb-board.caddy`, makes sure the main Caddyfile imports that folder, validates and reloads; Caddy gets the certificate itself.
+- **Anything else (Apache, Traefik ...):** the script changes nothing and prints the address to proxy to (`http://127.0.0.1:<port>`, keep the Host header).
 
-The app then starts with `TRUST_PROXY=true` and a Secure session cookie. Open the site at `https://amb.makketing.com`; plain `http://127.0.0.1:<port>` logins will not stick because the cookie is HTTPS-only (set `DOMAIN=` to deploy without Caddy and keep http logins).
+Other options: `DOMAIN=other.example.com`, `DOMAIN=` to skip the mapping. Over HTTPS the app starts with `TRUST_PROXY=true` and a Secure session cookie, so sign in at `https://amb.makketing.com`.
 
 Do not set `NODE_ENV=production` unless the site is served over HTTPS: production mode makes the session cookie `Secure`, so logins fail over plain HTTP.
 
