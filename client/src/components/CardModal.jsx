@@ -222,7 +222,7 @@ export default function CardModal({ cardId, onClose, onChanged, onDeleted }) {
                 {card.attachments?.map((att) => (
                   <div key={att.id} className="attachment-item">
                     <FileText size={16} />
-                    <a href={`/uploads/${att.filename}`} target="_blank" rel="noreferrer">
+                    <a href={`/api/attachments/${att.id}/download`} target="_blank" rel="noreferrer">
                       {att.original_name}
                     </a>
                     <button

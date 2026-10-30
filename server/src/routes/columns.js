@@ -1,8 +1,19 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
+import { projectInWs, columnInWs } from '../access.js';
 
 const router = Router();
+
+router.param('projectId', (req, res, next, id) => {
+  if (!projectInWs(id, req.ws.id)) return res.status(404).json({ error: 'not found' });
+  next();
+});
+// `/columns/:id` routes: :id is a column id
+router.param('id', (req, res, next, id) => {
+  if (!columnInWs(id, req.ws.id)) return res.status(404).json({ error: 'not found' });
+  next();
+});
 
 // GET /api/projects/:projectId/columns  (with nested cards)
 router.get('/:projectId/columns', (req, res) => {

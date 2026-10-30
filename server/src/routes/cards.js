@@ -1,8 +1,18 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
 import { db, nowIso, parseLabels } from '../db.js';
+import { cardInWs, columnInWs } from '../access.js';
 
 const router = Router();
+
+router.param('id', (req, res, next, id) => {
+  if (!cardInWs(id, req.ws.id)) return res.status(404).json({ error: 'not found' });
+  next();
+});
+router.param('columnId', (req, res, next, id) => {
+  if (!columnInWs(id, req.ws.id)) return res.status(404).json({ error: 'not found' });
+  next();
+});
 
 export function sanitizeLabels(labels) {
   if (!Array.isArray(labels)) return [];
@@ -35,7 +45,8 @@ router.get('/:id', (req, res) => {
 });
 
 router.post('/columns/:columnId/cards', (req, res) => {
-  const { title, description, owner, creator, status, labels } = req.body;
+  const { title, description, owner, status, labels } = req.body;
+  const creator = req.user.name;
   if (!title || !title.trim()) return res.status(400).json({ error: 'title is required' });
   const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) AS m FROM cards WHERE column_id = ?')
     .get(req.params.columnId).m;
@@ -50,7 +61,7 @@ router.post('/columns/:columnId/cards', (req, res) => {
       description || '',
       status || 'todo',
       owner || '',
-      creator || '',
+      creator,
       JSON.stringify(sanitizeLabels(labels)),
       maxPos + 1,
       ts,
@@ -62,7 +73,7 @@ router.post('/columns/:columnId/cards', (req, res) => {
 router.patch('/:id', (req, res) => {
   const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id);
   if (!card) return res.status(404).json({ error: 'not found' });
-  const fields = ['title', 'description', 'status', 'owner', 'creator'];
+  const fields = ['title', 'description', 'status', 'owner'];
   const updated = { ...card };
   for (const f of fields) {
     if (req.body[f] !== undefined) updated[f] = req.body[f];
@@ -78,6 +89,7 @@ router.post('/:id/move', (req, res) => {
   const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id);
   if (!card) return res.status(404).json({ error: 'not found' });
   const { columnId, order } = req.body;
+  if (columnId && !columnInWs(columnId, req.ws.id)) return res.status(404).json({ error: 'not found' });
   const targetColumn = columnId || card.column_id;
 
   db.prepare('UPDATE cards SET column_id = ? WHERE id = ?').run(targetColumn, req.params.id);
@@ -96,7 +108,8 @@ router.delete('/:id', (req, res) => {
 
 // comments
 router.post('/:id/comments', (req, res) => {
-  const { author, text } = req.body;
+  const { text } = req.body;
+  const author = req.user.name;
   if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
   const id = nanoid();
   db.prepare('INSERT INTO comments (id, card_id, author, text, created_at) VALUES (?, ?, ?, ?, ?)')

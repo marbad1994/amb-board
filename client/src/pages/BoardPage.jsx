@@ -224,7 +224,7 @@ export default function BoardPage() {
   return (
     <div className="main" style={{ minHeight: 0 }}>
       <div className="board-header">
-        <button type="button" className="btn btn-icon btn-ghost" onClick={() => navigate('/')} title="Back">
+        <button type="button" className="btn btn-icon btn-ghost" onClick={() => navigate('/projects')} title="Back" aria-label="Back to projects">
           <ArrowLeft size={18} />
         </button>
         <h2>{project?.name || 'Loading…'}</h2>

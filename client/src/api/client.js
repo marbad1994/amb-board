@@ -1,10 +1,19 @@
 const BASE = '/api';
 
+let workspaceId = null;
+let onUnauthorized = () => {};
+
+export function setWorkspaceId(id) {
+  workspaceId = id;
+}
+export function setUnauthorizedHandler(fn) {
+  onUnauthorized = fn;
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: options.body instanceof FormData ? undefined : { 'content-type': 'application/json' },
-    ...options,
-  });
+  const headers = options.body instanceof FormData ? {} : { 'content-type': 'application/json' };
+  if (workspaceId) headers['x-workspace-id'] = workspaceId;
+  const res = await fetch(`${BASE}${path}`, { ...options, headers: { ...headers, ...options.headers } });
   if (!res.ok) {
     let message = `Request failed: ${res.status}`;
     try {
@@ -13,18 +22,57 @@ async function request(path, options = {}) {
     } catch {
       // ignore
     }
+    // an expired/revoked session on a data call sends the user back to sign-in
+    if (res.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/register')) onUnauthorized();
     throw new Error(message);
   }
   if (res.status === 204) return null;
   return res.json();
 }
 
+const json = (method, body) => ({ method, body: JSON.stringify(body ?? {}) });
+
 export const api = {
+  // auth
+  me: () => request('/auth/me'),
+  login: (email, password) => request('/auth/login', json('POST', { email, password })),
+  register: (data) => request('/auth/register', json('POST', data)),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+  logoutAll: () => request('/auth/logout-all', { method: 'POST' }),
+  changePassword: (currentPassword, newPassword) =>
+    request('/auth/password', json('POST', { currentPassword, newPassword })),
+
+  // workspaces
+  listWorkspaces: () => request('/workspaces'),
+  createWorkspace: (name) => request('/workspaces', json('POST', { name })),
+  renameWorkspace: (id, name) => request(`/workspaces/${id}`, json('PATCH', { name })),
+  listMembers: (id) => request(`/workspaces/${id}/members`),
+  setMemberRole: (id, userId, role) => request(`/workspaces/${id}/members/${userId}`, json('PATCH', { role })),
+  removeMember: (id, userId) => request(`/workspaces/${id}/members/${userId}`, { method: 'DELETE' }),
+  listInvitations: (id) => request(`/workspaces/${id}/invitations`),
+  invite: (id, email, role) => request(`/workspaces/${id}/invitations`, json('POST', { email, role })),
+  revokeInvitation: (id, invId) => request(`/workspaces/${id}/invitations/${invId}`, { method: 'DELETE' }),
+  acceptInvitation: (token) => request('/invitations/accept', json('POST', { token })),
+
+  // dashboard + life areas
+  dashboard: () => request('/dashboard'),
+  listLifeAreas: (includeArchived = false) => request(`/life-areas${includeArchived ? '?archived=1' : ''}`),
+  createLifeArea: (data) => request('/life-areas', json('POST', data)),
+  updateLifeArea: (id, data) => request(`/life-areas/${id}`, json('PATCH', data)),
+  addSubcategory: (id, name) => request(`/life-areas/${id}/subcategories`, json('POST', { name })),
+  removeSubcategory: (id, subId) => request(`/life-areas/${id}/subcategories/${subId}`, { method: 'DELETE' }),
+
   // projects
-  listProjects: () => request('/projects'),
-  createProject: (name, color) => request('/projects', { method: 'POST', body: JSON.stringify({ name, color }) }),
+  listProjects: ({ archived = false, lifeArea } = {}) => {
+    const q = new URLSearchParams();
+    if (archived) q.set('archived', '1');
+    if (lifeArea) q.set('lifeArea', lifeArea);
+    const s = q.toString();
+    return request(`/projects${s ? `?${s}` : ''}`);
+  },
+  createProject: (name, color, lifeAreaId) => request('/projects', json('POST', { name, color, lifeAreaId })),
   getProject: (id) => request(`/projects/${id}`),
-  updateProject: (id, data) => request(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  updateProject: (id, data) => request(`/projects/${id}`, json('PATCH', data)),
   deleteProject: (id) => request(`/projects/${id}`, { method: 'DELETE' }),
 
   // columns

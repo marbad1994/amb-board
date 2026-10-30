@@ -1,5 +1,9 @@
 # amb-board
 
+> Status: Phase 0 (audit) and Phase 1 (accounts, workspaces, roles, Life Areas, navy/teal shell) are implemented.
+> See `docs/AUDIT.md` for the requirement checklist (most modules are still TODO), `docs/DECISIONS.md`, `docs/SECURITY.md`.
+
+
 A self-hosted, mobile-first task board. Multiple projects, each with its own
 board of draggable columns and cards, plus a shared idea board for loose
 "post-it" style notes. Card and note descriptions support voice dictation in
@@ -86,10 +90,24 @@ tailnet — including over the internet, without opening any ports.
 
 To stop serving: `tailscale serve --stop`.
 
+## Accounts and workspaces
+
+All API routes now require a signed-in account. The first account registered adopts any pre-existing
+(pre-auth) projects and ideas into its personal workspace; register it before exposing the server.
+Set `NODE_ENV=production` (or `COOKIE_SECURE=true`) when served over HTTPS, e.g. via `tailscale serve`.
+Optional env: `ALLOWED_ORIGINS`, `CORS_ORIGIN`, `TRUST_PROXY=true`, `REGISTER_RATE_MAX`.
+
+## Tests
+
+```bash
+npm test                      # server API tests (node:test, isolated temp DB)
+npm run build && npm run e2e  # browser smoke test; needs Playwright available to Node
+```
+
 ## Data & uploads
 
 - SQLite database: `server/data/board.sqlite` (created automatically).
-- Uploaded attachments: `server/uploads/`.
+- Uploaded attachments: `server/uploads/` (served only through `/api/attachments/:id/download`).
 
 Both are gitignored — back them up manually if you care about the data
 (it's a single file + a folder, so a simple `cp -r` or `tar` works).
