@@ -129,7 +129,7 @@ PORT="${PORT:-$(grep -E '^PORT=' "${DEST_DIR}/server/.env" 2>/dev/null | tail -n
 PORT="${PORT:-3417}"
 
 # ---------------------------------------------------------------- map the domain to the app (through the web server already on 80/443)
-SECURE=false; BEHIND_PROXY=false; TLS_ELSEWHERE=""
+SECURE=false; BEHIND_PROXY=false; TLS_ELSEWHERE=""; ROUTED_443=false; DOCKER_CADDY_HINT=0
 [ "$HTTPS" = true ] && SECURE=true
 
 # who listens on 80/443 right now? (nginx, caddy, apache2/httpd, traefik, ...)
@@ -143,6 +143,46 @@ detect_proxy() {
 
 # name of the program holding port 443, empty if none
 owner_443() { ss -ltnpH 2>/dev/null | awk '$4 ~ /:443$/' | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"//'; }
+
+# HTTPS held by a Caddy CONTAINER (e.g. the one serving makketing.com): add this domain to ITS Caddyfile, pointing at the app on
+# the host. The original file is backed up, the change is validated inside the container before reload, and rolled back on failure.
+map_docker_caddy() {
+  command -v docker >/dev/null || return 1
+  local name="${CADDY_CONTAINER:-}" cfg host_file="" gw="" ok="" mounts line src dst rw tmp bak
+  [ -n "$name" ] || name="$(docker ps --format '{{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null | awk '/caddy/ && /:443->443/ {print $1; exit}')"
+  [ -n "$name" ] || return 1
+  cfg="$(docker inspect -f '{{join .Config.Cmd " "}}' "$name" 2>/dev/null | grep -o -- '--config [^ ]*' | head -1 | cut -d' ' -f2)"; cfg="${cfg:-/etc/caddy/Caddyfile}"
+  mounts="$(docker inspect -f '{{range .Mounts}}{{.Source}} {{.Destination}} {{.RW}}{{"\n"}}{{end}}' "$name" 2>/dev/null)"
+  while read -r src dst rw; do
+    [ -n "$dst" ] || continue
+    if [ "$dst" = "$cfg" ]; then host_file="$src"; break; fi
+    case "$cfg" in "$dst"/*) host_file="${src}${cfg#"$dst"}" ;; esac
+  done <<< "$mounts"
+  if [ -z "$host_file" ] || [ ! -f "$host_file" ]; then warn "found the Caddy container '${name}' but not its Caddyfile on this server (looked for ${cfg}). Add the block printed below to it yourself."; DOCKER_CADDY_HINT=1; return 1; fi
+  # an address the container can use to reach the app on the host
+  for gw in $(docker inspect -f '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}' "$name" 2>/dev/null) host.docker.internal; do
+    if docker exec "$name" wget -q -T 3 -O /dev/null "http://${gw}:${PORT}/api/health" 2>/dev/null; then ok="$gw"; break; fi
+  done
+  if [ -z "$ok" ]; then
+    warn "the Caddy container '${name}' cannot reach the app on the host (tried its gateway addresses on port ${PORT}). If a firewall blocks Docker to host traffic, allow it: sudo ufw allow from 172.16.0.0/12 to any port ${PORT}"
+    DOCKER_CADDY_HINT=1; return 1
+  fi
+  bak="${host_file}.bak-amb-$(date +%Y%m%d-%H%M%S)"; cp -p "$host_file" "$bak"; tmp="$(mktemp)"
+  log "Adding ${DOMAIN} -> ${ok}:${PORT} to the Caddyfile of container '${name}' (${host_file}; backup ${bak})"
+  awk '/^# BEGIN amb-board \(deploy.sh\)/ {skip=1} !skip {print} /^# END amb-board \(deploy.sh\)/ {skip=0}' "$host_file" > "$tmp"
+  printf '\n# BEGIN amb-board (deploy.sh)\n%s {\n    encode gzip\n    request_body {\n        max_size 12MB\n    }\n    reverse_proxy %s:%s\n}\n# END amb-board (deploy.sh)\n' "$DOMAIN" "$ok" "$PORT" >> "$tmp"
+  cat "$tmp" > "$host_file"   # written in place: a single-file bind mount keeps pointing at the same file
+  rm -f "$tmp"
+  if docker exec "$name" caddy validate --config "$cfg" --adapter caddyfile >/dev/null 2>&1 && docker exec "$name" caddy reload --config "$cfg" --adapter caddyfile >/dev/null 2>&1; then
+    SECURE=true; ROUTED_443=true
+    log "Caddy container reloaded; it will fetch the certificate for ${DOMAIN} on the first visit."
+  else
+    docker exec "$name" caddy validate --config "$cfg" --adapter caddyfile 2>&1 | tail -3 || true
+    cat "$bak" > "$host_file"
+    warn "Caddy rejected the new block, so the original Caddyfile was restored (backup: ${bak}). ${DOMAIN} is not served over HTTPS."
+    DOCKER_CADDY_HINT=1; return 1
+  fi
+}
 
 map_nginx() {
   local dir="${NGINX_DIR}/conf.d" conf listen_tls="" o443
@@ -186,12 +226,16 @@ server {
 NGINX
     SECURE=true
   else
+    local redirect=""
+    # HTTPS is served by the Caddy container: send plain-HTTP visitors there (a proxy in front that already speaks https sends the header and is passed through)
+    [ "$ROUTED_443" = true ] && redirect='if ($http_x_forwarded_proto != "https") { return 301 https://$host$request_uri; }'
     cat > "$conf" <<NGINX
 # Managed by deploy.sh: regenerated on every deploy. certbot (ACME_EMAIL) adds the HTTPS block next to this one.
 server {
     listen 80;
     listen [::]:80;
     server_name ${DOMAIN};
+    ${redirect}
     ${common}
 }
 NGINX
@@ -241,11 +285,15 @@ map_caddy() {
 if [ -n "$DOMAIN" ] && [ "$PROXY" != none ]; then
   kind="$PROXY"; [ "$kind" = auto ] && kind="$(detect_proxy)"
   case "$kind" in
-    nginx) command -v nginx >/dev/null && map_nginx || warn "nginx was chosen but is not installed, so ${DOMAIN} is not mapped." ;;
+    nginx) command -v nginx >/dev/null && { o="$(owner_443)"; [ -n "$o" ] && [ "$o" != nginx ] && map_docker_caddy || true; map_nginx; } || warn "nginx was chosen but is not installed, so ${DOMAIN} is not mapped." ;;
     caddy) command -v caddy >/dev/null && map_caddy || warn "caddy was chosen but is not installed, so ${DOMAIN} is not mapped." ;;
     other:*) warn "ports 80/443 are served by '${kind#other:}', which this script does not configure. Add ${DOMAIN} there as a reverse proxy to http://127.0.0.1:${PORT} (keep the Host header). Nothing was changed." ;;
     *) warn "no web server found on ports 80/443 and none is installed, so ${DOMAIN} is not mapped. Install nginx or caddy, or proxy to http://127.0.0.1:${PORT} yourself." ;;
   esac
+fi
+
+if [ "$DOCKER_CADDY_HINT" = 1 ]; then
+  printf '\nAdd this to the Caddyfile that serves port 443 (use an address that container can reach the host on, e.g. the Docker gateway), then reload it:\n\n%s {\n    encode gzip\n    reverse_proxy 172.17.0.1:%s\n}\n\n' "$DOMAIN" "$PORT"
 fi
 
 log "npm start (port ${PORT}, log: ${LOG_FILE})"

@@ -111,6 +111,8 @@ The deploy adds `amb.makketing.com` to the web server that already owns ports 80
 - **Caddy:** writes `/etc/caddy/sites/amb-board.caddy`, makes sure the main Caddyfile imports that folder, validates and reloads; Caddy gets the certificate itself.
 - **Anything else (Apache, Traefik ...):** the script changes nothing and prints the address to proxy to (`http://127.0.0.1:<port>`, keep the Host header).
 
+If a **Caddy container** holds port 443 (as on the makketing.com server), the deploy finds its Caddyfile through `docker inspect`, appends a marked `# BEGIN amb-board` block that proxies the domain to the app on the host (using an address the container can reach), validates it inside the container, reloads it and restores the original file if Caddy rejects it (a timestamped backup is kept next to the Caddyfile). Caddy then gets the certificate itself, and the nginx site on port 80 redirects to HTTPS. Set `CADDY_CONTAINER=name` if several containers match. If a firewall blocks Docker-to-host traffic: `sudo ufw allow from 172.16.0.0/12 to any port <app port>`.
+
 If another program holds port 443 (for example a Docker proxy container), nginx serves the site on port 80 only and the script says so. When HTTPS is handled in front of nginx (Cloudflare, or that container), deploy with `HTTPS=true` so the session cookie is Secure.
 
 Other options: `DOMAIN=other.example.com`, `DOMAIN=` to skip the mapping. Over HTTPS the app starts with `TRUST_PROXY=true` and a Secure session cookie, so sign in at `https://amb.makketing.com`.
