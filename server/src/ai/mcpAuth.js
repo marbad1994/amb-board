@@ -13,7 +13,7 @@ export const TRANSPORTS = [{ id: 'streamable-http', name: 'Streamable HTTP' }]; 
 export const PRESETS = [
   { id: 'google-calendar', name: 'Google Calendar', server_name: 'calendar', url: 'https://calendarmcp.googleapis.com/mcp/v1', auth_type: 'oauth',
     oauth: { auth_url: 'https://accounts.google.com/o/oauth2/v2/auth', token_url: 'https://oauth2.googleapis.com/token', scopes: 'https://www.googleapis.com/auth/calendar', auth_params: { access_type: 'offline', prompt: 'consent' } },
-    help: 'In Google Cloud, create an OAuth client (type: web application), turn on the Calendar API and the Calendar MCP, add the redirect address below, and paste the client ID and secret here. Check the scopes against Google\'s current list for the Calendar MCP.' },
+    help: 'In the same Google Cloud project as your OAuth client (type: web application), enable the Google Calendar API and the Google Calendar MCP API (calendarmcp.googleapis.com), add the redirect address below to the client, and paste the client ID and secret here. A 403 when testing means the API is not enabled in that project or the scopes are too narrow: the message shown names which. Check the scopes against Google\'s current list for the Calendar MCP.' },
 ];
 
 const FORBIDDEN_HEADERS = new Set(['host', 'content-type', 'content-length', 'accept', 'cookie', 'mcp-session-id', 'mcp-protocol-version', 'authorization', 'transfer-encoding', 'connection']);

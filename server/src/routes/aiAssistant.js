@@ -220,7 +220,7 @@ router.post('/connections', async (req, res) => {
   const row = () => db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id);
   if (auth.auth_type === 'oauth') return res.status(201).json({ ...present(row()), tools: 0, needs_authorization: true });
   try { const tools = await toolsOf(row()); res.status(201).json({ ...present(row()), tools: tools.length }); }
-  catch (e) { res.status(201).json({ ...present(row()), tools: 0, warning: `Saved, but the server could not be reached: ${String(e.message).slice(0, 120)}` }); }
+  catch (e) { res.status(201).json({ ...present(row()), tools: 0, warning: `Saved, but the server could not be reached: ${String(e.message).slice(0, 320)}` }); }
 });
 // OAuth: the address to open in the browser. The provider sends the person back to /api/oauth/mcp/callback.
 router.post('/connections/:id/authorize', (req, res) => {
@@ -232,7 +232,7 @@ router.post('/connections/:id/authorize', (req, res) => {
 router.post('/connections/:id/test', async (req, res) => {
   const s = findServer(req.ws.id, req.user.id, req.params.id);
   if (!s) return res.status(404).json({ error: 'not found' });
-  try { res.json({ tools: (await toolsOf(s)).map((t) => ({ name: t.name, read_only: t.read_only })) }); } catch (e) { res.status(502).json({ error: String(e.message).slice(0, 150) }); }
+  try { res.json({ tools: (await toolsOf(s)).map((t) => ({ name: t.name, read_only: t.read_only })) }); } catch (e) { res.status(502).json({ error: String(e.message).slice(0, 320) }); }
 });
 router.delete('/connections/:id', (req, res) => {
   const s = findServer(req.ws.id, req.user.id, req.params.id);
