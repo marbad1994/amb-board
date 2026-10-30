@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { useDictation } from '../hooks/useDictation.js';
 
-export default function DictationButton({ onText, translate = true }) {
+export default function DictationButton({ onText, translate = true, className = '' }) {
   const [warning, setWarning] = useState('');
   const { start, stop, listening, translating, error, supported } = useDictation({
     translate,
@@ -15,7 +15,7 @@ export default function DictationButton({ onText, translate = true }) {
   if (!supported) return null;
 
   return (
-    <div className="dictation">
+    <div className={`dictation ${className}`.trim()}>
       <button
         type="button"
         className={`dictation__mic ${listening ? 'is-listening' : ''}`}
