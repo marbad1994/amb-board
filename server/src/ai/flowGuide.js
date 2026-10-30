@@ -67,6 +67,7 @@ export async function flowGuide(ws, user, TOOLS) {
       builtin_templates: Object.entries(BUILTIN_TEMPLATES).map(([key, t]) => ({ key, name: t.name, subject: t.subject })),
       workspace_templates: templates,
     },
+    duplicates: 'create_automation is refused when an automation with the same name (ignoring case and punctuation) or the same schedule and kinds of steps already exists: look at existing_automations first and propose update_automation instead.',
     existing_automations: existing,
     examples: [
       { name: 'Morning news by email', trigger: { type: 'schedule', frequency: 'daily', time: '07:30', timezone: 'Europe/Bucharest' },

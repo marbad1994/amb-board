@@ -219,3 +219,18 @@ test('schedule maths: weekly, monthly, weekdays, once, and DST keeps wall-clock 
   assert.equal(nextRunAt({ ...t, frequency: 'weekdays' }, new Date('2027-03-05T12:00:00Z')), '2027-03-08T07:00:00.000Z', 'Friday afternoon -> Monday');
   assert.equal(nextRunAt({ ...t, frequency: 'once', date: '2020-01-01' }, new Date('2027-01-01T00:00:00Z')), null);
 });
+
+test('the assistant cannot propose a near-duplicate of an existing automation', async () => {
+  const u = await signUp(srv.base, 'DupAuto');
+  const trig = { type: 'schedule', frequency: 'weekly', weekday: 1, time: '08:00', timezone: 'UTC' };
+  const step = { type: 'notify', args: { title: 'Plan the week' } };
+  assert.equal((await u.c.post('/api/automations', { name: 'Monday planning', trigger: trig, steps: [step] })).status, 201);
+  const ask = async (proposals) => { reset([{ type: 'final', answer: 'ok', proposals }]); return (await u.c.post('/api/ai/assistant/chat', { message: 'make one' })).json; };
+  const sameName = await ask([{ type: 'create_automation', args: { name: 'monday  PLANNING!', trigger: { ...trig, time: '09:00' }, steps: [step] } }]);
+  assert.equal(sameName.dropped.length, 1); assert.match(sameName.dropped[0].reason, /already has that name/);
+  const sameRun = await ask([{ type: 'create_automation', args: { name: 'Weekly nudge', trigger: trig, steps: [{ type: 'notify', args: { title: 'Different text' } }] } }]);
+  assert.match(sameRun.dropped[0].reason, /same time with the same kinds of steps/);
+  const fine = await ask([{ type: 'create_automation', args: { name: 'Friday review', trigger: { ...trig, weekday: 5 }, steps: [step] } }]);
+  assert.equal(fine.dropped.length, 0);
+  assert.equal(fine.message.proposals.length, 1);
+});

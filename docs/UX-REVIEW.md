@@ -44,9 +44,14 @@ Reviewed by eye (screenshots in light, dark and phone width): every page, in two
 - **Projects:** the red trash icon on every card is neutral; it still asks before deleting.
 - **Documents, Reports:** checked; no structural problems found (empty states are clear, controls fit one row).
 
-## Still open (design decisions, not defects)
+## Closed in pass 3
 
-1. The assistant does not detect a near-duplicate automation it is about to suggest (only the editor checks for equal names).
-2. The eight per-tab questions from the first audit (dashboard goals view, briefing duplication, default categories, goal target number, life areas count, notes form collapse, documents preview and search, idea board button) were never answered. Several are now settled by this pass (briefing, notes, idea board, life areas); the rest remain.
-3. Dashboard: the grid leaves an empty gap under "Upcoming events" when "Recent projects" is taller. A masonry layout would close it.
-4. Documents has no preview or search; Reports has no "last generated" ordering control. Both are feature questions, not layout problems.
+- **Duplicate automations from the assistant:** `create_automation` is refused when the workspace already has one with the same name (ignoring case and punctuation) or the same schedule and kinds of steps; the reply names the existing one and points to `update_automation`. The automation guide tells the assistant to check `existing_automations` first.
+- **Dashboard gap:** panels flow in two balanced columns, so a shorter panel no longer leaves a hole; "Needs attention" still spans the full width on top.
+- **Documents:** a search field (name or project) and a Preview button for images and text, CSV, Markdown and JSON files in a dialog; PDFs open in a new tab. Other types (Word, Excel) have no preview.
+- **Reports:** a sort control (newest, oldest, title, type) once there is more than one report.
+
+## Still open
+
+1. The eight per-tab questions from the first audit are mostly settled by the three passes; the remaining ones are product choices (default categories, goal target number).
+2. The audit measures contrast, size, labels and overflow. It cannot judge wording, hierarchy or flow; those still need a person's eyes after each larger change (`node e2e/audit.mjs --shots dir`).

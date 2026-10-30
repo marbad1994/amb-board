@@ -2542,3 +2542,16 @@ small { font-size: max(12px, 0.8em); }
 .idea-quick { display: flex; gap: 8px; margin: 0 0 18px; max-width: 640px; }
 .idea-quick input { flex: 1; min-width: 0; }
 @media (min-width: 901px) { .idea-board__fab { display: none; } }
+
+/* dashboard: masonry columns close the gap under shorter panels; documents and reports controls */
+.dash-grid { display: block; columns: 2 380px; column-gap: 16px; }
+.dash-grid > * { break-inside: avoid; margin: 0 0 16px; }
+.dash-grid > .dash-wide { column-span: all; }
+@media (max-width: 960px) { .dash-grid { columns: 1; } }
+.doc-search { margin: 0 0 14px; max-width: 520px; }
+.doc-preview { width: min(900px, 100%); }
+.doc-preview__body { padding: 0 24px 24px; max-height: 70vh; overflow: auto; }
+.doc-preview__body img { max-width: 100%; height: auto; border-radius: 8px; }
+.report-sort { max-width: 240px; margin: 0 0 12px; }
+.ai-off { margin: 14px 0 18px; }
+.attention .activity li { align-items: center; }
