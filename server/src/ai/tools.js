@@ -5,13 +5,30 @@ import { projectBudgetMetrics } from '../finance/calc.js';
 import { occurrences } from '../calendar/recurrence.js';
 import { projectFacts } from './facts.js';
 import { monthBudget } from '../finance/budget.js';
+import { crossReference, analyzeSpending, analyzeWorkload, projectHealth, findGaps } from './analysis.js';
+import { generateReport, PRESETS, SECTION_IDS } from '../reports/build.js';
 
 // Read-only tools the model may call. Each runs with the CALLER's workspace and is scoped by workspace_id.
 // The model never sees SQL, never chooses a workspace, and cannot call anything not listed here.
 // Results are capped so one call cannot flood the prompt.
 const cap = (rows, n = 25) => rows.slice(0, n);
 
+// every entry: { kind: 'read'|'analysis'|'report', doc, run(ws, args, user), async? }
 export const TOOLS = {
+  // ---- analysis skills (deterministic; the model narrates the result) ----
+  cross_reference: { kind: 'analysis', doc: 'cross_reference {entity: "project"|"goal"|"task", id} -> everything linked to it: tasks, budget, transactions, events, goals, notes, documents', run: (ws, a, user) => crossReference(ws, a, user?.id) },
+  analyze_spending: { kind: 'analysis', doc: 'analyze_spending {months?: 1-12} -> this month vs previous average per category (minor units), unusual categories, top expenses, uncategorised count', run: (ws, a) => analyzeSpending(ws, a) },
+  analyze_workload: { kind: 'analysis', doc: 'analyze_workload {days?: 1-31} -> tasks, deadlines and appointments per day, busiest and heavy days', run: (ws, a) => analyzeWorkload(ws, a) },
+  project_health: { kind: 'analysis', doc: 'project_health {} -> every active project with progress, schedule, budget status, risk level and reasons', run: (ws, a) => projectHealth(ws, a) },
+  find_gaps: { kind: 'analysis', doc: 'find_gaps {} -> data gaps: tasks without due dates, projects without tasks/budget, uncategorised expenses, goals without milestones', run: (ws, a) => findGaps(ws, a) },
+  // ---- report skill: creates a standalone HTML report (private to the user), returns where to open it ----
+  generate_report: { kind: 'report', async: true,
+    doc: `generate_report {kind: ${Object.keys(PRESETS).map((k) => `"${k}"`).join('|')} OR sections: [${SECTION_IDS.join(', ')}], month?: YYYY-MM, project_id?, days?, title?, narrative?: true} -> creates a standalone HTML report with charts; returns report_id (tell the user it is under Reports)`,
+    run: async (ws, a, user) => {
+      const r = await generateReport({ workspaceId: ws, user, params: a });
+      return { report_id: r.id, title: r.title, kind: r.kind, open_in_app: `/reports/${r.id}`, artifact: { type: 'report', id: r.id, title: r.title } };
+    } },
+  // ---- read skills ----
   list_projects: {
     doc: 'list_projects {status?: "todo"|"in_progress"|"done"} -> active projects with progress, dates, priority',
     run: (ws, args) => {
@@ -112,13 +129,27 @@ export const TOOLS = {
   },
 };
 
-export function runTool(name, args, ws) {
+export function runTool(name, args, ws, user = null) {
   const tool = Object.hasOwn(TOOLS, name) ? TOOLS[name] : null;
   if (!tool) return { error: `unknown tool "${String(name).slice(0, 40)}"` };
+  if (tool.async) return { error: 'this skill must be called through the assistant' };
   try {
-    return tool.run(ws, args && typeof args === 'object' ? args : {});
+    return tool.run(ws, args && typeof args === 'object' ? args : {}, user);
   } catch (err) {
     console.error('tool error', name, err);
     return { error: 'tool failed' };
+  }
+}
+
+// Used by the assistant and the MCP endpoint: handles async skills (reports) too. Never throws.
+export async function runSkill(name, args, ws, user) {
+  const tool = Object.hasOwn(TOOLS, name) ? TOOLS[name] : null;
+  if (!tool) return { error: `unknown tool "${String(name).slice(0, 40)}"` };
+  try {
+    return await tool.run(ws, args && typeof args === 'object' ? args : {}, user);
+  } catch (err) {
+    if (err.status) return { error: err.message };
+    console.error('skill error', name, err);
+    return { error: 'skill failed' };
   }
 }

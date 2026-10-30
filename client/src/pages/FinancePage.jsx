@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Download, Trash2 } from 'lucide-react';
+import { Download, Trash2, FileBarChart } from 'lucide-react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import { BudgetTab, SavingsTab, DebtsTab } from '../components/FinanceDepth.jsx';
@@ -20,7 +21,10 @@ export default function FinancePage() {
   const [recurring, setRecurring] = useState([]);
   const [trend, setTrend] = useState(null);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState('overview');
+  const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState(['budget', 'savings', 'debts'].includes(params.get('tab')) ? params.get('tab') : 'overview');
   const [form, setForm] = useState({ type: 'expense', status: 'posted', amount: '', currency: lastCurrency(), date: today(), description: '', categoryId: '', projectId: '' });
   const [rec, setRec] = useState({ description: '', amount: '', currency: lastCurrency(), frequency: 'monthly', start_date: today() });
 
@@ -40,6 +44,17 @@ export default function FinancePage() {
   }, []);
 
   const act = async (fn) => { setError(''); try { await fn(); await load(); } catch (err) { setError(err.message); } };
+  // "Edit first" from the assistant: fill the add-transaction form with the proposed values
+  useEffect(() => {
+    const t = location.state?.prefillTx;
+    if (!t) return;
+    setTab('overview');
+    setForm((f) => ({ ...f, type: t.type, status: t.status || 'posted', amount: (t.amount_minor / 100).toFixed(2), currency: t.currency, date: t.date, description: t.description || '', categoryId: t.category_id || '', projectId: t.project_id || '' }));
+    navigate('/finance', { replace: true, state: null });
+  }, [location.state, navigate]);
+  const makeReport = async () => {
+    try { const r = await api.createReport({ kind: 'monthly_finance', month }); navigate(`/reports/${r.id}`); } catch (err) { setError(err.message); }
+  };
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const add = (e) => {
@@ -83,6 +98,7 @@ export default function FinancePage() {
         </div>
         {tab === 'overview' && <div className="inline-form">
           <input type="month" aria-label="Month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
+          {writable && <button type="button" className="btn" onClick={makeReport}><FileBarChart size={16} aria-hidden="true" /> Create report</button>}
           <button type="button" className="btn" onClick={exportCsv}><Download size={16} aria-hidden="true" /> Export CSV</button>
         </div>}
       </div>

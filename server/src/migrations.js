@@ -568,6 +568,42 @@ const budgetDrafts = `
   CREATE INDEX idx_budget_drafts_user ON ai_budget_drafts(workspace_id, user_id);
 `;
 
+const assistantPlatform = `
+  -- Standalone HTML reports. Private to the user who generated them (they can contain workspace data).
+  CREATE TABLE reports (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    html TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_reports_user ON reports(workspace_id, user_id, created_at);
+
+  CREATE TABLE suggestion_dismissals (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    until TEXT NOT NULL,
+    PRIMARY KEY (user_id, workspace_id, key)
+  );
+
+  -- Personal access tokens for the MCP endpoint. Bound to ONE workspace; only a hash is stored.
+  CREATE TABLE api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    prefix TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+  );
+  CREATE INDEX idx_api_tokens_user ON api_tokens(user_id);
+`;
+
 export const migrations = [
   { id: '001_baseline', up: (db) => {
     db.exec(baseline);
@@ -591,6 +627,7 @@ export const migrations = [
   { id: '007_life', up: (db) => db.exec(lifeTables) },
   { id: '008_depth', up: (db) => db.exec(depthTables) },
   { id: '009_budget_drafts', up: (db) => db.exec(budgetDrafts) },
+  { id: '010_assistant_platform', up: (db) => db.exec(assistantPlatform) },
 ];
 
 function appliedIds(db) {

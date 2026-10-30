@@ -102,6 +102,38 @@ function MembersSection({ ws, me }) {
   );
 }
 
+function McpTokens() {
+  const [tokens, setTokens] = useState([]);
+  const [name, setName] = useState('');
+  const [issued, setIssued] = useState(null);
+  const [error, setError] = useState('');
+  const load = useCallback(() => api.listTokens().then(setTokens).catch((e) => setError(e.message)), []);
+  useEffect(() => { load(); }, [load]);
+  const url = `${window.location.origin}/api/mcp`;
+  return (
+    <section className="panel" aria-labelledby="mcp-h">
+      <div className="panel__title"><h2 id="mcp-h">Connect other AI tools (MCP)</h2></div>
+      <p className="muted">External AI clients that support MCP can use the same skills as the assistant: read and analyse your data, create reports, and propose changes that still wait for your approval here. A token works in the current workspace only and acts as you.</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <form className="inline-form inline-form--wide" onSubmit={async (e) => { e.preventDefault(); try { setIssued(await api.createToken(name.trim())); setName(''); load(); } catch (err) { setError(err.message); } }}>
+        <input type="text" aria-label="Token name" placeholder="e.g. Claude Desktop" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} />
+        <button type="submit" className="btn btn-primary" disabled={!name.trim()}>Create token</button>
+      </form>
+      {issued && (
+        <div className="notice" role="status">
+          <p>Copy this token now. It is shown only once.</p>
+          <input type="text" readOnly aria-label="New token" value={issued.token} onFocus={(e) => e.target.select()} />
+          <p className="hint">Endpoint: <code>{url}</code> with header <code>Authorization: Bearer &lt;token&gt;</code> (JSON-RPC 2.0 over HTTP POST).</p>
+        </div>
+      )}
+      {tokens.length > 0 && (
+        <ul className="plain-list">{tokens.map((t) => <li key={t.id}><span>{t.name} · {t.prefix}… · {t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : 'never used'}</span>
+          <button type="button" className="btn btn-ghost" onClick={() => window.confirm('Revoke this token?') && api.revokeToken(t.id).then(load)}>Revoke</button></li>)}</ul>
+      )}
+    </section>
+  );
+}
+
 function NotificationPrefs() {
   const [prefs, setPrefs] = useState(null);
   useEffect(() => { api.notificationPrefs().then(setPrefs).catch(() => {}); }, []);
@@ -189,6 +221,8 @@ export default function WorkspaceSettingsPage() {
         </section>
 
         <NotificationPrefs />
+
+        <McpTokens />
 
         <section className="panel" aria-labelledby="sec-h">
           <div className="panel__title"><h2 id="sec-h">Security</h2></div>

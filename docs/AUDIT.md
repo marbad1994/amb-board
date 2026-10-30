@@ -52,7 +52,8 @@ Master-prompt sections. Evidence column is filled only for tested items.
 | 13 | AI summaries: project + daily briefing (grounded, cached, traceable facts) | PARTIAL | mocked tests only; live providers unverified (`docs/AI.md`). Weekly/monthly/financial TODO |
 | 14 | AI assistant: chat, read-only tools over authorised data, action proposals with explicit approval, audit | DONE (Phase 4) | `assistant.test.js` (mocked provider), E2E. Live model behaviour unverified |
 | 13/14 | Weekly and monthly AI reviews (per-user, grounded facts, cached); assistant tools for month budgets, savings, debts | DONE (depth pass) | `depth.test.js` (mocked provider) |
-| 14 | Scheduling suggestions beyond single proposals, automation policies | TODO | |
+| 14 | Always-available assistant dock with page context and proactive suggestions; skill registry (read/analysis/report/write); standalone HTML reports; MCP endpoint with personal access tokens; "Edit first" prefill | DONE | `platform.test.js` (mocked provider), E2E |
+| 14 | Automation policies that pre-authorise narrow actions, streaming, scheduled reports | TODO | |
 | 15 | Idea Board + convert to project (idea kept and linked, one-time) | DONE (Phase 2) | `core.test.js`, E2E |
 | 15 | Idea labels/AI organisation | TODO | |
 | 16 | Goals (milestones, project links, derived progress), habits (daily/weekly, streaks), challenges (date-ranged progress) | DONE (Phase 5) | `life.test.js`, E2E |
@@ -66,7 +67,7 @@ Master-prompt sections. Evidence column is filled only for tested items.
 | 21 | Automations: recurring expenses/tasks (idempotent); notifications for event reminders, due/overdue tasks, budget alerts (deduplicated, per-user preferences, in-process 60 s scheduler) | PARTIAL | `depth.test.js`. TODO: user-defined rules, retries/failure monitoring, email/push delivery, durable job queue |
 | 22 | Billing/entitlements | TODO | |
 
-| 24 | Tests | PARTIAL | 88 API tests (`npm test`; 36 use a mocked AI provider) + 25-step browser E2E (`npm run e2e`). Covered: 1-3, 5-13 (AI mocked), 15, 16, 17, 18, 20-23; partly 14, 19, 24. Not covered: 4 (partly), 25 (backup/restore procedure), live AI |
+| 24 | Tests | PARTIAL | 100 API tests (`npm test`; 48 use a mocked AI provider) + 27-step browser E2E (`npm run e2e`). Covered: 1-3, 5-13 (AI mocked), 15, 16, 17, 18, 20-23; partly 14, 19, 24. Not covered: 4 (partly), 25 (backup/restore procedure), live AI |
 | 25 | Docs | PARTIAL | this file, DECISIONS, SECURITY |
 
 ## 4. Proposed architecture (summary)

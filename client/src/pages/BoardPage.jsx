@@ -249,6 +249,9 @@ export default function BoardPage() {
           <ArrowLeft size={18} />
         </button>
         <h2>{project?.name || 'Loading…'}</h2>
+        {project && canWrite(active?.role) && (
+          <button type="button" className="btn" onClick={async () => { try { const r = await api.createReport({ kind: 'project_status', project_id: projectId }); navigate(`/reports/${r.id}`); } catch (err) { setError(err.message); } }}>Report</button>
+        )}
         {project && (
           <button type="button" className="btn" onClick={() => setDetailsOpen(true)}>
             Details · {project.progress}%

@@ -14,6 +14,7 @@ import MyDayPage from './pages/MyDayPage.jsx';
 import GoalsPage from './pages/GoalsPage.jsx';
 import NotesPage from './pages/NotesPage.jsx';
 import DocumentsPage from './pages/DocumentsPage.jsx';
+import ReportsPage, { ReportView } from './pages/ReportsPage.jsx';
 import TasksPage from './pages/TasksPage.jsx';
 import IdeaBoardPage from './pages/IdeaBoardPage.jsx';
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
@@ -45,6 +46,8 @@ export default function App() {
         <Route path="/goals" element={<GoalsPage />} />
         <Route path="/notes" element={<NotesPage />} />
         <Route path="/documents" element={<DocumentsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/reports/:id" element={<ReportView />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/ideas" element={<IdeaBoardPage />} />
         <Route path="/settings" element={<WorkspaceSettingsPage />} />
