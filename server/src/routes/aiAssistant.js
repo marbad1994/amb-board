@@ -35,7 +35,7 @@ router.get('/conversations/:id', (req, res) => {
 router.post('/chat', async (req, res) => {
   const message = String(req.body.message || '').trim();
   if (!message) return res.status(400).json({ error: 'message is required' });
-  if (message.length > 2000) return res.status(400).json({ error: 'message is too long (2000 characters max)' });
+  if (message.length > 12000) return res.status(400).json({ error: 'message is too long (12000 characters max)' });
   try {
     const out = await chat({ workspaceId: req.ws.id, user: req.user, role: req.ws.role, conversationId: req.body.conversationId, message, context: req.body.context });
     if (out.notFound) return res.status(404).json({ error: 'not found' });

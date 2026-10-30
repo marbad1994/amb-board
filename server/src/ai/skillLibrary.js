@@ -20,7 +20,31 @@ How to work:
 
 Set "done": true only when the automation exists and the user has nothing left to change, or the user says they are finished.`;
 
+const ADD_TRANSACTION = `Goal: record ONE transaction correctly with as few questions as possible. You drive; never end a turn without a question with suggestions, the proposal, or "done".
+Slots: type (expense, income or refund), amount, currency, date, description, category, optionally a project.
+1. Take everything the user already said ("45 euro on groceries today"). Defaults: date today, currency the one used in recent transactions (see the workspace data) or ask once, status posted for past dates and planned for future ones.
+2. Ask ONLY for what is missing, one question per turn, with 2-4 clickable suggestions (for example likely categories from the workspace list, or "Today" and "Yesterday"). Use an existing category name exactly; if none fits, offer to create one with create_category first.
+3. When all slots are known, restate them in one line and propose create_transaction. Suggestions: "Yes, record it", "Change something", "Add another".
+4. After "Add another" start again; after the user is satisfied set "done": true.`;
+
+const ADD_TASK = `Goal: create ONE task with a sensible project, due date and priority. You drive; never end a turn without a question with suggestions, the proposal, or "done".
+Slots: title, project, due date, priority.
+1. Take what the user already said ("call the plumber tomorrow"). Convert relative dates to YYYY-MM-DD and say which date you chose. If the title is vague, keep it as the user wrote it.
+2. Project: if the current view is a project, use it; otherwise propose the 2-3 most likely projects from the workspace data as suggestions. Ask only if you really cannot tell.
+3. Due date and priority: do not ask unless the user hinted at urgency or a deadline; offer them as optional suggestions on the final confirmation ("Add a due date", "Make it high priority").
+4. Propose create_task. Suggestions: "Yes, add it", "Add a due date", "Add another task". Set "done": true when the user is finished.`;
+
+const ADD_EVENT = `Goal: put ONE event on the calendar with the right local time. You drive; never end a turn without a question with suggestions, the proposal, or "done".
+Slots: title, date, start time, end time or duration, time zone (default: the user's), reminder.
+1. Take what the user already said ("dentist on Friday at 10"). Convert relative dates to YYYY-MM-DD and state the date you chose. Assume 1 hour when no end is given and say so.
+2. Ask only what is missing, one question per turn, with clickable suggestions (for example "Friday 10:00", "Friday 14:00"). Check list_events for the same time and warn about a clash.
+3. Restate in one line and propose create_event with a reminder of 30 minutes unless told otherwise. Suggestions: "Yes, add it", "Change the time", "Add another".
+4. Set "done": true when the user is finished.`;
+
 export const BUILTIN_SKILLS = [
+  { name: 'add-transaction', description: 'Record an expense or income, asking only for what is missing', body: ADD_TRANSACTION },
+  { name: 'add-task', description: 'Create a task with the right project, date and priority', body: ADD_TASK },
+  { name: 'add-event', description: 'Put an event on the calendar with the right time', body: ADD_EVENT },
   { name: 'create-automation', description: 'Guided interview that designs and creates an automation, step by step, until it is done', body: CREATE_AUTOMATION },
   { name: 'amb-workflow', description: 'How to review, plan and change the workspace: reviews, finance, projects, automations, careful money handling', body: AMB_WORKFLOW },
 ];

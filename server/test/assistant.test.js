@@ -215,7 +215,7 @@ test('S20 prompt injection: hostile task text is data only; unknown tools and en
 test('input limits, empty message, unreadable model output, unconfigured provider', async () => {
   const { u, ask } = await world('Lim');
   assert.equal((await ask('   ')).status, 400);
-  assert.equal((await ask('x'.repeat(2001))).status, 400);
+  assert.equal((await ask('x'.repeat(12001))).status, 400);
   reset(['{"broken json', '{"still broken']);
   const bad = await ask('hello');
   assert.equal(bad.status, 200, 'unreadable output is a readable answer with options, not an error');
