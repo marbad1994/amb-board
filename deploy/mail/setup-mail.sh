@@ -6,7 +6,9 @@
 #
 # Before you run it:
 #   - DNS: an A record for MAIL_HOST pointing at this server (and ask your provider to set the reverse DNS/PTR to the same name).
-#   - A certificate for MAIL_HOST:  certbot certonly --nginx -d mail.makketing.com   (or --webroot). Set CERT/KEY to use another.
+#   - A certificate for MAIL_HOST. With Caddy (a host service or a Docker container) the script asks Caddy for it: it adds a site for MAIL_HOST,
+#     waits for the certificate and uses it. With nginx run certbot first:  certbot certonly --nginx -d mail.makketing.com
+#     Or give your own files: CERT=/path/fullchain.pem KEY=/path/privkey.pem
 #   - Your provider must allow mail ports (many block outgoing port 25: ask them, or mail will not leave this server).
 # Nothing here changes DNS. Mail for a domain only arrives once you point that domain's MX record at MAIL_HOST.
 set -euo pipefail
@@ -27,8 +29,91 @@ die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 [ -n "$MAIL_HOST" ] || die "set MAIL_HOST, the name of this mail server (for example mail.makketing.com)"
 [ -n "$APP_USER" ] && id "$APP_USER" >/dev/null 2>&1 || die "set APP_USER to the user AMB Board runs as"
 command -v apt-get >/dev/null || die "this script supports Debian and Ubuntu (apt)"
-[ -r "$CERT" ] && [ -r "$KEY" ] || die "no certificate at $CERT. Get one first: certbot certonly --nginx -d ${MAIL_HOST}"
-getent hosts "$MAIL_HOST" >/dev/null || warn "$MAIL_HOST does not resolve yet; create its A record"
+getent hosts "$MAIL_HOST" >/dev/null || warn "$MAIL_HOST does not resolve yet; create its A record (Caddy cannot get a certificate without it)"
+
+# ---------------------------------------------------------------- which web server owns 443, and the certificate
+CADDY_DIR="${CADDY_DIR:-/etc/caddy}"
+owner_443() { ss -ltnpH 2>/dev/null | awk '$4 ~ /:443$/' | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"//'; }
+caddy_container() {
+  command -v docker >/dev/null || return 1
+  local n="${CADDY_CONTAINER:-}"
+  [ -n "$n" ] || n="$(docker ps --format '{{.Names}} {{.Image}} {{.Ports}}' 2>/dev/null | awk '/caddy/ && /:443->443/ {print $1; exit}')"
+  [ -n "$n" ] && printf '%s' "$n"
+}
+detect_web() {
+  case "$(owner_443)" in nginx) echo nginx; return ;; caddy) echo caddy-host; return ;; esac
+  if caddy_container >/dev/null 2>&1; then echo caddy-docker; return; fi
+  command -v nginx >/dev/null && { echo nginx; return; }
+  command -v caddy >/dev/null && { echo caddy-host; return; }
+  echo none
+}
+WEB="$(detect_web)"; CERT_FROM_CADDY=0; CADDY_NAME=""; CADDY_CFG=""; CADDY_HOSTFILE=""; CADDY_DATA=""
+
+# a Caddy container: its Caddyfile as seen from this server, and its data volume (where the certificates are)
+docker_caddy_paths() {
+  CADDY_NAME="$(caddy_container)"
+  CADDY_CFG="$(docker inspect -f '{{join .Config.Cmd " "}}' "$CADDY_NAME" 2>/dev/null | grep -o -- '--config [^ ]*' | head -1 | cut -d' ' -f2)"; CADDY_CFG="${CADDY_CFG:-/etc/caddy/Caddyfile}"
+  local src dst rw
+  while read -r src dst rw; do
+    [ -n "$dst" ] || continue
+    if [ "$dst" = "$CADDY_CFG" ]; then CADDY_HOSTFILE="$src"; fi
+    case "$CADDY_CFG" in "$dst"/*) [ -n "$CADDY_HOSTFILE" ] || CADDY_HOSTFILE="${src}${CADDY_CFG#"$dst"}" ;; esac
+    [ "$dst" = /data ] && CADDY_DATA="$src"
+  done < <(docker inspect -f '{{range .Mounts}}{{.Source}} {{.Destination}} {{.RW}}{{"\n"}}{{end}}' "$CADDY_NAME" 2>/dev/null)
+  [ -f "$CADDY_HOSTFILE" ] || die "found the Caddy container '${CADDY_NAME}' but not its Caddyfile on this server (looked for ${CADDY_CFG}). Give your own certificate: CERT=... KEY=..."
+}
+
+# Writes or replaces the block for MAIL_HOST in Caddy ($1 = the lines inside the site block) and reloads Caddy.
+caddy_apply() {
+  local body="$1" block
+  block="$(printf '# BEGIN amb-mail (setup-mail.sh)\n%s {\n%s\n}\n# END amb-mail (setup-mail.sh)\n' "$MAIL_HOST" "$body")"
+  if [ "$WEB" = caddy-host ]; then
+    local site_dir="${CADDY_DIR}/sites" main="${CADDY_DIR}/Caddyfile" import_line
+    mkdir -p "$site_dir"; printf '%s\n' "$block" > "${site_dir}/amb-mail.caddy"
+    import_line="import ${site_dir}/*.caddy"
+    if [ ! -f "$main" ]; then printf '%s\n' "$import_line" > "$main"
+    elif ! grep -qF "$import_line" "$main"; then cp -n "$main" "${main}.bak-amb-mail" || true; printf '\n%s\n' "$import_line" >> "$main"; fi
+    caddy validate --config "$main" --adapter caddyfile >/dev/null 2>&1 || { caddy validate --config "$main" --adapter caddyfile 2>&1 | tail -3; return 1; }
+    if systemctl is-active --quiet caddy 2>/dev/null; then systemctl reload caddy; else caddy reload --config "$main" --adapter caddyfile; fi
+  else
+    local bak tmp; bak="${CADDY_HOSTFILE}.bak-amb-mail-$(date +%Y%m%d-%H%M%S)"; cp -p "$CADDY_HOSTFILE" "$bak"; tmp="$(mktemp)"
+    awk '/^# BEGIN amb-mail \(setup-mail.sh\)/ {skip=1} !skip {print} /^# END amb-mail \(setup-mail.sh\)/ {skip=0}' "$CADDY_HOSTFILE" > "$tmp"
+    printf '\n%s\n' "$block" >> "$tmp"
+    cat "$tmp" > "$CADDY_HOSTFILE"; rm -f "$tmp"   # in place: a single-file bind mount keeps pointing at the same file
+    if docker exec "$CADDY_NAME" caddy validate --config "$CADDY_CFG" --adapter caddyfile >/dev/null 2>&1 && docker exec "$CADDY_NAME" caddy reload --config "$CADDY_CFG" --adapter caddyfile >/dev/null 2>&1; then return 0; fi
+    docker exec "$CADDY_NAME" caddy validate --config "$CADDY_CFG" --adapter caddyfile 2>&1 | tail -3 || true
+    cat "$bak" > "$CADDY_HOSTFILE"; warn "Caddy rejected the block, the original Caddyfile was restored (backup: ${bak})"; return 1
+  fi
+}
+
+# Looks for the certificate Caddy holds for MAIL_HOST in its storage and sets CERT and KEY.
+find_caddy_cert() {
+  local roots=() r crt
+  if [ "$WEB" = caddy-docker ]; then [ -n "$CADDY_DATA" ] && roots+=("$CADDY_DATA/caddy")
+  else roots+=(/var/lib/caddy/.local/share/caddy /root/.local/share/caddy /home/*/.local/share/caddy); [ -n "${XDG_DATA_HOME:-}" ] && roots+=("$XDG_DATA_HOME/caddy"); fi
+  for r in "${roots[@]}"; do
+    [ -d "$r/certificates" ] || continue
+    crt="$(find "$r/certificates" -type f -name "${MAIL_HOST}.crt" -print -quit 2>/dev/null)"
+    if [ -n "$crt" ] && [ -r "${crt%.crt}.key" ]; then CERT="$crt"; KEY="${crt%.crt}.key"; return 0; fi
+  done
+  return 1
+}
+
+get_caddy_cert() {
+  case "$WEB" in caddy-host|caddy-docker) ;; *) return 1 ;; esac
+  [ "$WEB" = caddy-docker ] && docker_caddy_paths
+  if find_caddy_cert; then log "Using the certificate Caddy already holds for ${MAIL_HOST}"; CERT_FROM_CADDY=1; return 0; fi
+  log "Asking Caddy for a certificate for ${MAIL_HOST} (the A record must point here and ports 80 and 443 must reach Caddy; up to 2.5 minutes)"
+  caddy_apply '    respond "Mail server" 200' || return 1
+  local i; for i in $(seq 1 30); do if find_caddy_cert; then CERT_FROM_CADDY=1; return 0; fi; sleep 5; done
+  return 1
+}
+
+if [ -r "$CERT" ] && [ -r "$KEY" ]; then log "Using the certificate ${CERT}"
+elif ! get_caddy_cert; then
+  die "no certificate for ${MAIL_HOST}. With nginx: certbot certonly --nginx -d ${MAIL_HOST}. With Caddy: check that the A record points at this server and that Caddy can reach the internet on 80 and 443 (see its log), or give your own files: CERT=/path/fullchain.pem KEY=/path/privkey.pem"
+fi
+log "Web server: ${WEB}; certificate: ${CERT}"
 
 log "Installing Postfix, Dovecot and OpenDKIM"
 export DEBIAN_FRONTEND=noninteractive
@@ -186,18 +271,20 @@ postfix check
 
 # ---- webmail (Roundcube behind the web server that already owns ports 80 and 443)
 WEBMAIL_URL=""
-if [ "$INSTALL_WEBMAIL" = auto ]; then command -v nginx >/dev/null && INSTALL_WEBMAIL=yes || INSTALL_WEBMAIL=no; fi
+if [ "$INSTALL_WEBMAIL" = auto ]; then case "$WEB" in nginx|caddy-host) INSTALL_WEBMAIL=yes ;; *) INSTALL_WEBMAIL=no ;; esac; fi
+if [ "$INSTALL_WEBMAIL" = yes ] && [ "$WEB" = caddy-docker ]; then
+  warn "your Caddy runs in a container, which cannot run PHP for Roundcube; webmail was not installed. Mail apps work. To add webmail later, run Roundcube on this server and add a reverse_proxy for ${MAIL_HOST} to the Caddyfile."
+  INSTALL_WEBMAIL=no
+fi
+if [ "$INSTALL_WEBMAIL" = yes ] && [ "$WEB" = none ]; then warn "no nginx or Caddy found, so webmail was not installed; serve /usr/share/roundcube with PHP-FPM yourself"; INSTALL_WEBMAIL=no; fi
 if [ "$INSTALL_WEBMAIL" = yes ]; then
-  if ! command -v nginx >/dev/null; then
-    warn "webmail needs nginx here; install it, or serve /usr/share/roundcube with your web server yourself (PHP-FPM)"
-  else
-    log "Webmail (Roundcube)"
-    echo "roundcube-core roundcube/dbconfig-install boolean true" | debconf-set-selections
-    echo "roundcube-core roundcube/database-type select sqlite3" | debconf-set-selections
-    apt-get install -y -qq --no-install-recommends roundcube-core roundcube-sqlite3 php-fpm >/dev/null
-    CONF=/etc/roundcube/config.inc.php
-    sed -i '/BEGIN amb-mail/,/END amb-mail/d' "$CONF"
-    cat >> "$CONF" <<RC
+  log "Webmail (Roundcube)"
+  echo "roundcube-core roundcube/dbconfig-install boolean true" | debconf-set-selections
+  echo "roundcube-core roundcube/database-type select sqlite3" | debconf-set-selections
+  apt-get install -y -qq --no-install-recommends roundcube-core roundcube-sqlite3 php-fpm >/dev/null
+  CONF=/etc/roundcube/config.inc.php
+  sed -i '/BEGIN amb-mail/,/END amb-mail/d' "$CONF"
+  cat >> "$CONF" <<RC
 // BEGIN amb-mail
 \$config['imap_host'] = 'ssl://${MAIL_HOST}:993';
 \$config['smtp_host'] = 'tls://${MAIL_HOST}:587';
@@ -206,8 +293,9 @@ if [ "$INSTALL_WEBMAIL" = yes ]; then
 \$config['product_name'] = 'Webmail';
 // END amb-mail
 RC
-    SOCK="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1 || true)"
-    [ -n "$SOCK" ] || die "PHP-FPM socket not found under /run/php"
+  SOCK="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1 || true)"
+  [ -n "$SOCK" ] || die "PHP-FPM socket not found under /run/php"
+  if [ "$WEB" = nginx ]; then
     cat > /etc/nginx/conf.d/amb-webmail.conf <<'NGINX'
 server {
   listen 80;
@@ -235,7 +323,37 @@ NGINX
     sed -i "s#@HOST@#${MAIL_HOST}#g; s#@CERT@#${CERT}#g; s#@KEY@#${KEY}#g; s#@SOCK@#${SOCK}#g" /etc/nginx/conf.d/amb-webmail.conf
     if nginx -t >/dev/null 2>&1; then systemctl reload nginx; WEBMAIL_URL="https://${MAIL_HOST}/"
     else rm -f /etc/nginx/conf.d/amb-webmail.conf; warn "nginx rejected the webmail site (nginx -t); webmail was not enabled. Is conf.d included in nginx.conf?"; fi
+  else
+    # Caddy on this host: it serves Roundcube through PHP-FPM; the PHP socket must be reachable for the user Caddy runs as
+    CUSER="$(ps -o user= -C caddy 2>/dev/null | head -1 | tr -d ' ')"; CUSER="${CUSER:-caddy}"
+    for pool in /etc/php/*/fpm/pool.d/www.conf; do
+      [ -f "$pool" ] || continue
+      sed -i "s/^;\?listen.group = .*/listen.group = ${CUSER}/; s/^;\?listen.mode = .*/listen.mode = 0660/" "$pool"
+    done
+    systemctl reload php*-fpm 2>/dev/null || systemctl restart php*-fpm
+    if caddy_apply "    root * /usr/share/roundcube
+    encode gzip
+    request_body {
+        max_size 30MB
+    }
+    header {
+        X-Frame-Options SAMEORIGIN
+        X-Content-Type-Options nosniff
+        Referrer-Policy same-origin
+    }
+    @private path /config/* /temp/* /logs/* /SQL/* /bin/* /vendor/*
+    respond @private 403
+    php_fastcgi unix/${SOCK}
+    file_server"; then WEBMAIL_URL="https://${MAIL_HOST}/"
+    else warn "Caddy rejected the webmail site; webmail was not enabled (the certificate site is still in place)"; fi
   fi
+fi
+
+# Caddy renews its certificate in place; Postfix and Dovecot read it again when reloaded
+if [ "$CERT_FROM_CADDY" = 1 ]; then
+  printf '[Unit]\nDescription=Reload mail services to pick up the renewed certificate\n[Service]\nType=oneshot\nExecStart=/bin/systemctl reload postfix dovecot\n' > /etc/systemd/system/amb-mail-cert.service
+  printf '[Unit]\nDescription=Weekly reload of mail services (certificate renewal)\n[Timer]\nOnCalendar=weekly\nPersistent=true\n[Install]\nWantedBy=timers.target\n' > /etc/systemd/system/amb-mail-cert.timer
+  systemctl daemon-reload; systemctl enable --now amb-mail-cert.timer >/dev/null
 fi
 
 IP="$(curl -fsS -4 https://ifconfig.me 2>/dev/null || true)"

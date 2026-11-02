@@ -15,7 +15,7 @@ The web app never runs as root and never writes a Postfix or Dovecot configurati
 DNS and provider, before anything else:
 
 - An **A record** for the mail host name (for example `mail.example.com`) pointing at this server.
-- A certificate for that name: `certbot certonly --nginx -d mail.example.com`.
+- A certificate for that name. **With Caddy** (a host service or a Docker container) the setup script asks Caddy for it: it adds a site for the mail host name to the Caddyfile, waits up to 2.5 minutes for the certificate and uses it (the A record must point at this server and Caddy must be reachable on ports 80 and 443). A weekly timer reloads Postfix and Dovecot so a renewed certificate is picked up. **With nginx**: `certbot certonly --nginx -d mail.example.com` first. Or give your own files: `CERT=/path/fullchain.pem KEY=/path/privkey.pem`.
 - Your hosting provider must allow mail ports. Many block outgoing port 25; ask them, otherwise mail cannot leave. Ask them to set the **reverse DNS (PTR)** of the server address to the mail host name. Without it much of what you send is marked as spam.
 - Open ports 25, 587 and 993 (the script opens them in ufw if it is active; check the provider's firewall too).
 
@@ -77,7 +77,7 @@ All mailboxes of all workspaces send from one server address, so one careless se
 
 ## Webmail
 
-`setup-mail.sh` installs Roundcube (PHP-FPM, SQLite) behind nginx on the mail host name (`https://mail.example.com/`) and prints `MAIL_WEBMAIL_URL=...` for `server/.env`; the Email tab then shows an Open webmail button. It signs in with the full address and the mailbox password against the same IMAP and SMTP server. Use `INSTALL_WEBMAIL=no` to skip it. Without nginx the script says so: serve `/usr/share/roundcube` yourself with PHP-FPM.
+`setup-mail.sh` installs Roundcube (PHP-FPM, SQLite) behind nginx or a host Caddy (Caddy serves it through PHP-FPM) on the mail host name (`https://mail.example.com/`) and prints `MAIL_WEBMAIL_URL=...` for `server/.env`; the Email tab then shows an Open webmail button. It signs in with the full address and the mailbox password against the same IMAP and SMTP server. Use `INSTALL_WEBMAIL=no` to skip it. If Caddy runs in a Docker container it cannot run PHP, so webmail is skipped there (mail apps still work): run Roundcube on the server and add a `reverse_proxy` for the mail host name to the Caddyfile. With no web server found the script says so: serve `/usr/share/roundcube` yourself with PHP-FPM.
 
 ## Deleting mailboxes
 
