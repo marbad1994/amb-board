@@ -2651,3 +2651,7 @@ a.stat-card.stat-card--alert .stat-card__sub { color: var(--color-danger-text); 
 .mail-dns__head { display: flex; align-items: center; gap: 8px; }
 .mail-warn { color: var(--color-danger-text); font-weight: 600; }
 @media (max-width: 720px) { .mail-actions .btn { min-height: 44px; } }
+.mail-at { width: 100%; }
+.mail-at input { flex: 1 1 140px; width: 100%; min-width: 100px; }
+.mail form.flow-row { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border); }
+.mail .plain-list + form.flow-row, .mail p + form.flow-row { margin-top: 12px; }
