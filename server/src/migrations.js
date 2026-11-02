@@ -639,7 +639,12 @@ export const migrations = [
   { id: '019_dashboard_plans', up: (db) => db.exec(dashboardPlans) },
   { id: '020_mcp_auth_methods', up: (db) => db.exec(mcpAuthMethods) },
   { id: '021_mail_hosting', up: (db) => db.exec(mailHosting) },
+  { id: '022_mail_purges', up: (db) => db.exec(mailPurges) },
 ];
+
+const mailPurges = `
+CREATE TABLE mail_purges (address TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
+`;
 
 const mailHosting = `
 CREATE TABLE mail_domains (

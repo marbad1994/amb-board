@@ -127,3 +127,31 @@ test('aliases: forward to one to five addresses, catch-all, validation, disablin
   assert.equal((await u.c.del(`/api/mail/aliases/${a.json.id}`)).status, 204); assert.ok(!read('aliases.txt').includes('info@'));
   assert.deepEqual(readdirSync(join(dir, 'in')).filter((f) => f.endsWith('.tmp')), [], 'files are written atomically');
 });
+
+test('deleted mailboxes are queued for removal from disk, a re-created one keeps its mail; limits, webmail and usage are exposed', async () => {
+  process.env.MAIL_WEBMAIL_URL = 'https://mail.hosting.net/'; process.env.MAIL_SEND_PER_USER_HOUR = '20'; process.env.MAIL_TRASH_DAYS = '7';
+  db.prepare('DELETE FROM mail_purges').run();   // the earlier tests deleted mailboxes too
+  const u = await signUp(srv.base, 'MailPurge'); const d = await verified(u, 'purge.io'); const url = `/api/mail/domains/${d.id}/accounts`;
+  const a = (await u.c.post(url, { local_part: 'old' })).json; const b = (await u.c.post(url, { local_part: 'keep' })).json;
+  assert.match(read('limits.txt'), /^purge\.io\t20\t300\t1000$/m); assert.match(read('limits.txt'), /^\*\t20\t300\t1000$/m); assert.equal(read('settings.txt').trim(), 'trash_days\t7');
+  assert.equal(read('purge.txt').trim(), '', 'nothing to remove yet');
+  assert.equal((await u.c.del(`/api/mail/accounts/${a.id}`)).status, 204);
+  assert.match(read('purge.txt'), /^old@purge\.io\t\d{4}-\d\d-\d\dT[\d:.]+Z$/m, 'the helper is asked to remove its stored mail');
+  assert.ok(!read('purge.txt').includes('keep@'));
+  assert.equal((await u.c.post(url, { local_part: 'old' })).status, 201); assert.ok(!read('purge.txt').includes('old@purge.io'), 'created again: its mail is kept');
+  assert.equal((await u.c.del(`/api/mail/domains/${d.id}`)).status, 204);
+  assert.match(read('purge.txt'), /^old@purge\.io\t/m); assert.match(read('purge.txt'), /^keep@purge\.io\t/m); assert.ok(b.id, 'removing a domain queues all of its mailboxes');
+  db.prepare("UPDATE mail_purges SET requested_at = '2020-01-01T00:00:00.000Z'").run();
+  const u2 = await signUp(srv.base, 'MailPurge2'); await verified(u2, 'purge2.io'); assert.equal(read('purge.txt').trim(), '', 'entries expire after 30 days');
+
+  const info = (await u.c.get('/api/mail')).json;
+  assert.equal(info.features.webmail, 'https://mail.hosting.net'); assert.equal(info.features.spam_filter, true); assert.equal(info.features.trash_days, 7);
+  assert.deepEqual([info.sending.per_mailbox_hour, info.sending.per_mailbox_day, info.sending.per_domain_day, info.sending.tracked], [20, 300, 1000, false]);
+  const d3 = await verified(u, 'usage.io'); const c = (await u.c.post(`/api/mail/domains/${d3.id}/accounts`, { local_part: 'anna' })).json;
+  assert.equal((await u.c.get(`/api/mail/domains/${d3.id}/accounts`)).json[0].sent_today, null, 'unknown until the limit service reports');
+  const { mkdirSync, writeFileSync } = await import('node:fs'); mkdirSync(join(dir, 'out'), { recursive: true });
+  writeFileSync(join(dir, 'out', 'usage.json'), JSON.stringify({ at: new Date().toISOString(), users: { 'anna@usage.io': { hour: 4, day: 17 } }, domains: {} }));
+  const list = (await u.c.get(`/api/mail/domains/${d3.id}/accounts`)).json[0]; assert.deepEqual([list.sent_hour, list.sent_today], [4, 17]); assert.ok(c.id);
+  assert.equal((await u.c.get('/api/mail')).json.sending.tracked, true);
+  delete process.env.MAIL_WEBMAIL_URL; delete process.env.MAIL_SEND_PER_USER_HOUR; delete process.env.MAIL_TRASH_DAYS;
+});

@@ -25,7 +25,7 @@ function OnceBox({ what, password, onClose }) {
   );
 }
 
-function Mailboxes({ d, reload }) {
+function Mailboxes({ d, info, reload }) {
   const [list, setList] = useState(null); const [form, setForm] = useState({ local_part: '', password: '', quota_mb: 1024 });
   const [once, setOnce] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
   const load = () => api.mailAccounts(d.id).then(setList).catch((e) => setErr(e.message));
@@ -42,11 +42,11 @@ function Mailboxes({ d, reload }) {
       {list && list.length === 0 && <p className="muted">No mailboxes yet.</p>}
       {list && list.length > 0 && (
         <ul className="plain-list" aria-label={`Mailboxes of ${d.domain}`}>{list.map((a) => (
-          <li key={a.id}><span><b>{a.address}</b> {!a.enabled && <span className="badge">Login off</span>}<br /><small className="muted">{a.quota_mb} MB</small></span>
+          <li key={a.id}><span><b>{a.address}</b> {!a.enabled && <span className="badge">Login off</span>}<br /><small className="muted">{a.quota_mb} MB{a.sent_today !== null && ` · sent ${a.sent_today} today (limit ${info.sending.per_mailbox_day})`}</small></span>
             <span className="mail-actions">
               <button type="button" className="btn btn-small" onClick={() => act(() => api.mailUpdateAccount(a.id, { enabled: !a.enabled }))}>{a.enabled ? 'Turn login off' : 'Turn login on'}</button>
               <button type="button" className="btn btn-small" onClick={async () => { if (!window.confirm(`Set a new password for ${a.address}? The old one stops working.`)) return; setErr(''); try { const r = await api.mailAccountPassword(a.id); setOnce({ what: `New password for ${a.address}.`, password: r.password }); } catch (x) { setErr(x.message); } }}><KeyRound size={14} aria-hidden="true" /> New password</button>
-              <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete ${a.address}`} onClick={() => window.confirm(`Delete ${a.address}? It can no longer log in or receive mail. The stored messages stay on the server's disk until an administrator removes them.`) && act(() => api.mailDeleteAccount(a.id))}><Trash2 size={16} color="var(--color-danger)" aria-hidden="true" /></button></span></li>
+              <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete ${a.address}`} onClick={() => window.confirm(`Delete ${a.address}? It can no longer log in or receive mail. Its stored messages are removed from the server after ${info.features.trash_days} days (kept in a trash folder until then in case this was a mistake).`) && act(() => api.mailDeleteAccount(a.id))}><Trash2 size={16} color="var(--color-danger)" aria-hidden="true" /></button></span></li>
         ))}</ul>
       )}
       <form className="flow-row" onSubmit={add} aria-label="Add a mailbox">
@@ -112,10 +112,11 @@ function DnsRecords({ d }) {
 }
 
 function Connect({ info, d }) {
-  const c = info.client;
+  const c = { ...info.client, webmail: info.features.webmail };
   return (
     <div>
-      <p className="hint">Add a mailbox to any mail app (Thunderbird, Apple Mail, Outlook, a phone) with these settings. The user name is the full address, for example anna@{d.domain}, and the password is the mailbox password.</p>
+      {c.webmail && <p><a className="btn btn-primary" href={c.webmail} target="_blank" rel="noreferrer">Open webmail</a> <span className="hint">Read and send mail in the browser; log in with the full address and the mailbox password.</span></p>}
+      <p className="hint">Or add a mailbox to any mail app (Thunderbird, Apple Mail, Outlook, a phone) with these settings. The user name is the full address, for example anna@{d.domain}, and the password is the mailbox password.</p>
       <ul className="plain-list">
         <li><span><b>Incoming (IMAP)</b><br /><small className="muted">Server {c.imap.host || '(set MAIL_HOST)'}, port {c.imap.port}, {c.imap.security}</small></span></li>
         <li><span><b>Outgoing (SMTP)</b><br /><small className="muted">Server {c.smtp.host || '(set MAIL_HOST)'}, port {c.smtp.port}, {c.smtp.security}, log in with the same user name and password</small></span></li>
@@ -132,7 +133,7 @@ function DomainCard({ d, info, reload }) {
     <section className="panel mail-domain" aria-label={d.domain}>
       <div className="panel__title">
         <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Globe size={16} aria-hidden="true" /> {d.domain} {d.verified ? <span className="badge status-done">Verified</span> : <span className="badge">Waiting for DNS</span>}</h3>
-        <button type="button" className="btn btn-icon btn-ghost" aria-label={`Remove ${d.domain}`} onClick={() => window.confirm(`Remove ${d.domain}? Its mailboxes and aliases are deleted and mail stops being accepted. Stored messages stay on the server's disk until an administrator removes them.`) && api.mailDeleteDomain(d.id).then(reload).catch((e) => setErr(e.message))}><Trash2 size={16} color="var(--color-danger)" aria-hidden="true" /></button>
+        <button type="button" className="btn btn-icon btn-ghost" aria-label={`Remove ${d.domain}`} onClick={() => window.confirm(`Remove ${d.domain}? Its mailboxes and aliases are deleted and mail stops being accepted. Stored messages are removed from the server after ${info.features.trash_days} days.`) && api.mailDeleteDomain(d.id).then(reload).catch((e) => setErr(e.message))}><Trash2 size={16} color="var(--color-danger)" aria-hidden="true" /></button>
       </div>
       {!d.verified ? (
         <div>
@@ -144,7 +145,7 @@ function DomainCard({ d, info, reload }) {
         <>
           <div className="seg seg--tabs" role="group" aria-label={`${d.domain} sections`}>{TABS.map(([v, l]) => <button key={v} type="button" aria-pressed={tab === v} onClick={() => setTab(v)}>{l}</button>)}</div>
           <div style={{ marginTop: 14 }}>
-            {tab === 'mailboxes' && <Mailboxes d={d} reload={reload} />}
+            {tab === 'mailboxes' && <Mailboxes d={d} info={info} reload={reload} />}
             {tab === 'aliases' && <Aliases d={d} reload={reload} />}
             {tab === 'dns' && <DnsRecords d={d} />}
             {tab === 'connect' && <Connect info={info} d={d} />}
@@ -175,6 +176,7 @@ export default function MailSettings() {
       <section className="panel" aria-labelledby="mail-h">
         <div className="panel__title"><h2 id="mail-h"><Mail size={16} aria-hidden="true" /> Email hosting</h2></div>
         <p className="hint">Attach your own domains and create mailboxes and aliases for them. A domain only works after you prove you own it with a DNS record. {usage.domains} of {limits.domains} domains, {usage.accounts} of {limits.accounts} mailboxes, {usage.aliases} of {limits.aliases} aliases used.</p>
+        <p className="hint">{info.features.spam_filter ? 'Spam filter on: suspected spam goes to the Junk folder of each mailbox. ' : ''}Sending limits keep one mailbox or domain from using up the reputation every workspace on this server shares: {info.sending.per_mailbox_hour} recipients per mailbox per hour, {info.sending.per_mailbox_day} per mailbox per day, {info.sending.per_domain_day} per domain per day. A mailbox can only send as its own address or its aliases.</p>
         <p className="hint" role="status">{sync === null ? 'Waiting for the mail server helper. If this stays, run deploy/mail/setup-mail.sh on the server.' : sync.ok ? `Applied to the mail server ${new Date(sync.at).toLocaleString()}.` : `The mail server rejected the last change: ${sync.error}`}</p>
         <form className="flow-row" onSubmit={add} aria-label="Attach a domain">
           <label className="field"><span className="field__label">Domain</span><input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="example.com" required maxLength={253} /></label>

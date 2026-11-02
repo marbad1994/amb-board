@@ -62,10 +62,29 @@ SPF can only be one record per domain. If you send from both places, put both in
 
 An alias forwards to one to five addresses, local or outside. `*` is a catch-all for every address that does not exist (it attracts spam). An alias and a mailbox cannot share a name.
 
+## Spam filtering
+
+Rspamd checks every message that arrives from other servers (SPF, DKIM, DMARC, content, blocklists, a learning filter backed by Redis). Spam is not dropped silently: messages that score as spam are filed in the **Junk** folder of the mailbox (a Sieve rule runs for every mailbox), and very high scores are rejected at the door. Mail your users send is signed (DKIM) but not scored. Settings are in `/etc/rspamd/local.d/`. Move a message out of Junk and Rspamd learns from it.
+
+## Sending limits and reputation
+
+All mailboxes of all workspaces send from one server address, so one careless sender can hurt everyone's delivery. One IP means one shared reputation; what the server does about it:
+
+- **Limits**: each recipient of a logged-in sender is counted. Per mailbox (default 60 per hour, 300 per day) and per domain (default 1000 per day). Over a limit the recipient is deferred with a clear message. Change them with `MAIL_SEND_PER_USER_HOUR`, `MAIL_SEND_PER_USER_DAY`, `MAIL_SEND_PER_DOMAIN_DAY`. The Mailboxes tab shows how much each mailbox sent today. The service is `amb-mail-policy`; if it is down, sending is deferred rather than unlimited.
+- **Sender check**: on port 587 a mailbox can only send as its own address, or as an alias that forwards to it. Nobody can send as another domain or person.
+- **Authentication**: DKIM per domain, SPF and DMARC records are required and checked in the DNS tab.
+- Separate addresses per workspace are not possible on one IP. If one workspace needs its own reputation, give it its own server.
+
+## Webmail
+
+`setup-mail.sh` installs Roundcube (PHP-FPM, SQLite) behind nginx on the mail host name (`https://mail.example.com/`) and prints `MAIL_WEBMAIL_URL=...` for `server/.env`; the Email tab then shows an Open webmail button. It signs in with the full address and the mailbox password against the same IMAP and SMTP server. Use `INSTALL_WEBMAIL=no` to skip it. Without nginx the script says so: serve `/usr/share/roundcube` yourself with PHP-FPM.
+
+## Deleting mailboxes
+
+Deleting a mailbox or a domain asks the helper to move the stored mail to `/var/vmail/.trash`, and it is deleted for good after `MAIL_TRASH_DAYS` (default 14). Until then it can be copied back by an administrator, and creating the same address again keeps its mail (the pending removal is cancelled). The request is a list of named addresses, never "everything not in the list", so an empty or broken database cannot wipe the mail.
+
 ## Not included
 
-- Webmail (use a mail app, or install Roundcube separately and point it at the same host).
-- Spam filtering and virus scanning (add rspamd or SpamAssassin to Postfix when you need them).
-- Per-user sending limits (Postfix applies one per-client rate limit to everyone).
-- Automatic cleanup of stored mail for deleted mailboxes, and mail for a workspace that is deleted (its domains disappear from the configuration at the next server start).
-- `setup-mail.sh` has not been run on a real machine by the author of this change. Run it on a test server first, or read it before you run it; it changes Postfix, Dovecot and OpenDKIM configuration.
+- Per-user quotas on sending beyond the limits above, a separate IP per workspace, and outgoing spam scoring.
+- Mail for a workspace that is deleted: its domains disappear from the configuration at the next server start, and its mailboxes are not queued for removal (remove `/var/vmail/<domain>` by hand).
+- `setup-mail.sh`, the Rspamd, Sieve, Roundcube and nginx parts included, has not been run on a real machine by the author of this change. Run it on a test server first, or read it before you run it; it changes Postfix, Dovecot, OpenDKIM, Rspamd and nginx configuration.

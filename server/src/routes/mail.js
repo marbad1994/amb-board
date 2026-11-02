@@ -9,7 +9,7 @@ import { normalizeDomain, validDomain, normalizeLocal, validLocal, validEmail } 
 import { hashPassword, checkPassword, generatePassword } from '../mail/password.js';
 import { generateDkim } from '../mail/dkim.js';
 import { checkOwnership, checkRecords, verifyName, verifyValue } from '../mail/dns.js';
-import { syncMail, syncStatus } from '../mail/sync.js';
+import { syncMail, syncStatus, sendUsage } from '../mail/sync.js';
 
 // Email hosting: domains a workspace attaches, the mailboxes and aliases on them. Owners and admins only.
 // A domain carries no mail until its owner proves control of it with a DNS record.
@@ -24,13 +24,16 @@ const count = (table, ws) => db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHER
 const pDomain = (d) => ({ id: d.id, domain: d.domain, verified: !!d.verified_at, verified_at: d.verified_at, created_at: d.created_at,
   verify: d.verified_at ? null : { type: 'TXT', name: verifyName(d.domain), value: verifyValue(d.verify_token) },
   accounts: db.prepare('SELECT COUNT(*) AS n FROM mail_accounts WHERE domain_id = ?').get(d.id).n, aliases: db.prepare('SELECT COUNT(*) AS n FROM mail_aliases WHERE domain_id = ?').get(d.id).n });
-const pAccount = (a) => ({ id: a.id, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, quota_mb: a.quota_mb, enabled: !!a.enabled, created_at: a.created_at });
+const forget = (address) => db.prepare('INSERT OR REPLACE INTO mail_purges (address, requested_at) VALUES (?, ?)').run(address, nowIso());
+const pAccount = (a, use = null) => ({ id: a.id, sent_hour: use?.users?.[`${a.local_part}@${a.domain}`]?.hour ?? null, sent_today: use?.users?.[`${a.local_part}@${a.domain}`]?.day ?? null, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, quota_mb: a.quota_mb, enabled: !!a.enabled, created_at: a.created_at });
 const pAlias = (a) => ({ id: a.id, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, destinations: JSON.parse(a.destinations), enabled: !!a.enabled, catch_all: a.local_part === '*', created_at: a.created_at });
 const apply = () => { try { syncMail(); } catch (e) { console.error('mail sync failed:', e.message); } };
 
 router.get('/', (req, res) => {
   const c = mailConfig(); const available = mailAvailable(req.ws.id);
   res.json({ enabled: c.enabled, available, host: c.host, ip: c.ip, limits: { domains: c.maxDomains, accounts: c.maxAccounts, aliases: c.maxAliases },
+    sending: { per_mailbox_hour: c.sendPerUserHour, per_mailbox_day: c.sendPerUserDay, per_domain_day: c.sendPerDomainDay, tracked: !!sendUsage() },
+    features: { webmail: c.webmailUrl || null, spam_filter: c.spamFilter, trash_days: c.trashDays },
     usage: { domains: count('mail_domains', req.ws.id), accounts: count('mail_accounts', req.ws.id), aliases: count('mail_aliases', req.ws.id) },
     client: { imap: { host: c.host, port: 993, security: 'SSL/TLS' }, smtp: { host: c.host, port: 587, security: 'STARTTLS' } },
     sync: available ? syncStatus() : null,
@@ -71,6 +74,7 @@ router.get('/domains/:id/dns', off, async (req, res) => {
 
 router.delete('/domains/:id', off, (req, res) => {
   const d = domainOf(req); if (!d) return res.status(404).json({ error: 'not found' });
+  for (const a of db.prepare('SELECT local_part FROM mail_accounts WHERE domain_id = ?').all(d.id)) forget(`${a.local_part}@${d.domain}`);
   db.prepare('DELETE FROM mail_domains WHERE id = ?').run(d.id);
   audit(req, 'mail.domain_remove', 'mail_domain', d.id, { domain: d.domain });
   apply();
@@ -81,7 +85,8 @@ router.delete('/domains/:id', off, (req, res) => {
 const needVerified = (req, res) => { const d = domainOf(req); if (!d) { res.status(404).json({ error: 'not found' }); return null; } if (!d.verified_at) { res.status(409).json({ error: 'Verify the domain first.' }); return null; } return d; };
 router.get('/domains/:id/accounts', off, (req, res) => {
   const d = domainOf(req); if (!d) return res.status(404).json({ error: 'not found' });
-  res.json(db.prepare('SELECT * FROM mail_accounts WHERE domain_id = ? ORDER BY local_part').all(d.id).map((a) => pAccount({ ...a, domain: d.domain })));
+  const use = sendUsage();
+  res.json(db.prepare('SELECT * FROM mail_accounts WHERE domain_id = ? ORDER BY local_part').all(d.id).map((a) => pAccount({ ...a, domain: d.domain }, use)));
 });
 router.post('/domains/:id/accounts', off, async (req, res) => {
   const d = needVerified(req, res); if (!d) return;
@@ -95,6 +100,7 @@ router.post('/domains/:id/accounts', off, async (req, res) => {
   const quota = Math.max(50, Math.min(51200, Math.round(Number(req.body.quota_mb) || 1024)));
   const id = nanoid();
   db.prepare('INSERT INTO mail_accounts (id, workspace_id, domain_id, local_part, password_hash, quota_mb, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.ws.id, d.id, local, await hashPassword(password), quota, req.user.id, nowIso());
+  db.prepare('DELETE FROM mail_purges WHERE address = ?').run(`${local}@${d.domain}`);   // a mailbox that is created again keeps its mail
   audit(req, 'mail.account_create', 'mail_account', id, { address: `${local}@${d.domain}` });
   apply();
   res.status(201).json({ ...pAccount({ ...db.prepare('SELECT * FROM mail_accounts WHERE id = ?').get(id), domain: d.domain }), ...(generated ? { password } : {}) });
@@ -119,10 +125,10 @@ router.post('/accounts/:id/password', off, async (req, res) => {
 });
 router.delete('/accounts/:id', off, (req, res) => {
   const a = accountOf(req); if (!a) return res.status(404).json({ error: 'not found' });
-  db.prepare('DELETE FROM mail_accounts WHERE id = ?').run(a.id);
+  db.prepare('DELETE FROM mail_accounts WHERE id = ?').run(a.id); forget(`${a.local_part}@${a.domain}`);
   audit(req, 'mail.account_delete', 'mail_account', a.id, { address: `${a.local_part}@${a.domain}` });
   apply();
-  res.status(204).end();   // the stored mail stays on the server's disk until an administrator removes it
+  res.status(204).end();   // its stored mail is moved to a trash folder by the helper and removed after MAIL_TRASH_DAYS
 });
 
 // ---- aliases: an address that forwards to one to five others (local mailboxes or outside addresses); "*" is a catch-all ----
