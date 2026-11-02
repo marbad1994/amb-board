@@ -10,6 +10,7 @@ import workspacesRouter, { invitationsRouter } from './routes/workspaces.js';
 import lifeAreasRouter from './routes/lifeAreas.js';
 import dashboardRouter from './routes/dashboard.js';
 import oauthCallbackRouter from './routes/oauthCallback.js';
+import mailRouter from './routes/mail.js';
 import financeRouter, { projectFinanceRouter } from './routes/finance.js';
 import calendarRouter from './routes/calendar.js';
 import goalsRouter, { projectGoalsRouter } from './routes/goals.js';
@@ -69,6 +70,7 @@ export function createApp() {
   // Everything below is scoped to one workspace and permission-checked by HTTP method.
   app.use('/api', requireWorkspace, methodPermission);
   app.use('/api/dashboard', dashboardRouter);
+  app.use('/api/mail', mailRouter);
   app.use('/api/life-areas', lifeAreasRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/search', searchRouter);

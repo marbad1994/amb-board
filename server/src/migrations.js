@@ -638,7 +638,31 @@ export const migrations = [
   { id: '018_assistant_quality', up: (db) => db.exec(assistantQuality) },
   { id: '019_dashboard_plans', up: (db) => db.exec(dashboardPlans) },
   { id: '020_mcp_auth_methods', up: (db) => db.exec(mcpAuthMethods) },
+  { id: '021_mail_hosting', up: (db) => db.exec(mailHosting) },
+  { id: '022_mail_purges', up: (db) => db.exec(mailPurges) },
 ];
+
+const mailPurges = `
+CREATE TABLE mail_purges (address TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
+`;
+
+const mailHosting = `
+CREATE TABLE mail_domains (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, domain TEXT NOT NULL UNIQUE,
+  verify_token TEXT NOT NULL, verified_at TEXT, dkim_selector TEXT NOT NULL DEFAULT 'mail', dkim_private_enc TEXT NOT NULL DEFAULT '', dkim_public TEXT NOT NULL DEFAULT '',
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX idx_mail_domains_ws ON mail_domains (workspace_id);
+CREATE TABLE mail_accounts (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, domain_id TEXT NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
+  local_part TEXT NOT NULL, password_hash TEXT NOT NULL, quota_mb INTEGER NOT NULL DEFAULT 1024, enabled INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL, UNIQUE (domain_id, local_part)
+);
+CREATE TABLE mail_aliases (
+  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, domain_id TEXT NOT NULL REFERENCES mail_domains(id) ON DELETE CASCADE,
+  local_part TEXT NOT NULL, destinations TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, UNIQUE (domain_id, local_part)
+);
+`;
 
 const mcpAuthMethods = `
 ALTER TABLE mcp_servers ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'bearer';

@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""Turns the list files AMB Board writes (MAIL_DIR/in) into Postfix, Dovecot and OpenDKIM configuration, and reloads the services.
+
+Runs as root, started by amb-mail-sync.path when MAIL_DIR/in/sync-request changes. The web app is not trusted: every line is checked
+against a strict pattern and ONE bad line rejects the whole run (nothing is changed), so the app cannot inject configuration.
+Result of the last run: MAIL_DIR/out/status.json.   --root DIR / --no-services are for tests.
+"""
+import argparse, json, os, re, shutil, subprocess, sys, tempfile, time
+
+LABEL = r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+DOMAIN = re.compile(r'^(?=.{4,253}$)(?:%s\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$' % LABEL)
+LOCAL = re.compile(r'^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$')
+EMAIL = re.compile(r'^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?@(?:%s\.)+[a-z]{2,63}$' % LABEL)
+SELECTOR = re.compile(r'^[a-z0-9]{1,20}$')
+HASH = re.compile(r'^\$6\$[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}$')
+MAX_LINES = 20000
+WHEN = re.compile(r'^\d{4}-\d{2}-\d{2}T[0-9:.]{8,14}Z$')
+VMAIL = '/var/vmail'
+
+
+class Bad(Exception):
+    pass
+
+
+def lines(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding='utf-8') as f:
+        rows = [l.rstrip('\n') for l in f if l.strip()]
+    if len(rows) > MAX_LINES:
+        raise Bad('%s: too many lines' % os.path.basename(path))
+    return rows
+
+
+def fields(path, n):
+    out = []
+    for i, row in enumerate(lines(path), 1):
+        parts = row.split('\t')
+        if len(parts) != n:
+            raise Bad('%s line %d: expected %d fields' % (os.path.basename(path), i, n))
+        out.append(parts)
+    return out
+
+
+def load(inp):
+    domains = {}
+    for d, sel in fields(os.path.join(inp, 'domains.txt'), 2):
+        if not DOMAIN.match(d) or not SELECTOR.match(sel):
+            raise Bad('domains.txt: bad line %r' % d[:60])
+        domains[d] = sel
+    boxes = {}
+    for addr, quota in fields(os.path.join(inp, 'mailboxes.txt'), 2):
+        local, _, dom = addr.partition('@')
+        if not (LOCAL.match(local) and dom in domains and quota.isdigit() and 50 <= int(quota) <= 51200):
+            raise Bad('mailboxes.txt: bad line %r' % addr[:80])
+        boxes[addr] = int(quota)
+    passwd = {}
+    for addr, h in fields(os.path.join(inp, 'passwd.txt'), 2):
+        if addr not in boxes or not HASH.match(h):
+            raise Bad('passwd.txt: bad line %r' % addr[:80])
+        passwd[addr] = h
+    aliases = {}
+    for addr, dest in fields(os.path.join(inp, 'aliases.txt'), 2):
+        local, _, dom = addr.partition('@')
+        targets = dest.split(',')
+        if not ((local == '*' or LOCAL.match(local)) and dom in domains and 1 <= len(targets) <= 5 and all(EMAIL.match(t) for t in targets)):
+            raise Bad('aliases.txt: bad line %r' % addr[:80])
+        if addr in boxes:
+            raise Bad('aliases.txt: %r is also a mailbox' % addr[:80])
+        aliases[addr] = targets
+    keys = {}
+    kdir = os.path.join(inp, 'dkim')
+    for d in domains:
+        p = os.path.join(kdir, d + '.pem')
+        if os.path.exists(p):
+            pem = open(p, encoding='ascii').read()
+            if len(pem) > 10000 or not pem.startswith('-----BEGIN PRIVATE KEY-----') or not pem.rstrip().endswith('-----END PRIVATE KEY-----') or not re.fullmatch(r'[A-Za-z0-9+/=\n\r\- ]+', pem):
+                raise Bad('dkim/%s.pem is not a private key' % d)
+            keys[d] = pem
+    purge = []
+    for addr, when in fields(os.path.join(inp, 'purge.txt'), 2):
+        local, _, dom = addr.partition('@')
+        if not (LOCAL.match(local) and DOMAIN.match(dom) and WHEN.match(when)):
+            raise Bad('purge.txt: bad line %r' % addr[:80])
+        purge.append((local, dom))
+    limits = {}
+    for dom, uh, ud, dd in fields(os.path.join(inp, 'limits.txt'), 4):
+        if not ((dom == '*' or dom in domains) and uh.isdigit() and ud.isdigit() and dd.isdigit()):
+            raise Bad('limits.txt: bad line %r' % dom[:60])
+        limits[dom] = (int(uh), int(ud), int(dd))
+    trash_days = 14
+    for k, v in fields(os.path.join(inp, 'settings.txt'), 2):
+        if k != 'trash_days' or not v.isdigit() or not 1 <= int(v) <= 3650:
+            raise Bad('settings.txt: bad line %r' % k[:40])
+        trash_days = int(v)
+    return domains, boxes, passwd, aliases, keys, purge, limits, trash_days
+
+
+def render(domains, boxes, passwd, aliases, keys, limits):
+    out = {}
+    out['postfix/vdomains'] = ''.join('%s\tOK\n' % d for d in sorted(domains))
+    out['postfix/vmailbox'] = ''.join('%s\t%s/%s/\n' % (a, a.split('@')[1], a.split('@')[0]) for a in sorted(boxes))
+    rows = []
+    for a in sorted(aliases):
+        left = '@' + a.split('@')[1] if a.startswith('*@') else a
+        rows.append('%s\t%s\n' % (left, ', '.join(aliases[a])))
+    out['postfix/valias'] = ''.join(rows)
+    # who may send as which address: a mailbox as itself, an alias as the local mailboxes it forwards to (the sending-limit and
+    # sender checks of the submission port use this, so nobody can send as another person's address)
+    sender = []
+    for a in sorted(boxes):
+        sender.append('%s\t%s\n' % (a, a))
+    for a, targets in sorted(aliases.items()):
+        mine = [t for t in targets if t in boxes]
+        if mine and not a.startswith('*@'):
+            sender.append('%s\t%s\n' % (a, ' '.join(mine)))
+    out['postfix/sender_login'] = ''.join(sender)
+    out['amb-mail/limits'] = ''.join('%s\t%d\t%d\t%d\n' % ((d,) + limits[d]) for d in sorted(limits))
+    out['dovecot/amb-users'] = ''.join('%s:{SHA512-CRYPT}%s::::::userdb_quota_rule=*:storage=%dM\n' % (a, passwd[a], boxes[a]) for a in sorted(passwd))
+    out['opendkim/KeyTable'] = ''.join('%s._domainkey.%s %s:%s:/etc/opendkim/keys/%s/%s.private\n' % (domains[d], d, d, domains[d], d, domains[d]) for d in sorted(keys))
+    out['opendkim/SigningTable'] = ''.join('*@%s %s._domainkey.%s\n' % (d, domains[d], d) for d in sorted(keys))
+    return out
+
+
+def move_to_trash(local, dom, root, now):
+    # a deleted mailbox's mail is not removed at once: it goes to a trash folder and is deleted after the retention period
+    src = os.path.join(root(VMAIL), dom, local)
+    base = os.path.realpath(root(VMAIL))
+    if os.path.islink(src) or not os.path.isdir(src) or not os.path.realpath(src).startswith(base + os.sep):
+        return False
+    trash = os.path.join(root(VMAIL), '.trash')
+    os.makedirs(trash, mode=0o700, exist_ok=True)
+    os.rename(src, os.path.join(trash, '%s__%s__%d' % (dom, local, now)))
+    return True
+
+
+def empty_trash(root, days, now):
+    trash = os.path.join(root(VMAIL), '.trash')
+    n = 0
+    if os.path.isdir(trash):
+        for name in os.listdir(trash):
+            m = re.fullmatch(r'.+__(\d{9,11})', name)
+            p = os.path.join(trash, name)
+            if m and not os.path.islink(p) and now - int(m.group(1)) > days * 86400:
+                shutil.rmtree(p, ignore_errors=True); n += 1
+    return n
+
+
+def put(path, text, mode, owner=None):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    old = open(path).read() if os.path.exists(path) else None
+    if old == text:
+        return False
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
+    with os.fdopen(fd, 'w') as f:
+        f.write(text)
+    os.chmod(tmp, mode)
+    if owner and os.geteuid() == 0:
+        try:
+            shutil.chown(tmp, *owner)
+        except (LookupError, OSError):
+            pass
+    os.replace(tmp, path)
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--dir', default='/var/lib/amb-mail')
+    ap.add_argument('--root', default='')
+    ap.add_argument('--no-services', action='store_true')
+    a = ap.parse_args()
+    R = lambda p: os.path.join(a.root, p.lstrip('/')) if a.root else p
+    status = os.path.join(a.dir, 'out', 'status.json')
+    os.makedirs(os.path.dirname(status), exist_ok=True)
+
+    def report(**kw):
+        kw['at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        with open(status + '.tmp', 'w') as f:
+            json.dump(kw, f)
+        os.chmod(status + '.tmp', 0o644)
+        os.replace(status + '.tmp', status)
+
+    try:
+        domains, boxes, passwd, aliases, keys, purge, limits, trash_days = load(os.path.join(a.dir, 'in'))
+        files = render(domains, boxes, passwd, aliases, keys, limits)
+        changed = set()
+        for rel, text in files.items():
+            mode, owner = (0o640, ('root', 'dovecot')) if rel.startswith('dovecot') else (0o644, ('root', 'root'))
+            if put(R('/etc/' + rel), text, mode, owner) and not rel.startswith('amb-mail'):   # the limits file is read by the sending-limit service when it changes
+                changed.add(rel.split('/')[0])
+        for d, pem in keys.items():
+            if put(R('/etc/opendkim/keys/%s/%s.private' % (d, domains[d])), pem, 0o600, ('opendkim', 'opendkim')):
+                changed.add('opendkim')
+        # a removed domain loses its key
+        kroot = R('/etc/opendkim/keys')
+        if os.path.isdir(kroot):
+            for d in os.listdir(kroot):
+                if d not in keys and DOMAIN.match(d):
+                    shutil.rmtree(os.path.join(kroot, d), ignore_errors=True); changed.add('opendkim')
+        if not a.no_services:
+            if 'postfix' in changed:
+                for m in ('vdomains', 'vmailbox', 'valias', 'sender_login'):
+                    subprocess.run(['postmap', '/etc/postfix/' + m], check=True, timeout=60)
+            for svc in sorted(changed):
+                subprocess.run(['systemctl', 'reload', svc], check=True, timeout=60)
+        now = int(time.time()); trashed = 0
+        for local, dom in purge:
+            if '%s@%s' % (local, dom) not in boxes and move_to_trash(local, dom, R, now):
+                trashed += 1
+        emptied = empty_trash(R, trash_days, now)
+        report(ok=True, domains=len(domains), mailboxes=len(boxes), aliases=len(aliases), changed=sorted(changed), trashed=trashed, trash_emptied=emptied)
+    except Bad as e:
+        report(ok=False, error='Rejected, nothing was changed: %s' % e)
+        print('amb-mail-sync: rejected: %s' % e, file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:  # noqa
+        report(ok=False, error='%s: %s' % (type(e).__name__, str(e)[:200]))
+        raise
+
+
+if __name__ == '__main__':
+    main()

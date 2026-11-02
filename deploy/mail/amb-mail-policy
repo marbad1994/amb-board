@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Sending limits for AMB Board email hosting: a Postfix policy service (check_policy_service).
+
+Every recipient of a logged-in sender is counted per mailbox (hour and day) and per domain (day). Over a limit the recipient is
+deferred with a clear message, so one mailbox or one workspace cannot use up the sending reputation everybody shares.
+Limits come from /etc/amb-mail/limits (written by amb-mail-sync: domain, per mailbox per hour, per mailbox per day, per domain per day;
+"*" is the default). Counts are kept in SQLite; usage.json (read by AMB Board) is refreshed every minute.
+"""
+import argparse, json, os, socketserver, sqlite3, threading, time
+
+HOUR, DAY = 3600, 86400
+
+
+class State:
+    def __init__(self, db, limits_file, usage_file, default):
+        self.lock = threading.Lock()
+        self.db = sqlite3.connect(db, check_same_thread=False)
+        self.db.execute('CREATE TABLE IF NOT EXISTS sent (ts INTEGER NOT NULL, user TEXT NOT NULL, domain TEXT NOT NULL)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS sent_user ON sent (user, ts)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS sent_dom ON sent (domain, ts)')
+        self.limits_file, self.usage_file, self.default = limits_file, usage_file, default
+        self.limits, self.mtime = {}, None
+
+    def load_limits(self):
+        try:
+            m = os.stat(self.limits_file).st_mtime
+        except OSError:
+            return
+        if m == self.mtime:
+            return
+        out = {}
+        with open(self.limits_file) as f:
+            for row in f:
+                p = row.rstrip('\n').split('\t')
+                if len(p) == 4 and all(x.isdigit() for x in p[1:]):
+                    out[p[0]] = tuple(int(x) for x in p[1:])
+        self.limits, self.mtime = out, m
+
+    def limit_for(self, domain):
+        return self.limits.get(domain) or self.limits.get('*') or self.default
+
+    def count(self, col, val, since):
+        return self.db.execute('SELECT COUNT(*) FROM sent WHERE %s = ? AND ts > ?' % col, (val, since)).fetchone()[0]
+
+    def check(self, user, now=None):
+        """-> (allowed, reason). Counts the recipient when allowed."""
+        now = int(now or time.time())
+        user = user.lower()
+        domain = user.rpartition('@')[2]
+        with self.lock:
+            self.load_limits()
+            uh, ud, dd = self.limit_for(domain)
+            if self.count('user', user, now - HOUR) >= uh:
+                return False, 'Hourly sending limit reached for this mailbox (%d recipients). Try again later.' % uh
+            if self.count('user', user, now - DAY) >= ud:
+                return False, 'Daily sending limit reached for this mailbox (%d recipients). Try again tomorrow.' % ud
+            if self.count('domain', domain, now - DAY) >= dd:
+                return False, 'Daily sending limit reached for the domain %s (%d recipients). Try again tomorrow.' % (domain, dd)
+            self.db.execute('INSERT INTO sent (ts, user, domain) VALUES (?, ?, ?)', (now, user, domain))
+            self.db.commit()
+            return True, ''
+
+    def write_usage(self, now=None):
+        now = int(now or time.time())
+        with self.lock:
+            users = {}
+            for u, d, h in self.db.execute('SELECT user, SUM(1), SUM(ts > ?) FROM sent WHERE ts > ? GROUP BY user', (now - HOUR, now - DAY)):
+                users[u] = {'day': d, 'hour': int(h or 0)}
+            doms = {d: {'day': n} for d, n in self.db.execute('SELECT domain, COUNT(*) FROM sent WHERE ts > ? GROUP BY domain', (now - DAY,))}
+            self.db.execute('DELETE FROM sent WHERE ts < ?', (now - 2 * DAY,))
+            self.db.commit()
+        tmp = self.usage_file + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump({'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now)), 'users': users, 'domains': doms}, f)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, self.usage_file)
+
+
+class Handler(socketserver.StreamRequestHandler):
+    timeout = 30
+
+    def handle(self):
+        attrs = {}
+        for raw in self.rfile:
+            line = raw.decode('utf-8', 'replace').rstrip('\r\n')
+            if line == '':
+                self.reply(attrs)
+                attrs = {}
+                continue
+            k, _, v = line.partition('=')
+            attrs[k] = v
+
+    def reply(self, a):
+        user = a.get('sasl_username', '')
+        # only recipients of logged-in senders are counted; mail arriving from other servers is none of this service's business
+        if a.get('protocol_state', 'RCPT').upper() != 'RCPT' or not user or '@' not in user:
+            out = 'action=dunno\n\n'
+        else:
+            ok, why = self.server.state.check(user)
+            out = 'action=dunno\n\n' if ok else 'action=450 4.7.1 %s\n\n' % why
+        self.wfile.write(out.encode())
+
+
+class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--socket', default='/var/spool/postfix/private/amb-policy')
+    ap.add_argument('--db', default='/var/lib/amb-mail-policy/sent.sqlite')
+    ap.add_argument('--limits', default='/etc/amb-mail/limits')
+    ap.add_argument('--usage', default='/var/lib/amb-mail-policy/usage.json')
+    ap.add_argument('--default', default='60,300,1000', help='per mailbox per hour, per mailbox per day, per domain per day')
+    a = ap.parse_args()
+    state = State(a.db, a.limits, a.usage, tuple(int(x) for x in a.default.split(',')))
+    if os.path.exists(a.socket):
+        os.unlink(a.socket)
+    srv = Server(a.socket, Handler)
+    srv.state = state
+    os.chmod(a.socket, 0o660)
+
+    def tick():
+        while True:
+            try:
+                state.write_usage()
+            except Exception as e:  # noqa
+                print('usage: %s' % e, flush=True)
+            time.sleep(60)
+    threading.Thread(target=tick, daemon=True).start()
+    srv.serve_forever()
+
+
+if __name__ == '__main__':
+    main()
