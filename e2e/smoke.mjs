@@ -3,6 +3,7 @@
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -91,7 +92,8 @@ await new Promise((r) => fakeAi.listen(0, '127.0.0.1', r));
 const dir = mkdtempSync(join(tmpdir(), 'amb-e2e-'));
 const server = spawn(process.execPath, ['--experimental-sqlite', join(root, 'server/src/index.js')], {
   env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'e2e.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up'),
-    SMTP_USER: 'admin@example.test', SMTP_PASS: 'e2e-not-used', DEEPSEEK_API_KEY: 'e2e-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${fakeAi.address().port}`, X_GROK_API_KEY: '' },
+    SMTP_USER: 'admin@example.test', SMTP_PASS: 'e2e-not-used', DEEPSEEK_API_KEY: 'e2e-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${fakeAi.address().port}`, X_GROK_API_KEY: '',
+    MAIL_ENABLED: 'true', MAIL_DIR: join(dir, 'mail'), MAIL_HOST: 'mail.e2e-host.net' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve, reject) => {
@@ -827,6 +829,41 @@ try {
     await page.getByRole('list', { name: 'Paired browsers' }).getByText('E2E laptop').waitFor();
     await page.getByRole('button', { name: 'Remove E2E laptop' }).click();
     await page.getByRole('list', { name: 'Paired browsers' }).waitFor({ state: 'detached' });
+    await page.getByRole('link', { name: 'Projects', exact: true }).click();
+    await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor();
+  });
+
+  await step('email hosting: attach a domain, see the DNS proof it needs, then (marked verified) create a mailbox and an alias', async () => {
+    await page.getByRole('link', { name: 'Workspace', exact: true }).click();
+    await page.getByRole('button', { name: 'Email', exact: true }).click();
+    await page.getByRole('heading', { name: 'Email hosting' }).waitFor();
+    await page.getByLabel('Domain', { exact: true }).fill('e2e-shop-example.com');
+    await page.getByRole('button', { name: 'Attach domain' }).click();
+    await page.getByText('Waiting for DNS').waitFor();
+    assert.match(await page.getByLabel('Name', { exact: true }).inputValue(), /^_amb-mail\.e2e-shop-example\.com$/);
+    assert.match(await page.getByLabel('Value', { exact: true }).inputValue(), /^amb-mail-verification=[0-9a-f]{32}$/);
+    await page.getByRole('button', { name: 'Check now' }).click();
+    await page.getByText(/record was not found yet/).waitFor();
+    // the DNS proof cannot happen in a test: mark the domain verified in the database, as a successful check would
+    const raw = new DatabaseSync(join(dir, 'e2e.sqlite')); raw.exec("UPDATE mail_domains SET verified_at = '2026-01-01T00:00:00Z', dkim_public = 'AAAA' WHERE domain = 'e2e-shop-example.com'"); raw.close();
+    await page.reload(); await page.getByRole('button', { name: 'Email', exact: true }).click().catch(() => {});
+    await page.getByText('Verified', { exact: true }).waitFor();
+    await page.getByPlaceholder('anna').fill('anna');
+    await page.getByRole('button', { name: 'Add mailbox' }).click();
+    await page.getByText('Mailbox anna@e2e-shop-example.com created.').waitFor();
+    assert.ok((await page.getByLabel('Password', { exact: true }).inputValue()).length >= 16, 'a generated password is shown once');
+    await page.getByRole('button', { name: 'I have saved it' }).click();
+    await page.getByRole('list', { name: 'Mailboxes of e2e-shop-example.com' }).getByText('anna@e2e-shop-example.com').waitFor();
+    await shot(page, '19-email-mailboxes');
+    await page.getByRole('button', { name: 'Aliases', exact: true }).click();
+    await page.getByPlaceholder('info').fill('info');
+    await page.getByLabel('Forward to (separate with commas)').fill('anna@e2e-shop-example.com, me@elsewhere.org');
+    await page.getByRole('button', { name: 'Add alias' }).click();
+    await page.getByText('forwards to anna@e2e-shop-example.com, me@elsewhere.org').waitFor();
+    await page.getByRole('button', { name: 'DNS records', exact: true }).click();
+    await page.getByText('MX record').waitFor();
+    await page.getByRole('button', { name: 'Mail app settings' }).click();
+    await page.getByText(/Server mail\.e2e-host\.net, port 993/).waitFor();
     await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor();
   });

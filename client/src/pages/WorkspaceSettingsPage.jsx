@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import MailSettings from '../components/mail/MailSettings.jsx';
 import { Trash2, UserPlus } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useAuth, canManage } from '../context/AuthContext.jsx';
@@ -362,7 +363,7 @@ export default function WorkspaceSettingsPage() {
   };
 
   const [params, setParams] = useSearchParams();
-  const TABS = [['workspace', 'Workspace'], ['notifications', 'Notifications'], ['assistant', 'Assistant'], ['connect', 'Connect other AI tools'], ['security', 'Security']];
+  const TABS = [['workspace', 'Workspace'], ['notifications', 'Notifications'], ['assistant', 'Assistant'], ...(['owner', 'admin'].includes(active.role) ? [['email', 'Email']] : []), ['connect', 'Connect other AI tools'], ['security', 'Security']];
   const tab = TABS.some(([v]) => v === params.get('tab')) ? params.get('tab') : 'workspace';
 
   if (!active) return null;
@@ -428,6 +429,7 @@ export default function WorkspaceSettingsPage() {
 
         {tab === 'connect' && <McpTokens />}
         {tab === 'assistant' && <><AssistantSettings /><SkillsSettings /><BrowserAssistant /></>}
+        {tab === 'email' && <div style={{ gridColumn: '1 / -1' }}><MailSettings /></div>}
 
         {tab === 'security' && <section className="panel" aria-labelledby="sec-h">
           <div className="panel__title"><h2 id="sec-h">Security</h2></div>

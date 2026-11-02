@@ -2635,3 +2635,19 @@ a.stat-card.stat-card--alert .stat-card__sub { color: var(--color-danger-text); 
 @media (max-width: 720px) { .dw-grid, .dw-quiet__list, .dw-skeleton { grid-template-columns: minmax(0, 1fr); } .dw--hero { grid-column: auto; } .dw-habits--two { grid-template-columns: minmax(0, 1fr); } .dw__toggle { width: 44px; height: 44px; } .dw__head a, .dw-why summary, .ai-more summary { min-height: 44px; } }
 .dw-goals__top a { display: inline-flex; align-items: center; min-height: 32px; }
 @media (max-width: 720px) { .dw-goals__top a { min-height: 44px; } }
+
+/* email hosting settings */
+.mail { display: grid; gap: 16px; }
+.mail-copy { display: flex; align-items: center; gap: 6px; }
+.mail-copy input { flex: 1; min-width: 0; }
+.mail-at { display: flex; align-items: center; gap: 6px; }
+.mail-at input { flex: 1; min-width: 0; }
+.mail-at span { color: var(--color-text-muted); font-size: 14px; white-space: nowrap; }
+.mail-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mail-once { margin: 0 0 14px; padding: 14px; border: 1px solid var(--color-primary); border-radius: 10px; background: var(--color-surface-alt); display: grid; gap: 8px; }
+.mail-once p { margin: 0; font-size: 14px; }
+.mail-dns { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 14px; }
+.mail-dns li { padding: 14px; border: 1px solid var(--color-border); border-radius: 10px; display: grid; gap: 8px; }
+.mail-dns__head { display: flex; align-items: center; gap: 8px; }
+.mail-warn { color: var(--color-danger-text); font-weight: 600; }
+@media (max-width: 720px) { .mail-actions .btn { min-height: 44px; } }

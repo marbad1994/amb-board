@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Turns the list files AMB Board writes (MAIL_DIR/in) into Postfix, Dovecot and OpenDKIM configuration, and reloads the services.
+
+Runs as root, started by amb-mail-sync.path when MAIL_DIR/in/sync-request changes. The web app is not trusted: every line is checked
+against a strict pattern and ONE bad line rejects the whole run (nothing is changed), so the app cannot inject configuration.
+Result of the last run: MAIL_DIR/out/status.json.   --root DIR / --no-services are for tests.
+"""
+import argparse, json, os, re, shutil, subprocess, sys, tempfile, time
+
+LABEL = r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+DOMAIN = re.compile(r'^(?=.{4,253}$)(?:%s\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$' % LABEL)
+LOCAL = re.compile(r'^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$')
+EMAIL = re.compile(r'^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?@(?:%s\.)+[a-z]{2,63}$' % LABEL)
+SELECTOR = re.compile(r'^[a-z0-9]{1,20}$')
+HASH = re.compile(r'^\$6\$[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}$')
+MAX_LINES = 20000
+
+
+class Bad(Exception):
+    pass
+
+
+def lines(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding='utf-8') as f:
+        rows = [l.rstrip('\n') for l in f if l.strip()]
+    if len(rows) > MAX_LINES:
+        raise Bad('%s: too many lines' % os.path.basename(path))
+    return rows
+
+
+def fields(path, n):
+    out = []
+    for i, row in enumerate(lines(path), 1):
+        parts = row.split('\t')
+        if len(parts) != n:
+            raise Bad('%s line %d: expected %d fields' % (os.path.basename(path), i, n))
+        out.append(parts)
+    return out
+
+
+def load(inp):
+    domains = {}
+    for d, sel in fields(os.path.join(inp, 'domains.txt'), 2):
+        if not DOMAIN.match(d) or not SELECTOR.match(sel):
+            raise Bad('domains.txt: bad line %r' % d[:60])
+        domains[d] = sel
+    boxes = {}
+    for addr, quota in fields(os.path.join(inp, 'mailboxes.txt'), 2):
+        local, _, dom = addr.partition('@')
+        if not (LOCAL.match(local) and dom in domains and quota.isdigit() and 50 <= int(quota) <= 51200):
+            raise Bad('mailboxes.txt: bad line %r' % addr[:80])
+        boxes[addr] = int(quota)
+    passwd = {}
+    for addr, h in fields(os.path.join(inp, 'passwd.txt'), 2):
+        if addr not in boxes or not HASH.match(h):
+            raise Bad('passwd.txt: bad line %r' % addr[:80])
+        passwd[addr] = h
+    aliases = {}
+    for addr, dest in fields(os.path.join(inp, 'aliases.txt'), 2):
+        local, _, dom = addr.partition('@')
+        targets = dest.split(',')
+        if not ((local == '*' or LOCAL.match(local)) and dom in domains and 1 <= len(targets) <= 5 and all(EMAIL.match(t) for t in targets)):
+            raise Bad('aliases.txt: bad line %r' % addr[:80])
+        if addr in boxes:
+            raise Bad('aliases.txt: %r is also a mailbox' % addr[:80])
+        aliases[addr] = targets
+    keys = {}
+    kdir = os.path.join(inp, 'dkim')
+    for d in domains:
+        p = os.path.join(kdir, d + '.pem')
+        if os.path.exists(p):
+            pem = open(p, encoding='ascii').read()
+            if len(pem) > 10000 or not pem.startswith('-----BEGIN PRIVATE KEY-----') or not pem.rstrip().endswith('-----END PRIVATE KEY-----') or not re.fullmatch(r'[A-Za-z0-9+/=\n\r\- ]+', pem):
+                raise Bad('dkim/%s.pem is not a private key' % d)
+            keys[d] = pem
+    return domains, boxes, passwd, aliases, keys
+
+
+def render(domains, boxes, passwd, aliases, keys):
+    out = {}
+    out['postfix/vdomains'] = ''.join('%s\tOK\n' % d for d in sorted(domains))
+    out['postfix/vmailbox'] = ''.join('%s\t%s/%s/\n' % (a, a.split('@')[1], a.split('@')[0]) for a in sorted(boxes))
+    rows = []
+    for a in sorted(aliases):
+        left = '@' + a.split('@')[1] if a.startswith('*@') else a
+        rows.append('%s\t%s\n' % (left, ', '.join(aliases[a])))
+    out['postfix/valias'] = ''.join(rows)
+    out['dovecot/amb-users'] = ''.join('%s:{SHA512-CRYPT}%s::::::userdb_quota_rule=*:storage=%dM\n' % (a, passwd[a], boxes[a]) for a in sorted(passwd))
+    out['opendkim/KeyTable'] = ''.join('%s._domainkey.%s %s:%s:/etc/opendkim/keys/%s/%s.private\n' % (domains[d], d, d, domains[d], d, domains[d]) for d in sorted(keys))
+    out['opendkim/SigningTable'] = ''.join('*@%s %s._domainkey.%s\n' % (d, domains[d], d) for d in sorted(keys))
+    return out
+
+
+def put(path, text, mode, owner=None):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    old = open(path).read() if os.path.exists(path) else None
+    if old == text:
+        return False
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))
+    with os.fdopen(fd, 'w') as f:
+        f.write(text)
+    os.chmod(tmp, mode)
+    if owner and os.geteuid() == 0:
+        try:
+            shutil.chown(tmp, *owner)
+        except (LookupError, OSError):
+            pass
+    os.replace(tmp, path)
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--dir', default='/var/lib/amb-mail')
+    ap.add_argument('--root', default='')
+    ap.add_argument('--no-services', action='store_true')
+    a = ap.parse_args()
+    R = lambda p: os.path.join(a.root, p.lstrip('/')) if a.root else p
+    status = os.path.join(a.dir, 'out', 'status.json')
+    os.makedirs(os.path.dirname(status), exist_ok=True)
+
+    def report(**kw):
+        kw['at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+        with open(status + '.tmp', 'w') as f:
+            json.dump(kw, f)
+        os.chmod(status + '.tmp', 0o644)
+        os.replace(status + '.tmp', status)
+
+    try:
+        domains, boxes, passwd, aliases, keys = load(os.path.join(a.dir, 'in'))
+        files = render(domains, boxes, passwd, aliases, keys)
+        changed = set()
+        for rel, text in files.items():
+            mode, owner = (0o640, ('root', 'dovecot')) if rel.startswith('dovecot') else (0o644, ('root', 'root'))
+            if put(R('/etc/' + rel), text, mode, owner):
+                changed.add(rel.split('/')[0])
+        for d, pem in keys.items():
+            if put(R('/etc/opendkim/keys/%s/%s.private' % (d, domains[d])), pem, 0o600, ('opendkim', 'opendkim')):
+                changed.add('opendkim')
+        # a removed domain loses its key
+        kroot = R('/etc/opendkim/keys')
+        if os.path.isdir(kroot):
+            for d in os.listdir(kroot):
+                if d not in keys and DOMAIN.match(d):
+                    shutil.rmtree(os.path.join(kroot, d), ignore_errors=True); changed.add('opendkim')
+        if not a.no_services:
+            if 'postfix' in changed:
+                for m in ('vdomains', 'vmailbox', 'valias'):
+                    subprocess.run(['postmap', '/etc/postfix/' + m], check=True, timeout=60)
+            for svc in sorted(changed):
+                subprocess.run(['systemctl', 'reload', svc], check=True, timeout=60)
+        report(ok=True, domains=len(domains), mailboxes=len(boxes), aliases=len(aliases), changed=sorted(changed))
+    except Bad as e:
+        report(ok=False, error='Rejected, nothing was changed: %s' % e)
+        print('amb-mail-sync: rejected: %s' % e, file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:  # noqa
+        report(ok=False, error='%s: %s' % (type(e).__name__, str(e)[:200]))
+        raise
+
+
+if __name__ == '__main__':
+    main()

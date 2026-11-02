@@ -20,7 +20,7 @@ const arg = (k) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 
 if (arg('shots')) mkdirSync(arg('shots'), { recursive: true });
 const dir = mkdtempSync(join(tmpdir(), 'amb-audit-'));
 const server = spawn(process.execPath, ['--experimental-sqlite', join(root, 'server/src/index.js')], {
-  env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'a.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up'), SMTP_USER: 'a@example.test', SMTP_PASS: 'x', X_GROK_API_KEY: '', DEEPSEEK_API_KEY: '' },
+  env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'a.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up'), SMTP_USER: 'a@example.test', SMTP_PASS: 'x', MAIL_ENABLED: 'true', MAIL_DIR: join(dir, 'mail'), MAIL_HOST: 'mail.audit-host.net', X_GROK_API_KEY: '', DEEPSEEK_API_KEY: '' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve, reject) => { server.stdout.on('data', (d) => String(d).includes('listening') && resolve()); server.on('exit', (c) => reject(new Error(`server exited ${c}`))); });
@@ -110,7 +110,7 @@ try {
   await page.goto(base);          // registering through the API left the session cookie in this browser context
   await page.waitForSelector('.shell__top', { timeout: 15000 });
 
-  const pages = arg('page') ? [arg('page')] : ['/', '/my-day', '/life-areas', '/projects', `/projects/${projs[0]?.id}`, '/tasks', '/goals', '/ideas', '/calendar', '/automations', '/finance', '/notes', '/documents', '/reports', '/assistant', '/settings'];
+  const pages = arg('page') ? [arg('page')] : ['/', '/my-day', '/life-areas', '/projects', `/projects/${projs[0]?.id}`, '/tasks', '/goals', '/ideas', '/calendar', '/automations', '/finance', '/notes', '/documents', '/reports', '/assistant', '/settings', '/settings?tab=email'];
   for (const path of pages) {
     for (const theme of ['light', 'dark']) {
       for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
