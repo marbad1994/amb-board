@@ -173,18 +173,30 @@ userdb {
   default_fields = uid=vmail gid=vmail home=/var/vmail/%d/%n
 }
 mail_plugins = \$mail_plugins quota
-protocol imap { mail_plugins = \$mail_plugins imap_quota }
-protocol lmtp { mail_plugins = \$mail_plugins sieve }
+protocol imap {
+  mail_plugins = \$mail_plugins imap_quota
+}
+protocol lmtp {
+  mail_plugins = \$mail_plugins sieve
+}
 plugin {
   quota = maildir:User quota
   sieve_before = /etc/dovecot/sieve-before.d/
 }
-service lmtp { unix_listener /var/spool/postfix/private/dovecot-lmtp { mode = 0600
-  user = postfix
-  group = postfix } }
-service auth { unix_listener /var/spool/postfix/private/auth { mode = 0660
-  user = postfix
-  group = postfix } }
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    mode = 0600
+    user = postfix
+    group = postfix
+  }
+}
+service auth {
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0660
+    user = postfix
+    group = postfix
+  }
+}
 DOVECOT
 # the standard folders exist and are subscribed, so Junk is there for filed spam and for the mail apps
 for box in Drafts Junk Trash Sent; do sed -i "/mailbox $box {/,/}/ { /auto = /d; s/mailbox $box {/mailbox $box {\n    auto = subscribe/ }" /etc/dovecot/conf.d/15-mailboxes.conf; done
@@ -267,7 +279,12 @@ printf '#!/bin/sh\nsystemctl reload postfix dovecot\n' > /etc/letsencrypt/renewa
 systemctl daemon-reload
 systemctl enable --now amb-mail-sync.path amb-mail-policy.service >/dev/null
 systemctl enable opendkim dovecot postfix rspamd redis-server >/dev/null
-systemctl restart redis-server rspamd opendkim dovecot postfix
+# check before starting, so a mistake is reported with its file and line instead of "the service failed"
+doveconf -n >/dev/null || die "Dovecot rejected its configuration (the message above names the file and line)"
+postfix check || die "Postfix rejected its configuration (see above)"
+for svc in redis-server rspamd opendkim dovecot postfix; do
+  systemctl restart "$svc" || { systemctl status "$svc" --no-pager -n 20 || true; journalctl -u "$svc" --no-pager -n 15 || true; die "$svc failed to start (see above)"; }
+done
 if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then log "Opening ports 25, 587 and 993 in ufw"; ufw allow 25/tcp >/dev/null; ufw allow 587/tcp >/dev/null; ufw allow 993/tcp >/dev/null; fi
 postfix check
 
