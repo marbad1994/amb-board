@@ -145,8 +145,10 @@ postconf -P "submission/inet/syslog_name=postfix/submission" "submission/inet/sm
   "submission/inet/smtpd_tls_auth_only=yes" "submission/inet/smtpd_relay_restrictions=permit_sasl_authenticated,reject" "submission/inet/milter_macro_daemon_name=ORIGINATING" \
   "submission/inet/smtpd_milters=inet:127.0.0.1:8891" \
   "submission/inet/smtpd_sender_login_maps=hash:/etc/postfix/amb/sender_login" \
-  "submission/inet/smtpd_sender_restrictions=reject_sender_login_mismatch,permit_sasl_authenticated" \
-  "submission/inet/smtpd_recipient_restrictions=check_policy_service unix:private/amb-policy,permit_sasl_authenticated,reject"
+  "submission/inet/smtpd_sender_restrictions=reject_sender_login_mismatch,permit_sasl_authenticated"
+# postconf -P refuses values with spaces, and "check_policy_service unix:..." needs one: keep the list in a main.cf parameter and refer to it
+postconf -e "amb_submission_recipient_restrictions = check_policy_service unix:private/amb-policy, permit_sasl_authenticated, reject"
+postconf -P 'submission/inet/smtpd_recipient_restrictions=$amb_submission_recipient_restrictions'
 
 log "Dovecot"
 sed -i 's/^\s*!include auth-system.conf.ext/#&/' /etc/dovecot/conf.d/10-auth.conf   # no logins for system users
