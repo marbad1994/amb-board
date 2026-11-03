@@ -106,8 +106,8 @@ test('security headers and cross-origin write blocking', async () => {
 
 test('migrations are idempotent', async () => {
   const { db } = await import('../src/db.js');
-  const { migrate } = await import('../src/migrations.js');
+  const { migrate, migrations } = await import('../src/migrations.js');
   migrate(db);
   migrate(db);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n, 23);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n, migrations.length);
 });

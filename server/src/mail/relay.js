@@ -46,10 +46,36 @@ let testClientFactory = null;
 // Tests replace the real IMAP connection with a fake client so no mail server is needed.
 export const __setImapClientForTests = (factory) => { testClientFactory = factory; };
 
+// ImapFlow emits 'error' on the client itself for failures after the connect promise has settled
+// (a dropped connection, a Dovecot restart mid-command). With no listener attached, Node turns that
+// into ERR_UNHANDLED_ERROR and kills the whole server - which is exactly what happened in production
+// ("Emitted 'error' event on ImapFlow instance"). The pending command still rejects with a
+// NoConnection error, so the request fails cleanly; this listener only keeps the process alive.
+const quietErrorListener = (err) => console.error('imap connection error:', err.message);
+
+// A Dovecot restart or a network blip can drop the connection during the handshake. One quick retry
+// turns those blips into a seamless (if slightly slower) request instead of a 502.
+const transientConnectError = (err) =>
+  String(err.code || '').startsWith('ClosedAfterConnect')
+  || ['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN'].includes(err.code)
+  || /unexpected close|socket hang up/i.test(err.message);
+
+async function openClient(session, attempt = 0) {
+  const client = newClient(session);
+  client.on('error', quietErrorListener);
+  try {
+    await client.connect();
+    return client;
+  } catch (err) {
+    client.close();   // release the socket; a failed handshake must not leak connections
+    if (attempt === 0 && transientConnectError(err)) return openClient(session, 1);
+    throw err;
+  }
+}
+
 export async function withClient(session, fn) {
   if (testClientFactory) return fn(await testClientFactory(session));
-  const client = newClient(session);
-  await client.connect();
+  const client = await openClient(session);
   try {
     return await fn(client);
   } finally {
