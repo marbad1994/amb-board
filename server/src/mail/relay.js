@@ -136,8 +136,11 @@ export async function listMessages(session, folder, page = 1, limit = 30) {
       const end = Math.max(1, total - (p - 1) * size);
       const start = Math.max(1, end - size + 1);
       const rows = [];
-      for await (const m of client.fetch(`${start}:${end}`, { envelope: true, flags: true, uid: true, internalDate: true, size: true })) {
-        rows.push(summary(m, folder));
+      // an empty mailbox rejects any sequence set, so only fetch when there is something to fetch
+      if (total > 0 && start <= end) {
+        for await (const m of client.fetch(`${start}:${end}`, { envelope: true, flags: true, uid: true, internalDate: true, size: true })) {
+          rows.push(summary(m, folder));
+        }
       }
       rows.reverse(); // newest first
       return { folder, total, unseen: box.unseen ?? null, page: p, pageSize: size, hasMore: start > 1, messages: rows };
