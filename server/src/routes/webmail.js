@@ -27,6 +27,11 @@ const needSession = (req, res) => {
 
 const clean = (v) => (Array.isArray(v) ? v : String(v ?? '').split(/[\s,;]+/)).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
 
+// imapflow/smtp errors: the useful reason is usually in responseText (the mail server's own message),
+// not the generic `message` ("Command failed"). Log the whole thing and return the meaningful part.
+const describe = (e) => e.responseText || e.message || 'Mail server error';
+const handle = (e, res) => { console.error('[webmail]', e.code || '', describe(e)); res.status(502).json({ error: describe(e) }); };
+
 // ---- session (which mailbox this member reads) ----
 router.get('/session', (req, res) => {
   const row = relay.sessionRow(req.user.id, req.ws.id);
@@ -41,7 +46,7 @@ router.post('/session', async (req, res) => {
   const box = knownMailbox(req.ws.id, address);
   if (!box || !box.enabled) return res.status(400).json({ error: 'That mailbox does not exist here, or logins are turned off. An owner or admin creates it under Workspace & account → Email.' });
   try { await relay.withClient({ address: box.address, password }, () => {}); }
-  catch { return res.status(401).json({ error: 'Could not sign in to that mailbox. Check the address and password.' }); }
+  catch (e) { console.error('[webmail] session sign-in failed:', e.code || '', describe(e)); return res.status(401).json({ error: 'Could not sign in to that mailbox. Check the address and password.' }); }
   db.prepare(`INSERT INTO webmail_sessions (user_id, workspace_id, address, password_enc, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id, workspace_id) DO UPDATE SET address = excluded.address, password_enc = excluded.password_enc, updated_at = excluded.updated_at`)
@@ -59,7 +64,7 @@ router.delete('/session', (req, res) => {
 // ---- folders & messages ----
 router.get('/folders', async (req, res) => {
   const s = needSession(req, res); if (!s) return;
-  try { res.json(await relay.listFolders(s)); } catch (e) { res.status(502).json({ error: e.message }); }
+  try { res.json(await relay.listFolders(s)); } catch (e) { handle(e, res); }
 });
 
 router.get('/messages', async (req, res) => {
@@ -67,7 +72,7 @@ router.get('/messages', async (req, res) => {
   const folder = String(req.query.folder || 'INBOX');
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 30));
-  try { res.json(await relay.listMessages(s, folder, page, limit)); } catch (e) { res.status(502).json({ error: e.message }); }
+  try { res.json(await relay.listMessages(s, folder, page, limit)); } catch (e) { handle(e, res); }
 });
 
 router.get('/messages/:folder/:uid', async (req, res) => {
@@ -76,7 +81,7 @@ router.get('/messages/:folder/:uid', async (req, res) => {
     const msg = await relay.readMessage(s, req.params.folder, Number(req.params.uid));
     if (!msg) return res.status(404).json({ error: 'not found' });
     res.json(msg);
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { handle(e, res); }
 });
 
 router.post('/send', async (req, res) => {
@@ -95,7 +100,7 @@ router.post('/send', async (req, res) => {
   try {
     res.json(await relay.sendMail(s, { to, cc, bcc, subject: req.body.subject, text: req.body.text, replyTo: req.body.replyTo, inReplyTo: req.body.inReplyTo, references: req.body.references, attachments }));
     audit(req, 'webmail.send', 'webmail', '', { to: to.slice(0, 10), count: to.length });
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { handle(e, res); }
 });
 
 router.patch('/messages/:folder/:uid', async (req, res) => {
@@ -104,14 +109,14 @@ router.patch('/messages/:folder/:uid', async (req, res) => {
   try {
     if (req.body.folder !== undefined && req.body.folder !== folder) res.json(await relay.moveMessage(s, folder, uid, String(req.body.folder)));
     else res.json(await relay.setFlags(s, folder, uid, { seen: req.body.seen, flagged: req.body.flagged }));
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { handle(e, res); }
 });
 
 router.delete('/messages/:folder/:uid', async (req, res) => {
   const s = needSession(req, res); if (!s) return;
   try {
     res.json(await relay.deleteMessage(s, req.params.folder, Number(req.params.uid), String(req.query.trash || 'Trash')));
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { handle(e, res); }
 });
 
 // ---- OpenPGP keys (end-to-end encryption) ----
