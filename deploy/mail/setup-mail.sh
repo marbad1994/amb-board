@@ -152,8 +152,9 @@ postconf -P 'submission/inet/smtpd_recipient_restrictions=$amb_submission_recipi
 
 log "Dovecot"
 # A single global key for Dovecot mail_crypt, so per-mailbox encryption (turned on in AMB Board) works out of the box.
-[ -f /etc/dovecot/amb-mail-crypt.key ] || { openssl genrsa -out /etc/dovecot/amb-mail-crypt.key 2048 >/dev/null 2>&1; chown root:dovecot /etc/dovecot/amb-mail-crypt.key; chmod 640 /etc/dovecot/amb-mail-crypt.key; }
-[ -f /etc/dovecot/amb-mail-crypt.pub ] || { openssl rsa -in /etc/dovecot/amb-mail-crypt.key -pubout -out /etc/dovecot/amb-mail-crypt.pub >/dev/null 2>&1; chown root:dovecot /etc/dovecot/amb-mail-crypt.pub; chmod 640 /etc/dovecot/amb-mail-crypt.pub; }
+# The mail processes run as vmail, so both keys must be readable by it (the private one decrypts, the public one encrypts).
+[ -f /etc/dovecot/amb-mail-crypt.key ] || { openssl genrsa -out /etc/dovecot/amb-mail-crypt.key 2048 >/dev/null 2>&1; chown root:vmail /etc/dovecot/amb-mail-crypt.key; chmod 640 /etc/dovecot/amb-mail-crypt.key; }
+[ -f /etc/dovecot/amb-mail-crypt.pub ] || { openssl rsa -in /etc/dovecot/amb-mail-crypt.key -pubout -out /etc/dovecot/amb-mail-crypt.pub >/dev/null 2>&1; chown root:vmail /etc/dovecot/amb-mail-crypt.pub; chmod 644 /etc/dovecot/amb-mail-crypt.pub; }
 sed -i 's/^\s*!include auth-system.conf.ext/#&/' /etc/dovecot/conf.d/10-auth.conf   # no logins for system users
 cat > /etc/dovecot/conf.d/99-amb.conf <<DOVECOT
 protocols = imap lmtp
@@ -187,6 +188,7 @@ plugin {
   sieve_before = /etc/dovecot/sieve-before.d/
   mail_crypt_global_private_key = </etc/dovecot/amb-mail-crypt.key
   mail_crypt_global_public_key = </etc/dovecot/amb-mail-crypt.pub
+  mail_crypt_save_version = 2
 }
 service lmtp {
   unix_listener /var/spool/postfix/private/dovecot-lmtp {
