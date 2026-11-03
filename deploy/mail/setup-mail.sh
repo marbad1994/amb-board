@@ -290,10 +290,36 @@ postfix check
 
 # ---- webmail (Roundcube behind the web server that already owns ports 80 and 443)
 WEBMAIL_URL=""
-if [ "$INSTALL_WEBMAIL" = auto ]; then case "$WEB" in nginx|caddy-host) INSTALL_WEBMAIL=yes ;; *) INSTALL_WEBMAIL=no ;; esac; fi
+# Caddy in a container cannot run PHP, so Roundcube runs as its own container next to it and Caddy proxies to that.
+webmail_docker() {
+  command -v docker >/dev/null || return 1
+  [ -n "$CADDY_NAME" ] || docker_caddy_paths
+  local net="" n gw="" port="${WEBMAIL_PORT:-8083}" upstream args=()
+  for n in $(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CADDY_NAME" 2>/dev/null); do net="$n"; [ "$n" != bridge ] && break; done
+  gw="$(docker inspect -f "{{(index .NetworkSettings.Networks \"${net}\").Gateway}}" "$CADDY_NAME" 2>/dev/null)"
+  [ -n "$net" ] && [ -n "$gw" ] || { warn "could not read the network of the Caddy container '${CADDY_NAME}'"; return 1; }
+  log "Webmail: Roundcube container, on the network of '${CADDY_NAME}' (${net})"
+  docker rm -f amb-roundcube >/dev/null 2>&1 || true
+  docker volume create amb-roundcube-db >/dev/null
+  # the container reaches this server's mail ports through the Docker gateway under the mail host name, so the certificate matches
+  args=(run -d --name amb-roundcube --restart unless-stopped --network "$net" --add-host "${MAIL_HOST}:${gw}" -v amb-roundcube-db:/var/roundcube/db
+    -e ROUNDCUBEMAIL_DB_TYPE=sqlite -e "ROUNDCUBEMAIL_DEFAULT_HOST=ssl://${MAIL_HOST}" -e ROUNDCUBEMAIL_DEFAULT_PORT=993
+    -e "ROUNDCUBEMAIL_SMTP_SERVER=tls://${MAIL_HOST}" -e ROUNDCUBEMAIL_SMTP_PORT=587 -e ROUNDCUBEMAIL_UPLOAD_MAX_FILESIZE=30M
+    -e ROUNDCUBEMAIL_SKIN=elastic)
+  if [ "$net" = bridge ]; then args+=(-p "${gw}:${port}:80"); upstream="${gw}:${port}"; else upstream="amb-roundcube:80"; fi   # the default bridge has no names
+  docker "${args[@]}" "roundcube/roundcubemail:latest" >/dev/null || { warn "could not start the Roundcube container (is the image reachable? docker pull roundcube/roundcubemail)"; return 1; }
+  caddy_apply "    encode gzip
+    request_body {
+        max_size 30MB
+    }
+    reverse_proxy ${upstream}" || return 1
+  WEBMAIL_URL="https://${MAIL_HOST}/"
+}
+
+if [ "$INSTALL_WEBMAIL" = auto ]; then case "$WEB" in nginx|caddy-host|caddy-docker) INSTALL_WEBMAIL=yes ;; *) INSTALL_WEBMAIL=no ;; esac; fi
 if [ "$INSTALL_WEBMAIL" = yes ] && [ "$WEB" = caddy-docker ]; then
-  warn "your Caddy runs in a container, which cannot run PHP for Roundcube; webmail was not installed. Mail apps work. To add webmail later, run Roundcube on this server and add a reverse_proxy for ${MAIL_HOST} to the Caddyfile."
-  INSTALL_WEBMAIL=no
+  webmail_docker || warn "webmail was not installed (see above). Mail apps still work. The certificate site stays in place."
+  INSTALL_WEBMAIL=done
 fi
 if [ "$INSTALL_WEBMAIL" = yes ] && [ "$WEB" = none ]; then warn "no nginx or Caddy found, so webmail was not installed; serve /usr/share/roundcube with PHP-FPM yourself"; INSTALL_WEBMAIL=no; fi
 if [ "$INSTALL_WEBMAIL" = yes ]; then
