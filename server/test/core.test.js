@@ -115,6 +115,30 @@ test('S15 idea converts to a linked project exactly once; the idea is kept', asy
   assert.equal((await other.c.post(`/api/ideas/${idea.id}/convert`, {})).status, 404);
 });
 
+test('idea reactions: like/dislike, one vote per person, toggle and validation', async () => {
+  const a = await signUp(srv.base, 'IdeaReact');
+  const b = await signUp(srv.base, 'IdeaReactB');
+  const idea = (await a.c.post('/api/ideas', { text: 'Garden bench' })).json;
+  assert.equal(idea.likes, 0); assert.equal(idea.dislikes, 0); assert.equal(idea.my_reaction, null);
+
+  const liked = (await a.c.post(`/api/ideas/${idea.id}/react`, { reaction: 'like' })).json;
+  assert.equal(liked.likes, 1); assert.equal(liked.dislikes, 0); assert.equal(liked.my_reaction, 'like');
+
+  const cleared = (await a.c.post(`/api/ideas/${idea.id}/react`, { reaction: 'like' })).json;
+  assert.equal(cleared.likes, 0); assert.equal(cleared.my_reaction, null);
+
+  const disliked = (await a.c.post(`/api/ideas/${idea.id}/react`, { reaction: 'dislike' })).json;
+  assert.equal(disliked.dislikes, 1); assert.equal(disliked.likes, 0); assert.equal(disliked.my_reaction, 'dislike');
+  const switched = (await a.c.post(`/api/ideas/${idea.id}/react`, { reaction: 'like' })).json;
+  assert.equal(switched.likes, 1); assert.equal(switched.dislikes, 0); assert.equal(switched.my_reaction, 'like');
+
+  assert.equal((await a.c.post(`/api/ideas/${idea.id}/react`, { reaction: 'meh' })).status, 400);
+
+  assert.equal((await b.c.post(`/api/ideas/${idea.id}/react`, { reaction: 'like' })).status, 404);
+  const listed = (await a.c.get('/api/ideas')).json.find((i) => i.id === idea.id);
+  assert.equal(listed.likes, 1); assert.equal(listed.my_reaction, 'like');
+});
+
 test('search is scoped to the workspace, escapes wildcards, ignores archived projects', async () => {
   const a = await signUp(srv.base, 'SearchA');
   const b = await signUp(srv.base, 'SearchB');

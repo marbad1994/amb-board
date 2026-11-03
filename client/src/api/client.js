@@ -319,6 +319,7 @@ export const api = {
   createIdea: (data) => request('/ideas', { method: 'POST', body: JSON.stringify(data) }),
   updateIdea: (id, data) => request(`/ideas/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteIdea: (id) => request(`/ideas/${id}`, { method: 'DELETE' }),
+  reactToIdea: (id, reaction) => request(`/ideas/${id}/react`, json('POST', { reaction })),
 
   // translate
   translate: (text, sourceLang) =>

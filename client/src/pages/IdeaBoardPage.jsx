@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Plus, Trash2, FolderPlus } from 'lucide-react';
+import { Plus, Trash2, FolderPlus, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useIdentity } from '../context/IdentityContext.jsx';
@@ -87,6 +87,20 @@ export default function IdeaBoardPage() {
     }
   };
 
+  const toggleReaction = async (note, reaction) => {
+    const prev = note.my_reaction;
+    const next = prev === reaction ? undefined : reaction;
+    const likes = (note.likes || 0) + (prev === 'like' ? -1 : 0) + (next === 'like' ? 1 : 0);
+    const dislikes = (note.dislikes || 0) + (prev === 'dislike' ? -1 : 0) + (next === 'dislike' ? 1 : 0);
+    setNotes((prevNotes) => prevNotes.map((n) => (n.id === note.id ? { ...n, my_reaction: next, likes, dislikes } : n)));
+    try {
+      await api.reactToIdea(note.id, next);
+    } catch (err) {
+      setError(err.message);
+      setNotes((prevNotes) => prevNotes.map((n) => (n.id === note.id ? { ...n, my_reaction: prev, likes: note.likes || 0, dislikes: note.dislikes || 0 } : n)));
+    }
+  };
+
   const deleteNote = async (id) => {
     if (!window.confirm('Delete this note?')) return;
     setNotes((prev) => prev.filter((n) => n.id !== id));
@@ -149,6 +163,28 @@ export default function IdeaBoardPage() {
                       <FolderPlus size={16} aria-hidden="true" /> To project
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className={`idea__icon idea__react${note.my_reaction === 'like' ? ' is-active' : ''}`}
+                    onClick={() => toggleReaction(note, 'like')}
+                    title="Like"
+                    aria-label={`Like idea${note.likes > 0 ? ` (${note.likes} likes)` : ''}`}
+                    aria-pressed={note.my_reaction === 'like'}
+                  >
+                    <ThumbsUp size={16} aria-hidden="true" />
+                    {note.likes > 0 && <span className="idea__count">{note.likes}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className={`idea__icon idea__react idea__react--down${note.my_reaction === 'dislike' ? ' is-active' : ''}`}
+                    onClick={() => toggleReaction(note, 'dislike')}
+                    title="Dislike"
+                    aria-label={`Dislike idea${note.dislikes > 0 ? ` (${note.dislikes} dislikes)` : ''}`}
+                    aria-pressed={note.my_reaction === 'dislike'}
+                  >
+                    <ThumbsDown size={16} aria-hidden="true" />
+                    {note.dislikes > 0 && <span className="idea__count">{note.dislikes}</span>}
+                  </button>
                   {note.text.trim() && <CopyToWorkspace entity="idea" id={note.id} label="idea" className="idea__icon" iconOnly />}
                   <DictationButton
                     className="idea__mic"

@@ -7,3 +7,8 @@ server/uploads/*
 !server/uploads/.gitkeep
 *.log
 .DS_Store
+.agents/
+.shmakk/
+docs/ux-improvements.md
+mockup/
+test-rm-root

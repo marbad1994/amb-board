@@ -984,6 +984,26 @@ textarea {
   color: var(--color-danger-text);
 }
 
+.idea__icon.idea__react {
+  width: auto;
+  padding: 0 8px;
+}
+
+.idea__react.is-active {
+  color: var(--color-primary-text);
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
+.idea__react--down.is-active {
+  color: var(--color-danger-text);
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+}
+
+.idea__count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .idea__btn:focus-visible,
 .idea__icon:focus-visible,
 .idea .dictation__mic:focus-visible,

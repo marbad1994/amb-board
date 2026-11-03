@@ -640,6 +640,7 @@ export const migrations = [
   { id: '020_mcp_auth_methods', up: (db) => db.exec(mcpAuthMethods) },
   { id: '021_mail_hosting', up: (db) => db.exec(mailHosting) },
   { id: '022_mail_purges', up: (db) => db.exec(mailPurges) },
+  { id: '023_idea_reactions', up: (db) => db.exec(ideaReactions) },
 ];
 
 const mailPurges = `
@@ -757,6 +758,17 @@ CREATE TABLE ai_skills (
   UNIQUE (workspace_id, user_id, name)
 );
 ALTER TABLE ai_conversations ADD COLUMN active_skill TEXT;
+`;
+
+const ideaReactions = `
+CREATE TABLE idea_reactions (
+  idea_id TEXT NOT NULL REFERENCES idea_notes(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reaction TEXT NOT NULL CHECK (reaction IN ('like','dislike')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (idea_id, user_id)
+);
+CREATE INDEX idx_idea_reactions_idea ON idea_reactions (idea_id);
 `;
 
 const emailFlows = `
