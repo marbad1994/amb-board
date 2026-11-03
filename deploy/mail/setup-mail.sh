@@ -375,7 +375,8 @@ if [ "$CERT_FROM_CADDY" = 1 ]; then
   systemctl daemon-reload; systemctl enable --now amb-mail-cert.timer >/dev/null
 fi
 
-IP="$(curl -fsS -4 https://ifconfig.me 2>/dev/null || true)"
+IP="$(curl -fsS -4 https://ifconfig.me 2>/dev/null || true)"; SHOW_IP="${IP:-YOUR_SERVER_PUBLIC_IPV4}"
+SHOW_WEBMAIL=""; [ -n "$WEBMAIL_URL" ] && SHOW_WEBMAIL="       MAIL_WEBMAIL_URL=${WEBMAIL_URL}"
 cat <<DONE
 
 Mail server ready. Now:
@@ -383,8 +384,8 @@ Mail server ready. Now:
        MAIL_ENABLED=true
        MAIL_HOST=${MAIL_HOST}
        MAIL_DIR=${MAIL_DIR}
-       MAIL_SERVER_IP=${IP:-<this server's public IPv4 address>}
-$( [ -n "$WEBMAIL_URL" ] && printf '       MAIL_WEBMAIL_URL=%s' "$WEBMAIL_URL" )
+       MAIL_SERVER_IP=${SHOW_IP}
+${SHOW_WEBMAIL}
   2. In AMB Board: Settings, Email, attach your domain, add the TXT record it shows, then follow the DNS records list.
   3. Make sure ports 25, 587 and 993 are open at your hosting provider's firewall too, and ask them to set reverse DNS (PTR) for this
      address to ${MAIL_HOST}. Without it much mail you send will be marked as spam.
