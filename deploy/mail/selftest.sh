@@ -10,11 +10,11 @@ run() { python3 "$here/amb-mail-sync" --dir "$t" --root "$t/root" --no-services 
 run || { echo "FAIL: a clean input was refused"; fail=1; }
 printf 'me@good.org\n' > "$t/in/encrypt.txt"
 run || { echo "FAIL: a clean encrypt.txt was refused"; fail=1; }
-before="$(cat "$t/root/etc/postfix/vmailbox")"
+before="$(cat "$t/root/etc/postfix/amb/vmailbox")"
 try() {  # name file content
   local keep; keep="$(cat "$t/in/$2")"; printf '%b' "$3" >> "$t/in/$2"
   if run; then echo "FAIL: accepted $1"; fail=1; else grep -q '"ok": false' "$t/out/status.json" || { echo "FAIL: no error status for $1"; fail=1; }; fi
-  [ "$(cat "$t/root/etc/postfix/vmailbox")" = "$before" ] || { echo "FAIL: $1 changed the configuration"; fail=1; }
+  [ "$(cat "$t/root/etc/postfix/amb/vmailbox")" = "$before" ] || { echo "FAIL: $1 changed the configuration"; fail=1; }
   printf '%s\n' "$keep" > "$t/in/$2"
 }
 try "a mailbox on an unlisted domain" mailboxes.txt 'x@evil.org\t1024\n'
@@ -43,7 +43,7 @@ python3 "$here/amb-mail-sync" --dir "$t2" --root "$t2/root" --no-services >/dev/
 [ ! -d "$t2/root/var/vmail/good.org/gone" ] && ls "$t2/root/var/vmail/.trash" | grep -q '^good.org__gone__' || { echo "FAIL: a deleted mailbox was not moved to the trash"; fail=1; }
 [ -d "$t2/root/var/vmail/good.org/me" ] || { echo "FAIL: a mailbox that still exists was purged"; fail=1; }
 [ -d "$t2/root/var/vmail/good.org/outside" ] || { echo "FAIL: a mailbox nobody asked about was removed"; fail=1; }
-grep -q $'^info@good.org\tme@good.org$' "$t2/root/etc/postfix/sender_login" && grep -q $'^me@good.org\tme@good.org$' "$t2/root/etc/postfix/sender_login" || { echo "FAIL: sender map is wrong"; fail=1; }
+grep -q $'^info@good.org\tme@good.org$' "$t2/root/etc/postfix/amb/sender_login" && grep -q $'^me@good.org\tme@good.org$' "$t2/root/etc/postfix/amb/sender_login" || { echo "FAIL: sender map is wrong"; fail=1; }
 grep -q $'^good.org\t5\t20\t100$' "$t2/root/etc/amb-mail/limits" || { echo "FAIL: limits file is wrong"; fail=1; }
 old="$t2/root/var/vmail/.trash/good.org__old__$(( $(date +%s) - 20*86400 ))"; mkdir -p "$old"
 python3 "$here/amb-mail-sync" --dir "$t2" --root "$t2/root" --no-services >/dev/null 2>&1

@@ -103,13 +103,13 @@ def load(inp):
 
 def render(domains, boxes, passwd, aliases, keys, limits, encrypt):
     out = {}
-    out['postfix/vdomains'] = ''.join('%s\tOK\n' % d for d in sorted(domains))
-    out['postfix/vmailbox'] = ''.join('%s\t%s/%s/\n' % (a, a.split('@')[1], a.split('@')[0]) for a in sorted(boxes))
+    out['postfix/amb/vdomains'] = ''.join('%s\tOK\n' % d for d in sorted(domains))
+    out['postfix/amb/vmailbox'] = ''.join('%s\t%s/%s/\n' % (a, a.split('@')[1], a.split('@')[0]) for a in sorted(boxes))
     rows = []
     for a in sorted(aliases):
         left = '@' + a.split('@')[1] if a.startswith('*@') else a
         rows.append('%s\t%s\n' % (left, ', '.join(aliases[a])))
-    out['postfix/valias'] = ''.join(rows)
+    out['postfix/amb/valias'] = ''.join(rows)
     # who may send as which address: a mailbox as itself, an alias as the local mailboxes it forwards to (the sending-limit and
     # sender checks of the submission port use this, so nobody can send as another person's address)
     sender = []
@@ -119,7 +119,7 @@ def render(domains, boxes, passwd, aliases, keys, limits, encrypt):
         mine = [t for t in targets if t in boxes]
         if mine and not a.startswith('*@'):
             sender.append('%s\t%s\n' % (a, ' '.join(mine)))
-    out['postfix/sender_login'] = ''.join(sender)
+    out['postfix/amb/sender_login'] = ''.join(sender)
     out['amb-mail/limits'] = ''.join('%s\t%d\t%d\t%d\n' % ((d,) + limits[d]) for d in sorted(limits))
     # per-mailbox encryption: appending the mail_crypt plugin in the userdb turns Dovecot mail_crypt on for that user only
     out['dovecot/amb-users'] = ''.join('%s:{SHA512-CRYPT}%s::::::userdb_quota_rule=*:storage=%dM%s\n' % (a, passwd[a], boxes[a], ' userdb_mail_plugins=mail_crypt' if a in encrypt else '') for a in sorted(passwd))
@@ -207,7 +207,7 @@ def main():
         if not a.no_services:
             if 'postfix' in changed:
                 for m in ('vdomains', 'vmailbox', 'valias', 'sender_login'):
-                    subprocess.run(['postmap', '/etc/postfix/' + m], check=True, timeout=60)
+                    subprocess.run(['postmap', '/etc/postfix/amb/' + m], check=True, timeout=60)
             for svc in sorted(changed):
                 subprocess.run(['systemctl', 'reload', svc], check=True, timeout=60)
         now = int(time.time()); trashed = 0
