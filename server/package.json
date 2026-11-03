@@ -12,6 +12,8 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "imapflow": "^1.0.184",
+    "mailparser": "^3.7.1",
     "multer": "^2.4.0",
     "nanoid": "^5.0.9",
     "nodemailer": "^6.9.16"

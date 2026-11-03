@@ -88,15 +88,20 @@ def load(inp):
         if not ((dom == '*' or dom in domains) and uh.isdigit() and ud.isdigit() and dd.isdigit()):
             raise Bad('limits.txt: bad line %r' % dom[:60])
         limits[dom] = (int(uh), int(ud), int(dd))
+    encrypt = set()
+    for addr in lines(os.path.join(inp, 'encrypt.txt')):
+        if not (EMAIL.match(addr) and addr in boxes):
+            raise Bad('encrypt.txt: bad line %r' % addr[:80])
+        encrypt.add(addr)
     trash_days = 14
     for k, v in fields(os.path.join(inp, 'settings.txt'), 2):
         if k != 'trash_days' or not v.isdigit() or not 1 <= int(v) <= 3650:
             raise Bad('settings.txt: bad line %r' % k[:40])
         trash_days = int(v)
-    return domains, boxes, passwd, aliases, keys, purge, limits, trash_days
+    return domains, boxes, passwd, aliases, keys, purge, limits, encrypt, trash_days
 
 
-def render(domains, boxes, passwd, aliases, keys, limits):
+def render(domains, boxes, passwd, aliases, keys, limits, encrypt):
     out = {}
     out['postfix/vdomains'] = ''.join('%s\tOK\n' % d for d in sorted(domains))
     out['postfix/vmailbox'] = ''.join('%s\t%s/%s/\n' % (a, a.split('@')[1], a.split('@')[0]) for a in sorted(boxes))
@@ -116,7 +121,8 @@ def render(domains, boxes, passwd, aliases, keys, limits):
             sender.append('%s\t%s\n' % (a, ' '.join(mine)))
     out['postfix/sender_login'] = ''.join(sender)
     out['amb-mail/limits'] = ''.join('%s\t%d\t%d\t%d\n' % ((d,) + limits[d]) for d in sorted(limits))
-    out['dovecot/amb-users'] = ''.join('%s:{SHA512-CRYPT}%s::::::userdb_quota_rule=*:storage=%dM\n' % (a, passwd[a], boxes[a]) for a in sorted(passwd))
+    # per-mailbox encryption: appending the mail_crypt plugin in the userdb turns Dovecot mail_crypt on for that user only
+    out['dovecot/amb-users'] = ''.join('%s:{SHA512-CRYPT}%s::::::userdb_quota_rule=*:storage=%dM%s\n' % (a, passwd[a], boxes[a], ' userdb_mail_plugins=mail_crypt' if a in encrypt else '') for a in sorted(passwd))
     out['opendkim/KeyTable'] = ''.join('%s._domainkey.%s %s:%s:/etc/opendkim/keys/%s/%s.private\n' % (domains[d], d, d, domains[d], d, domains[d]) for d in sorted(keys))
     out['opendkim/SigningTable'] = ''.join('*@%s %s._domainkey.%s\n' % (d, domains[d], d) for d in sorted(keys))
     return out
@@ -182,8 +188,8 @@ def main():
         os.replace(status + '.tmp', status)
 
     try:
-        domains, boxes, passwd, aliases, keys, purge, limits, trash_days = load(os.path.join(a.dir, 'in'))
-        files = render(domains, boxes, passwd, aliases, keys, limits)
+        domains, boxes, passwd, aliases, keys, purge, limits, encrypt, trash_days = load(os.path.join(a.dir, 'in'))
+        files = render(domains, boxes, passwd, aliases, keys, limits, encrypt)
         changed = set()
         for rel, text in files.items():
             mode, owner = (0o640, ('root', 'dovecot')) if rel.startswith('dovecot') else (0o644, ('root', 'root'))
@@ -209,7 +215,7 @@ def main():
             if '%s@%s' % (local, dom) not in boxes and move_to_trash(local, dom, R, now):
                 trashed += 1
         emptied = empty_trash(R, trash_days, now)
-        report(ok=True, domains=len(domains), mailboxes=len(boxes), aliases=len(aliases), changed=sorted(changed), trashed=trashed, trash_emptied=emptied)
+        report(ok=True, domains=len(domains), mailboxes=len(boxes), aliases=len(aliases), changed=sorted(changed), trashed=trashed, trash_emptied=emptied, encrypted=len(encrypt))
     except Bad as e:
         report(ok=False, error='Rejected, nothing was changed: %s' % e)
         print('amb-mail-sync: rejected: %s' % e, file=sys.stderr)

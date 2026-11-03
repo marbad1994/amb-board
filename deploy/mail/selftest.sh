@@ -8,6 +8,8 @@ printf 'me@good.org\t1024\n' > "$t/in/mailboxes.txt"
 printf '' > "$t/in/passwd.txt"; printf '' > "$t/in/aliases.txt"
 run() { python3 "$here/amb-mail-sync" --dir "$t" --root "$t/root" --no-services >/dev/null 2>&1; }
 run || { echo "FAIL: a clean input was refused"; fail=1; }
+printf 'me@good.org\n' > "$t/in/encrypt.txt"
+run || { echo "FAIL: a clean encrypt.txt was refused"; fail=1; }
 before="$(cat "$t/root/etc/postfix/vmailbox")"
 try() {  # name file content
   local keep; keep="$(cat "$t/in/$2")"; printf '%b' "$3" >> "$t/in/$2"
@@ -21,6 +23,8 @@ try "an alias to a command" aliases.txt 'a@good.org\t|/bin/sh\n'
 try "an alias that is also a mailbox" aliases.txt 'me@good.org\tb@c.org\n'
 try "too many destinations" aliases.txt 'a@good.org\t1@x.org,2@x.org,3@x.org,4@x.org,5@x.org,6@x.org\n'
 try "a quota out of range" mailboxes.txt 'big@good.org\t999999\n'
+try "an encrypted address that is not a mailbox" encrypt.txt 'nobody@good.org\n'
+try "an encrypted address on an unlisted domain" encrypt.txt 'x@evil.org\n'
 try "a password that is not a hash" passwd.txt 'me@good.org\tplaintext\n'
 try "an extra field" domains.txt 'other.org\tmail\textra\n'
 try "a bad key file" dkim/good.org.pem '' 2>/dev/null || true

@@ -91,6 +91,11 @@ test('mailboxes: generated or chosen password (hash only), duplicates, disabling
   assert.match(hash, /^\$6\$/); assert.ok(!read('passwd.txt').includes(c.json.password));
   assert.equal(execFileSync('openssl', ['passwd', '-6', '-salt', hash.split('$')[2], '-stdin'], { input: `${c.json.password}\n` }).toString().trim(), hash, 'a standard SHA512-CRYPT hash of that password');
   assert.match(read('mailboxes.txt'), /^anna@boxes\.io\t2048$/m);
+  assert.equal(read('encrypt.txt').trim(), '', 'no mailbox is encrypted until asked');
+  assert.equal((await u.c.patch(`/api/mail/accounts/${c.json.id}`, { encrypt_at_rest: true })).json.encrypt_at_rest, true);
+  assert.match(read('encrypt.txt'), /^anna@boxes\.io$/m, 'encrypted mailboxes are listed for the helper');
+  assert.equal((await u.c.patch(`/api/mail/accounts/${c.json.id}`, { encrypt_at_rest: false })).json.encrypt_at_rest, false);
+  assert.ok(!read('encrypt.txt').includes('anna@'), 'turning encryption off removes it from the list');
   assert.equal((await u.c.post(url, { local_part: 'anna' })).status, 409);
   assert.equal((await u.c.post(url, { local_part: 'bob', password: 'short' })).status, 400);
   assert.equal((await u.c.post(url, { local_part: 'bob', password: 'a long enough password' })).json.password, undefined, 'a chosen password is not echoed');

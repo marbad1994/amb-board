@@ -24,6 +24,7 @@ export function renderFiles() {
     'settings.txt': `trash_days\t${c.trashDays}`,
     'domains.txt': domains.map((d) => `${d.domain}\t${d.dkim_selector}`).join('\n'),
     'mailboxes.txt': accounts.map((a) => `${a.local_part}@${name[a.domain_id]}\t${a.quota_mb}`).join('\n'),
+    'encrypt.txt': accounts.filter((a) => a.encrypt_at_rest).map((a) => `${a.local_part}@${name[a.domain_id]}`).join('\n'),
     'passwd.txt': accounts.filter((a) => a.enabled).map((a) => `${a.local_part}@${name[a.domain_id]}\t${a.password_hash}`).join('\n'),
     'aliases.txt': aliases.map((a) => `${a.local_part}@${name[a.domain_id]}\t${JSON.parse(a.destinations).join(',')}`).join('\n'),
     dkim: Object.fromEntries(domains.filter((d) => d.dkim_private_enc).map((d) => [d.domain, decryptSecret(d.dkim_private_enc)])),
@@ -37,7 +38,7 @@ export function syncMail() {
   const inDir = join(cfg.dir, 'in'); const keyDir = join(inDir, 'dkim');
   mkdirSync(keyDir, { recursive: true, mode: 0o750 });
   const f = renderFiles();
-  for (const k of ['domains.txt', 'mailboxes.txt', 'passwd.txt', 'aliases.txt', 'purge.txt', 'limits.txt', 'settings.txt']) atomic(join(inDir, k), f[k] ? `${f[k]}\n` : '', k === 'passwd.txt' ? 0o600 : 0o640);
+  for (const k of ['domains.txt', 'mailboxes.txt', 'encrypt.txt', 'passwd.txt', 'aliases.txt', 'purge.txt', 'limits.txt', 'settings.txt']) atomic(join(inDir, k), f[k] ? `${f[k]}\n` : '', k === 'passwd.txt' ? 0o600 : 0o640);
   for (const [domain, pem] of Object.entries(f.dkim)) atomic(join(keyDir, `${domain}.pem`), pem, 0o600);
   for (const old of readdirSync(keyDir)) if (old.endsWith('.pem') && !(old.slice(0, -4) in f.dkim)) rmSync(join(keyDir, old), { force: true });
   atomic(join(inDir, 'sync-request'), `${nowIso()} #${++counter}\n`);   // written last: the helper starts when this changes

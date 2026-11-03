@@ -25,7 +25,7 @@ const pDomain = (d) => ({ id: d.id, domain: d.domain, verified: !!d.verified_at,
   verify: d.verified_at ? null : { type: 'TXT', name: verifyName(d.domain), value: verifyValue(d.verify_token) },
   accounts: db.prepare('SELECT COUNT(*) AS n FROM mail_accounts WHERE domain_id = ?').get(d.id).n, aliases: db.prepare('SELECT COUNT(*) AS n FROM mail_aliases WHERE domain_id = ?').get(d.id).n });
 const forget = (address) => db.prepare('INSERT OR REPLACE INTO mail_purges (address, requested_at) VALUES (?, ?)').run(address, nowIso());
-const pAccount = (a, use = null) => ({ id: a.id, sent_hour: use?.users?.[`${a.local_part}@${a.domain}`]?.hour ?? null, sent_today: use?.users?.[`${a.local_part}@${a.domain}`]?.day ?? null, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, quota_mb: a.quota_mb, enabled: !!a.enabled, created_at: a.created_at });
+const pAccount = (a, use = null) => ({ id: a.id, sent_hour: use?.users?.[`${a.local_part}@${a.domain}`]?.hour ?? null, sent_today: use?.users?.[`${a.local_part}@${a.domain}`]?.day ?? null, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, quota_mb: a.quota_mb, enabled: !!a.enabled, encrypt_at_rest: !!a.encrypt_at_rest, created_at: a.created_at });
 const pAlias = (a) => ({ id: a.id, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, destinations: JSON.parse(a.destinations), enabled: !!a.enabled, catch_all: a.local_part === '*', created_at: a.created_at });
 const apply = () => { try { syncMail(); } catch (e) { console.error('mail sync failed:', e.message); } };
 
@@ -109,8 +109,9 @@ router.patch('/accounts/:id', off, (req, res) => {
   const a = accountOf(req); if (!a) return res.status(404).json({ error: 'not found' });
   const enabled = req.body.enabled === undefined ? a.enabled : (req.body.enabled ? 1 : 0);
   const quota = req.body.quota_mb === undefined ? a.quota_mb : Math.max(50, Math.min(51200, Math.round(Number(req.body.quota_mb) || a.quota_mb)));
-  db.prepare('UPDATE mail_accounts SET enabled = ?, quota_mb = ? WHERE id = ?').run(enabled, quota, a.id);
-  audit(req, 'mail.account_update', 'mail_account', a.id, { address: `${a.local_part}@${a.domain}`, enabled: !!enabled, quota_mb: quota });
+  const encrypt = req.body.encrypt_at_rest === undefined ? a.encrypt_at_rest : (req.body.encrypt_at_rest ? 1 : 0);
+  db.prepare('UPDATE mail_accounts SET enabled = ?, quota_mb = ?, encrypt_at_rest = ? WHERE id = ?').run(enabled, quota, encrypt, a.id);
+  audit(req, 'mail.account_update', 'mail_account', a.id, { address: `${a.local_part}@${a.domain}`, enabled: !!enabled, quota_mb: quota, encrypt_at_rest: !!encrypt });
   apply();
   res.json(pAccount({ ...db.prepare('SELECT * FROM mail_accounts WHERE id = ?').get(a.id), domain: a.domain }));
 });

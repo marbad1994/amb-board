@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { db, nowIso } from './db.js';
 import { DEFAULT_LIFE_AREAS } from './lifeAreaDefaults.js';
 import { DEFAULT_CATEGORIES } from './finance/defaults.js';
+import { mailAvailable } from './mail/config.js';
 
 // Caller is responsible for wrapping in a transaction when combined with other writes.
 export function createWorkspace({ userId, name, kind }) {
@@ -27,5 +28,7 @@ export function seedLifeAreas(workspaceId) {
 export function listWorkspacesFor(userId) {
   return db.prepare(`SELECT w.id, w.name, w.kind, m.role FROM workspaces w
     JOIN workspace_members m ON m.workspace_id = w.id
-    WHERE m.user_id = ? AND w.archived_at IS NULL ORDER BY w.kind ASC, w.created_at ASC`).all(userId);
+    WHERE m.user_id = ? AND w.archived_at IS NULL ORDER BY w.kind ASC, w.created_at ASC`)
+    .all(userId)
+    .map((w) => ({ ...w, mail: mailAvailable(w.id) }));
 }

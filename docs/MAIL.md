@@ -75,7 +75,18 @@ All mailboxes of all workspaces send from one server address, so one careless se
 - **Authentication**: DKIM per domain, SPF and DMARC records are required and checked in the DNS tab.
 - Separate addresses per workspace are not possible on one IP. If one workspace needs its own reputation, give it its own server.
 
-## Webmail
+## In-app webmail
+
+Every member (not just owners and admins) gets a **Mail** entry in the sidebar. It reads and sends from their own mailbox through the app's navy/teal design. Under the hood the AMB Board server relays IMAP (port 993) and SMTP (port 587) to the same Dovecot/Postfix the helper configured, using the member's mailbox address and password. The password is kept only for the connected mailbox, stored encrypted at rest (AES-256-GCM, the same `SECRETS_KEY` / `.secret-key` mechanism as connected tools), and removed when the member disconnects. No message is stored in AMB Board's database.
+
+## Encryption
+
+Two independent options:
+
+- **End-to-end per message (OpenPGP).** In Mail → Encryption a member generates or imports a key. The private key is passphrase-protected in the browser and stored encrypted at rest; the public key is shared in the workspace's key directory. When composing, an "Encrypt & sign" toggle encrypts the body to the recipients' public keys and signs it with the sender's key; the reader decrypts with their passphrase. The subject line and attachments are not encrypted by this option. Keys and encryption run in the browser (openpgp.js); the server only ever sees ciphertext and the passphrase-protected key blob.
+- **Encrypt at rest (Dovecot mail_crypt).** An owner or admin can turn on "Encrypt at rest" per mailbox in **Workspace & account → Email**. The mailbox's stored mail is then encrypted on the server disk. `setup-mail.sh` generates a global mail_crypt key and the sync helper enables the plugin per mailbox in the Dovecot userdb, so mail is encrypted for those mailboxes on delivery. This protects against someone reading the disk, not against the server itself.
+
+## Webmail (Roundcube, optional)
 
 `setup-mail.sh` installs Roundcube (PHP-FPM, SQLite) behind nginx or a host Caddy (Caddy serves it through PHP-FPM) on the mail host name (`https://mail.example.com/`) and prints `MAIL_WEBMAIL_URL=...` for `server/.env`; the Email tab then shows an Open webmail button. It signs in with the full address and the mailbox password against the same IMAP and SMTP server. Use `INSTALL_WEBMAIL=no` to skip it. If Caddy runs in a Docker container it cannot run PHP, so the script runs Roundcube as its own container (`amb-roundcube`, image `roundcube/roundcubemail`, SQLite data in the volume `amb-roundcube-db`) on the same Docker network as Caddy, and changes the Caddyfile block for the mail host name into a `reverse_proxy` to it. The container reaches the mail server through the Docker gateway under the mail host name, so the certificate matches; the mail ports must be open to it (the script opens them in ufw). Update it with `docker pull roundcube/roundcubemail` and run the setup script again. With no web server found the script says so: serve `/usr/share/roundcube` yourself with PHP-FPM.
 

@@ -119,6 +119,10 @@ Other options: `DOMAIN=other.example.com`, `DOMAIN=` to skip the mapping. Over H
 
 Do not set `NODE_ENV=production` unless the site is served over HTTPS: production mode makes the session cookie `Secure`, so logins fail over plain HTTP.
 
+## Mail
+
+Owners and admins can host email for their domains (see `docs/MAIL.md`): attach a domain, prove ownership with DNS, and create mailboxes and aliases. Every member gets a **Mail** page in the sidebar to read and send from their own mailbox with the app's own design, and can optionally encrypt mail end-to-end (OpenPGP) or have a mailbox's stored mail encrypted at rest (Dovecot mail_crypt).
+
 ## Email notifications
 
 Set the SMTP values in `server/.env` (see `server/.env.example`; Zoho EU: `smtppro.zoho.eu`, port 465, SSL, sender `admin@makketing.com`, `SMTP_USER` is the full mailbox address and `SMTP_PASS` its password or application-specific password). Restart with `sudo bash deploy.sh`. Each person then turns on "Also email me these notifications" under Workspace & account and can send themselves a test email. Only notifications created after they turn it on are mailed.

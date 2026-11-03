@@ -641,10 +641,45 @@ export const migrations = [
   { id: '021_mail_hosting', up: (db) => db.exec(mailHosting) },
   { id: '022_mail_purges', up: (db) => db.exec(mailPurges) },
   { id: '023_idea_reactions', up: (db) => db.exec(ideaReactions) },
+  { id: '024_webmail', up: (db) => db.exec(webmail) },
 ];
 
 const mailPurges = `
 CREATE TABLE mail_purges (address TEXT PRIMARY KEY, requested_at TEXT NOT NULL);
+`;
+
+const webmail = `
+-- The mailbox a member reads in the in-app webmail, per user and workspace. The password is encrypted at rest (AES-256-GCM).
+CREATE TABLE webmail_sessions (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  address TEXT NOT NULL,
+  password_enc TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, workspace_id)
+);
+-- A mailbox whose stored mail should be encrypted on the server disk (Dovecot mail_crypt).
+ALTER TABLE mail_accounts ADD COLUMN encrypt_at_rest INTEGER NOT NULL DEFAULT 0;
+-- A member's own OpenPGP key: the public key in the clear, the private key both passphrase-protected and encrypted at rest.
+CREATE TABLE mail_keys (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  public_armored TEXT NOT NULL,
+  private_enc TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+-- Workspace public-key directory: an email address -> public key, so members can encrypt to each other.
+CREATE TABLE mail_public_keys (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  address TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  public_armored TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, address)
+);
 `;
 
 const mailHosting = `

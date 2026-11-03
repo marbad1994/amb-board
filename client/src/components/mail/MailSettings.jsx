@@ -39,11 +39,13 @@ function Mailboxes({ d, info, reload }) {
   return (
     <div>
       {once && <OnceBox {...once} onClose={() => setOnce(null)} />}
+      <p className="hint">"Encrypt at rest" stores the mailbox's mail encrypted on the server disk (Dovecot mail_crypt). It needs the server prepared with deploy/mail/setup-mail.sh; turning it on here applies at the next sync.</p>
       {list && list.length === 0 && <p className="muted">No mailboxes yet.</p>}
       {list && list.length > 0 && (
         <ul className="plain-list" aria-label={`Mailboxes of ${d.domain}`}>{list.map((a) => (
-          <li key={a.id}><span><b>{a.address}</b> {!a.enabled && <span className="badge">Login off</span>}<br /><small className="muted">{a.quota_mb} MB{a.sent_today !== null && ` · sent ${a.sent_today} today (limit ${info.sending.per_mailbox_day})`}</small></span>
+          <li key={a.id}><span><b>{a.address}</b> {!a.enabled && <span className="badge">Login off</span>} {a.encrypt_at_rest && <span className="badge status-done">Encrypted at rest</span>}<br /><small className="muted">{a.quota_mb} MB{a.sent_today !== null && ` · sent ${a.sent_today} today (limit ${info.sending.per_mailbox_day})`}</small></span>
             <span className="mail-actions">
+              <button type="button" className="btn btn-small" onClick={() => act(() => api.mailUpdateAccount(a.id, { encrypt_at_rest: !a.encrypt_at_rest }))}>{a.encrypt_at_rest ? 'Encryption on' : 'Encrypt at rest'}</button>
               <button type="button" className="btn btn-small" onClick={() => act(() => api.mailUpdateAccount(a.id, { enabled: !a.enabled }))}>{a.enabled ? 'Turn login off' : 'Turn login on'}</button>
               <button type="button" className="btn btn-small" onClick={async () => { if (!window.confirm(`Set a new password for ${a.address}? The old one stops working.`)) return; setErr(''); try { const r = await api.mailAccountPassword(a.id); setOnce({ what: `New password for ${a.address}.`, password: r.password }); } catch (x) { setErr(x.message); } }}><KeyRound size={14} aria-hidden="true" /> New password</button>
               <button type="button" className="btn btn-icon btn-ghost" aria-label={`Delete ${a.address}`} onClick={() => window.confirm(`Delete ${a.address}? It can no longer log in or receive mail. Its stored messages are removed from the server after ${info.features.trash_days} days (kept in a trash folder until then in case this was a mistake).`) && act(() => api.mailDeleteAccount(a.id))}><Trash2 size={16} color="var(--color-danger)" aria-hidden="true" /></button></span></li>
