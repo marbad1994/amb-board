@@ -19,7 +19,6 @@ import AutomationsPage from './pages/AutomationsPage.jsx';
 import TasksPage from './pages/TasksPage.jsx';
 import IdeaBoardPage from './pages/IdeaBoardPage.jsx';
 import WorkspaceSettingsPage from './pages/WorkspaceSettingsPage.jsx';
-import MailPage from './pages/MailPage.jsx';
 
 export default function App() {
   const { user, loading, active } = useAuth();
@@ -53,7 +52,6 @@ export default function App() {
         <Route path="/reports/:id" element={<ReportView />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/ideas" element={<IdeaBoardPage />} />
-        <Route path="/mail" element={<MailPage />} />
         <Route path="/settings" element={<WorkspaceSettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

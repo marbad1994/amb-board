@@ -93,7 +93,7 @@ const dir = mkdtempSync(join(tmpdir(), 'amb-e2e-'));
 const server = spawn(process.execPath, ['--experimental-sqlite', join(root, 'server/src/index.js')], {
   env: { ...process.env, PORT, HOST: '127.0.0.1', AMB_DB_PATH: join(dir, 'e2e.sqlite'), AMB_UPLOADS_DIR: join(dir, 'up'),
     SMTP_USER: 'admin@example.test', SMTP_PASS: 'e2e-not-used', DEEPSEEK_API_KEY: 'e2e-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${fakeAi.address().port}`, X_GROK_API_KEY: '',
-    MAIL_ENABLED: 'true', MAIL_DIR: join(dir, 'mail'), MAIL_HOST: 'mail.e2e-host.net' },
+    MAIL_ENABLED: 'true', MAIL_DIR: join(dir, 'mail'), MAIL_HOST: 'mail.e2e-host.net', MAIL_WEBMAIL_URL: 'https://mail.e2e-host.net/', MAIL_NOTIFY_SECRET: 'e2e-notify-secret-123456' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve, reject) => {
@@ -864,6 +864,18 @@ try {
     await page.getByText('MX record').waitFor();
     await page.getByRole('button', { name: 'Mail app settings' }).click();
     await page.getByText(/Server mail\.e2e-host\.net, port 993/).waitFor();
+    // the Mail entry in the sidebar is a link to the webmail, and new mail notifies and opens it
+    const mailLink = page.getByRole('link', { name: /^Mail/ });
+    assert.equal(await mailLink.getAttribute('href'), 'https://mail.e2e-host.net'); assert.equal(await mailLink.getAttribute('target'), '_blank');
+    await ctx.route('https://mail.e2e-host.net/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<title>Webmail</title><p>webmail</p>' }));
+    const rep = await fetch(`${base}/api/mail-notify`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer e2e-notify-secret-123456' },
+      body: JSON.stringify({ address: 'anna@e2e-shop-example.com', messages: [{ id: '1.M1.e2e', from: 'Boss <boss@corp.test>', subject: 'Contract ready' }] }) });
+    assert.equal((await rep.json()).accepted, 1);
+    await page.reload();
+    await page.getByRole('button', { name: /^Notifications, \d+ unread/ }).click();
+    const popup = page.waitForEvent('popup');
+    await page.getByText('New mail from Boss <boss@corp.test>').click();
+    const wm = await popup; await wm.waitForLoadState(); assert.match(wm.url(), /^https:\/\/mail\.e2e-host\.net/); assert.equal(await wm.title(), 'Webmail'); await wm.close();
     await page.getByRole('link', { name: 'Projects', exact: true }).click();
     await page.getByRole('heading', { name: 'Projects', level: 1 }).waitFor();
   });

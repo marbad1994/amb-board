@@ -121,7 +121,7 @@ Do not set `NODE_ENV=production` unless the site is served over HTTPS: productio
 
 ## Mail
 
-Owners and admins can host email for their domains (see `docs/MAIL.md`): attach a domain, prove ownership with DNS, and create mailboxes and aliases. Every member gets a **Mail** page in the sidebar to read and send from their own mailbox with the app's own design, and can optionally encrypt mail end-to-end (OpenPGP) or have a mailbox's stored mail encrypted at rest (Dovecot mail_crypt).
+Owners and admins can host email for their domains (see `docs/MAIL.md`): attach a domain, prove ownership with DNS, and create mailboxes and aliases. Every member gets a **Mail** entry in the sidebar that opens the webmail on your mail host, and the bell announces new mail (sender and subject only) and opens the webmail when clicked. A mailbox's stored mail can be encrypted at rest (Dovecot mail_crypt).
 
 ## Email notifications
 

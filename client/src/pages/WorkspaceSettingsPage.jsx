@@ -331,7 +331,7 @@ function NotificationPrefs() {
   const { user } = useAuth();
   const set = (k, v) => { setMsg(''); setPrefs((p) => ({ ...p, [k]: v })); api.setNotificationPrefs({ [k]: v }).then(setPrefs).catch((e) => { setMsg(e.message); api.notificationPrefs().then(setPrefs).catch(() => {}); }); };
   const test = async () => { setMsg('Sending...'); try { const r = await api.sendTestEmail(); setMsg(`Test email sent to ${r.sent_to}.`); } catch (e) { setMsg(e.message); } };
-  const rows = [['event_reminders', 'Event reminders'], ['task_due', 'Tasks due today or overdue'], ['budget_alerts', 'Budget alerts']];
+  const rows = [['event_reminders', 'Event reminders'], ['task_due', 'Tasks due today or overdue'], ['budget_alerts', 'Budget alerts'], ['mail', 'New mail in your mailboxes (opens the webmail)']];
   return (
     <section className="panel" aria-labelledby="np-h">
       <div className="panel__title"><h2 id="np-h">Notifications</h2></div>

@@ -55,11 +55,11 @@ export async function sendPendingEmails(now = new Date()) {
   if (!mailConfigured() || now.getTime() < backoffUntil) return 0;
   const since = new Date(now.getTime() - LOOKBACK_MS).toISOString();
   const users = db.prepare(`SELECT DISTINCT u.id, u.name, u.email FROM notifications n JOIN users u ON u.id = n.user_id JOIN notification_preferences p ON p.user_id = u.id
-    WHERE p.email = 1 AND n.emailed_at IS NULL AND n.created_at >= p.email_enabled_at AND n.created_at >= ? LIMIT 50`).all(since);
+    WHERE p.email = 1 AND n.kind <> 'mail' AND n.emailed_at IS NULL AND n.created_at >= p.email_enabled_at AND n.created_at >= ? LIMIT 50`).all(since);
   let sent = 0;
   for (const u of users) {
     const items = db.prepare(`SELECT n.id, n.title, n.body, n.link FROM notifications n JOIN notification_preferences p ON p.user_id = n.user_id
-      WHERE n.user_id = ? AND p.email = 1 AND n.emailed_at IS NULL AND n.created_at >= p.email_enabled_at AND n.created_at >= ? ORDER BY n.created_at DESC LIMIT ?`).all(u.id, since, MAX_PER_USER);
+      WHERE n.user_id = ? AND p.email = 1 AND n.kind <> 'mail' AND n.emailed_at IS NULL AND n.created_at >= p.email_enabled_at AND n.created_at >= ? ORDER BY n.created_at DESC LIMIT ?`).all(u.id, since, MAX_PER_USER);
     if (!items.length) continue;
     try {
       await sendMail({ to: u.email, ...renderDigest(u.name, items) });
