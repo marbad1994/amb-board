@@ -25,7 +25,8 @@ const pDomain = (d) => ({ id: d.id, domain: d.domain, verified: !!d.verified_at,
   verify: d.verified_at ? null : { type: 'TXT', name: verifyName(d.domain), value: verifyValue(d.verify_token) },
   accounts: db.prepare('SELECT COUNT(*) AS n FROM mail_accounts WHERE domain_id = ?').get(d.id).n, aliases: db.prepare('SELECT COUNT(*) AS n FROM mail_aliases WHERE domain_id = ?').get(d.id).n });
 const forget = (address) => db.prepare('INSERT OR REPLACE INTO mail_purges (address, requested_at) VALUES (?, ?)').run(address, nowIso());
-const pAccount = (a, use = null) => ({ id: a.id, sent_hour: use?.users?.[`${a.local_part}@${a.domain}`]?.hour ?? null, sent_today: use?.users?.[`${a.local_part}@${a.domain}`]?.day ?? null, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, quota_mb: a.quota_mb, enabled: !!a.enabled, encrypt_at_rest: !!a.encrypt_at_rest, created_at: a.created_at });
+const isMember = (userId, ws) => !!userId && !!db.prepare('SELECT 1 FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(userId, ws);
+const pAccount = (a, use = null) => ({ id: a.id, notify_user_id: a.notify_user_id ?? null, sent_hour: use?.users?.[`${a.local_part}@${a.domain}`]?.hour ?? null, sent_today: use?.users?.[`${a.local_part}@${a.domain}`]?.day ?? null, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, quota_mb: a.quota_mb, enabled: !!a.enabled, encrypt_at_rest: !!a.encrypt_at_rest, created_at: a.created_at });
 const pAlias = (a) => ({ id: a.id, local_part: a.local_part, address: `${a.local_part}@${a.domain}`, destinations: JSON.parse(a.destinations), enabled: !!a.enabled, catch_all: a.local_part === '*', created_at: a.created_at });
 const apply = () => { try { syncMail(); } catch (e) { console.error('mail sync failed:', e.message); } };
 
@@ -33,7 +34,7 @@ router.get('/', (req, res) => {
   const c = mailConfig(); const available = mailAvailable(req.ws.id);
   res.json({ enabled: c.enabled, available, host: c.host, ip: c.ip, limits: { domains: c.maxDomains, accounts: c.maxAccounts, aliases: c.maxAliases },
     sending: { per_mailbox_hour: c.sendPerUserHour, per_mailbox_day: c.sendPerUserDay, per_domain_day: c.sendPerDomainDay, tracked: !!sendUsage() },
-    features: { webmail: c.webmailUrl || null, spam_filter: c.spamFilter, trash_days: c.trashDays },
+    features: { webmail: c.webmailUrl || null, spam_filter: c.spamFilter, trash_days: c.trashDays, new_mail_notifications: c.notifySecret.length >= 16 },
     usage: { domains: count('mail_domains', req.ws.id), accounts: count('mail_accounts', req.ws.id), aliases: count('mail_aliases', req.ws.id) },
     client: { imap: { host: c.host, port: 993, security: 'SSL/TLS' }, smtp: { host: c.host, port: 587, security: 'STARTTLS' } },
     sync: available ? syncStatus() : null,
@@ -98,8 +99,11 @@ router.post('/domains/:id/accounts', off, async (req, res) => {
   const generated = !req.body.password; const password = generated ? generatePassword() : req.body.password;
   const bad = generated ? null : checkPassword(password); if (bad) return res.status(400).json({ error: bad });
   const quota = Math.max(50, Math.min(51200, Math.round(Number(req.body.quota_mb) || 1024)));
+  // who is told about new mail in this mailbox: a member of the workspace, the person creating it unless they choose another
+  const notifyUser = req.body.notify_user_id === undefined ? req.user.id : (req.body.notify_user_id || null);
+  if (notifyUser && !isMember(notifyUser, req.ws.id)) return res.status(400).json({ error: 'The person to notify must be a member of this workspace.' });
   const id = nanoid();
-  db.prepare('INSERT INTO mail_accounts (id, workspace_id, domain_id, local_part, password_hash, quota_mb, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.ws.id, d.id, local, await hashPassword(password), quota, req.user.id, nowIso());
+  db.prepare('INSERT INTO mail_accounts (id, workspace_id, domain_id, local_part, password_hash, quota_mb, created_by, notify_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, req.ws.id, d.id, local, await hashPassword(password), quota, req.user.id, notifyUser, nowIso());
   db.prepare('DELETE FROM mail_purges WHERE address = ?').run(`${local}@${d.domain}`);   // a mailbox that is created again keeps its mail
   audit(req, 'mail.account_create', 'mail_account', id, { address: `${local}@${d.domain}` });
   apply();
@@ -110,8 +114,13 @@ router.patch('/accounts/:id', off, (req, res) => {
   const enabled = req.body.enabled === undefined ? a.enabled : (req.body.enabled ? 1 : 0);
   const quota = req.body.quota_mb === undefined ? a.quota_mb : Math.max(50, Math.min(51200, Math.round(Number(req.body.quota_mb) || a.quota_mb)));
   const encrypt = req.body.encrypt_at_rest === undefined ? a.encrypt_at_rest : (req.body.encrypt_at_rest ? 1 : 0);
-  db.prepare('UPDATE mail_accounts SET enabled = ?, quota_mb = ?, encrypt_at_rest = ? WHERE id = ?').run(enabled, quota, encrypt, a.id);
-  audit(req, 'mail.account_update', 'mail_account', a.id, { address: `${a.local_part}@${a.domain}`, enabled: !!enabled, quota_mb: quota, encrypt_at_rest: !!encrypt });
+  let notifyUser = a.notify_user_id;
+  if (req.body.notify_user_id !== undefined) {
+    notifyUser = req.body.notify_user_id || null;
+    if (notifyUser && !isMember(notifyUser, req.ws.id)) return res.status(400).json({ error: 'The person to notify must be a member of this workspace.' });
+  }
+  db.prepare('UPDATE mail_accounts SET enabled = ?, quota_mb = ?, encrypt_at_rest = ?, notify_user_id = ? WHERE id = ?').run(enabled, quota, encrypt, notifyUser, a.id);
+  audit(req, 'mail.account_update', 'mail_account', a.id, { address: `${a.local_part}@${a.domain}`, enabled: !!enabled, quota_mb: quota, encrypt_at_rest: !!encrypt, notify_user_id: notifyUser });
   apply();
   res.json(pAccount({ ...db.prepare('SELECT * FROM mail_accounts WHERE id = ?').get(a.id), domain: a.domain }));
 });

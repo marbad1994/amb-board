@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Layers, FolderKanban, StickyNote, Settings, Sun, ListChecks, Calendar, Landmark,
   NotebookPen, Sparkles, Menu, LogOut, ChevronDown, X, Check, Plus, Target, FileText, BarChart3,
-  Workflow, Mail,
+  Workflow, Mail, ExternalLink,
 } from 'lucide-react';
 import { useAuth, canWrite } from '../context/AuthContext.jsx';
 import SearchBox from './SearchBox.jsx';
@@ -24,7 +24,7 @@ const NAV = [
     { to: '/ideas', icon: StickyNote, text: 'Idea Board' },
     { to: '/calendar', icon: Calendar, text: 'Calendar' },
     { to: '/automations', icon: Workflow, text: 'Automations' },
-    { to: '/mail', icon: Mail, text: 'Mail', mail: true },
+    { icon: Mail, text: 'Mail', mail: true },   // opens the webmail of the mail host
   ] },
   { label: 'Personal', items: [
     { to: '/finance', icon: Landmark, text: 'Finance & Budget' },
@@ -109,8 +109,12 @@ export default function AppShell({ children }) {
           {NAV.map((group) => (
             <div key={group.label}>
               <div className="sidebar__group">{group.label.toUpperCase()}</div>
-              {group.items.filter((it) => !it.mail || active?.mail).map(({ to, icon: Icon, text, end }) =>
-                to ? (
+              {group.items.filter((it) => !it.mail || active?.mail).map(({ to, icon: Icon, text, end, mail }) =>
+                mail ? (
+                  <a key={text} href={active.mail} target="_blank" rel="noopener noreferrer" className="sidebar__link">
+                    <Icon size={18} aria-hidden="true" /> {text} <ExternalLink size={13} aria-hidden="true" className="sidebar__ext" /><span className="sr-only"> (opens the webmail in a new tab)</span>
+                  </a>
+                ) : to ? (
                   <NavLink key={text} to={to} end={end} className={({ isActive }) => `sidebar__link ${isActive ? 'active' : ''}`}>
                     <Icon size={18} aria-hidden="true" /> {text}
                   </NavLink>

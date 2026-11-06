@@ -11,7 +11,7 @@ import lifeAreasRouter from './routes/lifeAreas.js';
 import dashboardRouter from './routes/dashboard.js';
 import oauthCallbackRouter from './routes/oauthCallback.js';
 import mailRouter from './routes/mail.js';
-import webmailRouter from './routes/webmail.js';
+import mailNotifyRouter from './routes/mailNotify.js';
 import financeRouter, { projectFinanceRouter } from './routes/finance.js';
 import calendarRouter from './routes/calendar.js';
 import goalsRouter, { projectGoalsRouter } from './routes/goals.js';
@@ -49,13 +49,15 @@ export function createApp() {
   app.use(securityHeaders);
   // Credentialed cross-origin access is opt-in (dev proxies are same-origin and need none).
   if (process.env.CORS_ORIGIN) app.use(cors({ origin: process.env.CORS_ORIGIN.split(','), credentials: true }));
-  app.use(express.json({ limit: '16mb' }));
+  app.use(express.json({ limit: '1mb' }));
   app.use('/api', originCheck);
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRouter);
   // MCP authenticates with its own bearer token, not the session cookie (and is exempt from the Origin check: no cookies involved).
   app.use('/api/mcp', mcpRouter);
+  // new-mail reports from the mail server: a shared secret, no cookies
+  app.use('/api/mail-notify', mailNotifyRouter);
   // the browser extension: bearer pairing token, no cookies
   app.use('/api/browser-ext', extRouter);
 
@@ -67,10 +69,6 @@ export function createApp() {
 
   // Notifications: workspace-scoped, but every member (viewers too) manages their own.
   app.use('/api/notifications', requireWorkspace, notificationsRouter);
-
-  // Webmail: workspace-scoped and personal (each member reads their own mailbox), so it does not
-  // go through the workspace write gate; the router enforces its own per-user checks.
-  app.use('/api/webmail', requireWorkspace, webmailRouter);
 
   // Everything below is scoped to one workspace and permission-checked by HTTP method.
   app.use('/api', requireWorkspace, methodPermission);

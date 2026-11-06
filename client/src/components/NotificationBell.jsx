@@ -29,7 +29,8 @@ export default function NotificationBell() {
   const go = async (n) => {
     setOpen(false);
     if (!n.read_at) api.readNotification(n.id).then(setData).catch(() => {});
-    if (n.link) navigate(n.link);
+    if (/^https?:\/\//i.test(n.link || '')) window.open(n.link, '_blank', 'noopener,noreferrer');   // new mail opens the webmail
+    else if (n.link) navigate(n.link);
   };
 
   return (

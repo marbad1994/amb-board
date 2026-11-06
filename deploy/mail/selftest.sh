@@ -68,6 +68,34 @@ PY
 kill "$pol" 2>/dev/null; rm -rf "$t3"
 [ "$out" = "action=dunno,action=dunno,action=450 4.7.,action=dunno,action=dunno" ] || { echo "FAIL: sending limits: $out"; fail=1; }
 
+
+# ---- the new-mail watcher: silent baseline, reports headers only, retries when AMB Board is unreachable
+python3 - "$here/amb-mail-notify" <<'PY' || { echo "FAIL: new-mail watcher"; fail=1; }
+import http.server, json, os, subprocess, sys, tempfile, threading
+exe = sys.argv[1]; t = tempfile.mkdtemp(); vm = t + '/vmail'; new = vm + '/good.org/me/new'; os.makedirs(new); os.makedirs(vm + '/good.org/me/.Junk/new')
+got = []; status = [200]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        got.append((self.headers['authorization'], json.loads(self.rfile.read(int(self.headers['content-length'])))))
+        self.send_response(status[0]); self.end_headers(); self.wfile.write(b'{}')
+    def log_message(self, *a): pass
+srv = http.server.HTTPServer(('127.0.0.1', 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
+cfg = t + '/c.json'; json.dump({'url': 'http://127.0.0.1:%d/x' % srv.server_port, 'secret': 'S3cret-value-123456'}, open(cfg, 'w'))
+open(new + '/1.M1', 'w').write('From: Old <old@x.org>\nSubject: before\n\nbody')
+run = lambda: subprocess.run([exe, '--config', cfg, '--vmail', vm, '--state', t + '/seen.json', '--once'], capture_output=True, text=True)
+assert run().stdout.strip() == '0' and not got, 'the first run must stay silent'
+open(new + '/2.M2', 'w').write('From: =?utf-8?q?J=C3=BCrgen?= <j@x.org>\nSubject: =?utf-8?q?Gr=C3=BC=C3=9Fe?=\n\nsecret body text')
+open(new + '/3.M3', 'w').write('garbled ciphertext'); open(vm + '/good.org/me/.Junk/new/9.M9', 'w').write('From: spam\nSubject: junk\n\n')
+run(); auth, b = got[0]
+assert auth == 'Bearer S3cret-value-123456' and b['address'] == 'me@good.org', 'address and secret'
+assert [(m['from'], m['subject']) for m in b['messages']] == [('Jürgen <j@x.org>', 'Grüße'), ('', '')], 'decoded headers, unreadable mail without details'
+assert 'secret body' not in json.dumps(b), 'the body must never be sent'
+run(); assert len(got) == 1, 'a message is reported once'
+status[0] = 500; open(new + '/4.M4', 'w').write('From: C <c@x.org>\nSubject: later\n\n'); run(); status[0] = 200; run()
+assert [m['id'] for m in got[-1][1]['messages']] == ['4.M4'], 'retried after a failure'
+os.remove(cfg); assert run().returncode == 1, 'no configuration is an error'
+PY
+
 rm -rf "$t"
 [ "$fail" = 0 ] && echo "amb-mail-sync selftest: all refusals work"
 exit "$fail"

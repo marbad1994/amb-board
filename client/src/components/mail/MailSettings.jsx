@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, Globe, KeyRound, Mail, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '../../api/client.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 const STATUS = { ok: ['Correct', 'status-done'], missing: ['Missing', ''], mismatch: ['Needs attention', ''] };
 
@@ -28,8 +29,9 @@ function OnceBox({ what, password, onClose }) {
 function Mailboxes({ d, info, reload }) {
   const [list, setList] = useState(null); const [form, setForm] = useState({ local_part: '', password: '', quota_mb: 1024 });
   const [once, setOnce] = useState(null); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
+  const { active } = useAuth(); const [members, setMembers] = useState([]);
   const load = () => api.mailAccounts(d.id).then(setList).catch((e) => setErr(e.message));
-  useEffect(() => { load(); }, [d.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); api.listMembers(active.id).then(setMembers).catch(() => {}); }, [d.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const add = async (e) => {
     e.preventDefault(); setBusy(true); setErr('');
     try { const r = await api.mailAddAccount(d.id, { ...form, password: form.password || undefined }); setForm({ local_part: '', password: '', quota_mb: 1024 }); if (r.password) setOnce({ what: `Mailbox ${r.address} created.`, password: r.password }); load(); reload(); }
@@ -45,6 +47,11 @@ function Mailboxes({ d, info, reload }) {
         <ul className="plain-list" aria-label={`Mailboxes of ${d.domain}`}>{list.map((a) => (
           <li key={a.id}><span><b>{a.address}</b> {!a.enabled && <span className="badge">Login off</span>} {a.encrypt_at_rest && <span className="badge status-done">Encrypted at rest</span>}<br /><small className="muted">{a.quota_mb} MB{a.sent_today !== null && ` · sent ${a.sent_today} today (limit ${info.sending.per_mailbox_day})`}</small></span>
             <span className="mail-actions">
+              {info.features.new_mail_notifications && (
+                <label className="mail-notify"><span>Tell</span>
+                  <select aria-label={`Who is told about new mail in ${a.address}`} value={a.notify_user_id || ''} onChange={(e) => act(() => api.mailUpdateAccount(a.id, { notify_user_id: e.target.value || null }))}>
+                    <option value="">nobody</option>{members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+              )}
               <button type="button" className="btn btn-small" onClick={() => act(() => api.mailUpdateAccount(a.id, { encrypt_at_rest: !a.encrypt_at_rest }))}>{a.encrypt_at_rest ? 'Encryption on' : 'Encrypt at rest'}</button>
               <button type="button" className="btn btn-small" onClick={() => act(() => api.mailUpdateAccount(a.id, { enabled: !a.enabled }))}>{a.enabled ? 'Turn login off' : 'Turn login on'}</button>
               <button type="button" className="btn btn-small" onClick={async () => { if (!window.confirm(`Set a new password for ${a.address}? The old one stops working.`)) return; setErr(''); try { const r = await api.mailAccountPassword(a.id); setOnce({ what: `New password for ${a.address}.`, password: r.password }); } catch (x) { setErr(x.message); } }}><KeyRound size={14} aria-hidden="true" /> New password</button>

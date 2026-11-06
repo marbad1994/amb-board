@@ -75,16 +75,24 @@ All mailboxes of all workspaces send from one server address, so one careless se
 - **Authentication**: DKIM per domain, SPF and DMARC records are required and checked in the DNS tab.
 - Separate addresses per workspace are not possible on one IP. If one workspace needs its own reputation, give it its own server.
 
-## In-app webmail
+## Reading mail: the webmail, not a mail client inside AMB Board
 
-Every member (not just owners and admins) gets a **Mail** entry in the sidebar. It reads and sends from their own mailbox through the app's navy/teal design. Under the hood the AMB Board server relays IMAP (port 993) and SMTP (port 587) to the same Dovecot/Postfix the helper configured, using the member's mailbox address and password. The password is kept only for the connected mailbox, stored encrypted at rest (AES-256-GCM, the same `SECRETS_KEY` / `.secret-key` mechanism as connected tools), and removed when the member disconnects. No message is stored in AMB Board's database.
+AMB Board does not read or send mail itself. Everyone reads mail in the webmail on the mail host (`https://mail.example.com/`, below). Every member gets a **Mail** entry in the sidebar that opens it in a new tab (it needs `MAIL_WEBMAIL_URL`; without it the entry is hidden). Members log in there with their own address and mailbox password, so AMB Board never holds a mailbox password. (An earlier built-in mail client was removed: its stored passwords and OpenPGP key tables are deleted by migration 025.)
 
-## Encryption
+## New-mail notifications
 
-Two independent options:
+The bell in AMB Board announces new mail, and clicking it opens the webmail.
 
-- **End-to-end per message (OpenPGP).** In Mail → Encryption a member generates or imports a key. The private key is passphrase-protected in the browser and stored encrypted at rest; the public key is shared in the workspace's key directory. When composing, an "Encrypt & sign" toggle encrypts the body to the recipients' public keys and signs it with the sender's key; the reader decrypts with their passphrase. The subject line and attachments are not encrypted by this option. Keys and encryption run in the browser (openpgp.js); the server only ever sees ciphertext and the passphrase-protected key blob.
-- **Encrypt at rest (Dovecot mail_crypt).** An owner or admin can turn on "Encrypt at rest" per mailbox in **Workspace & account → Email**. The mailbox's stored mail is then encrypted on the server disk. `setup-mail.sh` generates a global mail_crypt key and the sync helper enables the plugin per mailbox in the Dovecot userdb, so mail is encrypted for those mailboxes on delivery. This protects against someone reading the disk, not against the server itself.
+- `amb-mail-notify` runs on the mail server as the mail user. Every 15 seconds it looks at each mailbox's unread folder and reports new messages to AMB Board (`POST /api/mail-notify`, protected by a shared secret): the mailbox address and, per message, the **sender and subject only**. The message body never leaves the mail server. Spam goes to Junk and is not reported. The first run only records what is already there.
+- Mailboxes encrypted at rest cannot be read by the watcher, so those notify without sender and subject.
+- Each mailbox is assigned to one workspace member (the person who created it, changeable per mailbox under **Workspace & account, Email, Mailboxes, Tell**). Only that member is notified. Several messages at once become three notifications and one line for the rest.
+- Every member can switch these off under **Notifications** (New mail). They are never emailed (no email about email).
+- Setup: `setup-mail.sh` creates the shared secret in `/etc/amb-mail/notify.conf`, starts the service and prints `MAIL_NOTIFY_SECRET=...` for `server/.env`. If AMB Board does not listen on port 3417 on this server, run the script with `AMB_PORT=...` or `AMB_URL=http://127.0.0.1:PORT`. Without the secret in `.env` the endpoint is off and notifications do not arrive.
+- If a message is read in a phone app with a permanent connection before the watcher looks (within seconds), it is not announced; the phone showed it anyway.
+
+## Encryption at rest
+
+An owner or admin can turn on "Encrypt at rest" per mailbox in **Workspace & account, Email**. The mailbox's stored mail is then encrypted on the server disk (Dovecot mail_crypt). `setup-mail.sh` generates a global mail_crypt key and the sync helper enables the plugin per mailbox in the Dovecot userdb, so mail is encrypted for those mailboxes on delivery. This protects against someone reading the disk, not against the server itself.
 
 ## Webmail (Roundcube, optional)
 

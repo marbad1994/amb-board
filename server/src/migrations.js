@@ -642,7 +642,19 @@ export const migrations = [
   { id: '022_mail_purges', up: (db) => db.exec(mailPurges) },
   { id: '023_idea_reactions', up: (db) => db.exec(ideaReactions) },
   { id: '024_webmail', up: (db) => db.exec(webmail) },
+  { id: '025_mail_notify', up: (db) => db.exec(mailNotify) },
 ];
+
+// The built-in mail client is gone (mail is read in the webmail on the mail host), so its stored mailbox passwords and keys are deleted.
+// A mailbox now says which member is told about new mail; "mail" is a notification preference like the others.
+const mailNotify = `
+DROP TABLE IF EXISTS webmail_sessions;
+DROP TABLE IF EXISTS mail_public_keys;
+DROP TABLE IF EXISTS mail_keys;
+ALTER TABLE mail_accounts ADD COLUMN notify_user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+UPDATE mail_accounts SET notify_user_id = created_by;
+ALTER TABLE notification_preferences ADD COLUMN mail INTEGER NOT NULL DEFAULT 1;
+`;
 
 const mailPurges = `
 CREATE TABLE mail_purges (address TEXT PRIMARY KEY, requested_at TEXT NOT NULL);

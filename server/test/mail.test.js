@@ -160,3 +160,50 @@ test('deleted mailboxes are queued for removal from disk, a re-created one keeps
   assert.equal((await u.c.get('/api/mail')).json.sending.tracked, true);
   delete process.env.MAIL_WEBMAIL_URL; delete process.env.MAIL_SEND_PER_USER_HOUR; delete process.env.MAIL_TRASH_DAYS;
 });
+
+test('new mail: a shared secret reports it, the assigned member gets a notification that opens the webmail, nothing is mailed back', async () => {
+  const note = (secret, body) => fetch(`${srv.base}/api/mail-notify`, { method: 'POST', headers: { 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify(body) });
+  delete process.env.MAIL_NOTIFY_SECRET; process.env.MAIL_WEBMAIL_URL = 'https://mail.hosting.net/';
+  assert.equal((await note('whatever-secret-value-123', { address: 'a@b.org', messages: [] })).status, 404, 'off until a secret is configured');
+  const SECRET = 'a-long-shared-secret-value'; process.env.MAIL_NOTIFY_SECRET = SECRET;
+
+  const owner = await signUp(srv.base, 'MailNote'); const team = (await owner.c.post('/api/workspaces', { name: 'Mail team' })).json; owner.c.useWorkspace(team.id);
+  const mate = await signUp(srv.base, 'MailMate'); const outsider = await signUp(srv.base, 'MailOutsider');
+  const inv = await owner.c.post(`/api/workspaces/${team.id}/invitations`, { email: mate.email, role: 'member' });
+  await mate.c.post('/api/invitations/accept', { token: inv.json.token }); mate.c.useWorkspace(team.id);
+  const d = await verified(owner, 'notify.io'); const box = (await owner.c.post(`/api/mail/domains/${d.id}/accounts`, { local_part: 'anna' })).json;
+  assert.equal(box.notify_user_id, owner.user.id, 'the creator is told by default');
+  const list = async (u) => (await u.c.get('/api/notifications')).json.items.filter((n) => n.kind === 'mail');
+
+  assert.equal((await note(null, { address: 'anna@notify.io', messages: [{ id: 'x1' }] })).status, 401);
+  assert.equal((await note('wrong-secret-value-12345', { address: 'anna@notify.io', messages: [{ id: 'x1' }] })).status, 401);
+  assert.equal((await (await note(SECRET, { address: 'nobody@notify.io', messages: [{ id: 'x1', from: 'A' }] })).json()).accepted, 0, 'an unknown mailbox is ignored');
+  assert.equal((await (await note(SECRET, { address: 'anna@unknown.org', messages: [{ id: 'x1', from: 'A' }] })).json()).accepted, 0);
+
+  const first = await (await note(SECRET, { address: 'Anna@Notify.io', messages: [{ id: '1700000000.M1.mail', from: 'Boss <boss@corp.org>', subject: 'Contract\nready' }] })).json();
+  assert.equal(first.accepted, 1);
+  const n = (await list(owner))[0]; assert.equal(n.title, 'New mail from Boss <boss@corp.org>'); assert.equal(n.body, 'Contract ready - anna@notify.io'); assert.equal(n.link, 'https://mail.hosting.net', 'a click opens the webmail');
+  assert.equal((await (await note(SECRET, { address: 'anna@notify.io', messages: [{ id: '1700000000.M1.mail', from: 'Boss' }] })).json()).accepted, 0, 'the same message is not announced twice');
+  assert.equal((await list(mate)).length, 0, 'only the assigned member is told');
+
+  const many = await (await note(SECRET, { address: 'anna@notify.io', messages: ['a', 'b', 'c', 'd', 'e'].map((x) => ({ id: `m-${x}`, from: x, subject: x })) })).json();
+  assert.equal(many.accepted, 4, 'three individually, then one line for the rest');
+  assert.ok((await list(owner)).some((x) => x.title === '2 more new messages'));
+  const odd = await (await note(SECRET, { address: 'anna@notify.io', messages: [{ id: 'bad id with spaces' }, { id: '../etc' }, { subject: 'no id' }] })).json(); assert.equal(odd.accepted, 0, 'ids that cannot be trusted are dropped');
+
+  // assign the mailbox to someone else, only a member of the workspace
+  assert.equal((await owner.c.patch(`/api/mail/accounts/${box.id}`, { notify_user_id: outsider.user.id })).status, 400);
+  assert.equal((await owner.c.patch(`/api/mail/accounts/${box.id}`, { notify_user_id: mate.user.id })).json.notify_user_id, mate.user.id);
+  await note(SECRET, { address: 'anna@notify.io', messages: [{ id: 'for-mate', from: 'Client' }] });
+  assert.equal((await list(mate))[0].title, 'New mail from Client');
+  // a member can mute these
+  assert.equal((await mate.c.put('/api/notifications/preferences', { mail: false })).json.mail, false);
+  const muted = await (await note(SECRET, { address: 'anna@notify.io', messages: [{ id: 'quiet', from: 'Spam' }] })).json(); assert.equal(muted.accepted, 0); assert.equal(muted.muted, true);
+
+  // the sidebar entry is the webmail address; it is gone when there is none; the built-in client no longer exists
+  assert.equal((await owner.c.get('/api/workspaces')).json.find((w) => w.id === team.id).mail, 'https://mail.hosting.net');
+  delete process.env.MAIL_WEBMAIL_URL; assert.equal((await owner.c.get('/api/workspaces')).json.find((w) => w.id === team.id).mail, null);
+  assert.equal((await owner.c.get('/api/webmail/session')).status, 404); assert.equal((await owner.c.get('/api/webmail/folders')).status, 404);
+  for (const t of ['webmail_sessions', 'mail_keys', 'mail_public_keys']) assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name = ?").get(t).n, 0, `${t} was dropped`);
+  delete process.env.MAIL_NOTIFY_SECRET;
+});

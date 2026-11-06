@@ -11,6 +11,7 @@ export const mailConfig = () => ({
   maxDomains: Number(process.env.MAIL_MAX_DOMAINS) || 3,
   maxAccounts: Number(process.env.MAIL_MAX_ACCOUNTS) || 25,
   maxAliases: Number(process.env.MAIL_MAX_ALIASES) || 100,
+  notifySecret: (process.env.MAIL_NOTIFY_SECRET || '').trim(),                              // shared with amb-mail-notify, which reports new mail
   webmailUrl: (process.env.MAIL_WEBMAIL_URL || '').trim().replace(/\/$/, ''),
   spamFilter: process.env.MAIL_SPAM_FILTER !== 'false',                                   // informational: the filter itself is installed by setup-mail.sh
   trashDays: Math.max(1, Number(process.env.MAIL_TRASH_DAYS) || 14),                       // deleted mailboxes are removed from disk after this many days
@@ -21,3 +22,6 @@ export const mailConfig = () => ({
   workspaces: (process.env.MAIL_WORKSPACE_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
 });
 export const mailAvailable = (wsId) => { const c = mailConfig(); return c.enabled && (c.workspaces.length === 0 || c.workspaces.includes(wsId)); };
+
+// Where the Mail entry in the sidebar goes: the webmail of the mail host. null = no entry.
+export const webmailLink = (wsId) => (mailAvailable(wsId) && mailConfig().webmailUrl) || null;

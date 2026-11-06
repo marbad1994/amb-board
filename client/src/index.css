@@ -2856,3 +2856,7 @@ a.stat-card.stat-card--alert .stat-card__sub { color: var(--color-danger-text); 
 @media (min-width: 901px) {
   .wm-back { display: none; }
 }
+.sidebar__ext { margin-left: auto; opacity: .6; }
+.mail-notify { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-muted); }
+.mail-notify select { min-height: 32px; max-width: 160px; }
+@media (max-width: 720px) { .mail-notify select { min-height: 44px; } }

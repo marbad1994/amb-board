@@ -248,8 +248,26 @@ install -d -o "$APP_USER" -m 0750 "$MAIL_DIR" "$MAIL_DIR/in" "$MAIL_DIR/in/dkim"
 install -d -o root -m 0755 "$MAIL_DIR/out"
 install -m 0755 "$HERE/amb-mail-sync" /usr/local/sbin/amb-mail-sync
 install -m 0755 "$HERE/amb-mail-policy" /usr/local/sbin/amb-mail-policy
+install -m 0755 "$HERE/amb-mail-notify" /usr/local/sbin/amb-mail-notify
 install -d -m 0755 /etc/amb-mail
 ln -sfn /var/lib/amb-mail-policy/usage.json "$MAIL_DIR/out/usage.json"      # AMB Board shows how much each mailbox sent
+# new-mail reports to AMB Board: the shared secret is created once and kept; AMB_URL is where AMB Board listens on this server
+NOTIFY_CONF=/etc/amb-mail/notify.conf
+if [ -f "$NOTIFY_CONF" ]; then NOTIFY_SECRET="$(python3 -c 'import json; print(json.load(open("/etc/amb-mail/notify.conf"))["secret"])')"; else NOTIFY_SECRET="$(openssl rand -hex 24)"; fi
+printf '{"url": "%s", "secret": "%s"}\n' "${AMB_URL:-http://127.0.0.1:${AMB_PORT:-3417}}/api/mail-notify" "$NOTIFY_SECRET" > "$NOTIFY_CONF"
+chown root:vmail "$NOTIFY_CONF"; chmod 640 "$NOTIFY_CONF"
+cat > /etc/systemd/system/amb-mail-notify.service <<UNIT
+[Unit]
+Description=Tell AMB Board about new mail
+After=network.target dovecot.service
+[Service]
+User=vmail
+StateDirectory=amb-mail-notify
+ExecStart=/usr/local/sbin/amb-mail-notify
+Restart=always
+[Install]
+WantedBy=multi-user.target
+UNIT
 cat > /etc/systemd/system/amb-mail-policy.service <<UNIT
 [Unit]
 Description=Sending limits per mailbox and domain for AMB Board email hosting
@@ -282,7 +300,7 @@ UNIT
 mkdir -p /etc/letsencrypt/renewal-hooks/deploy
 printf '#!/bin/sh\nsystemctl reload postfix dovecot\n' > /etc/letsencrypt/renewal-hooks/deploy/amb-mail.sh; chmod 755 /etc/letsencrypt/renewal-hooks/deploy/amb-mail.sh
 systemctl daemon-reload
-systemctl enable --now amb-mail-sync.path amb-mail-policy.service >/dev/null
+systemctl enable --now amb-mail-sync.path amb-mail-policy.service amb-mail-notify.service >/dev/null
 systemctl enable opendkim dovecot postfix rspamd redis-server >/dev/null
 # check before starting, so a mistake is reported with its file and line instead of "the service failed"
 doveconf -n >/dev/null || die "Dovecot rejected its configuration (the message above names the file and line)"
@@ -416,6 +434,7 @@ Mail server ready. Now:
        MAIL_HOST=${MAIL_HOST}
        MAIL_DIR=${MAIL_DIR}
        MAIL_SERVER_IP=${SHOW_IP}
+       MAIL_NOTIFY_SECRET=${NOTIFY_SECRET}
 ${SHOW_WEBMAIL}
   2. In AMB Board: Settings, Email, attach your domain, add the TXT record it shows, then follow the DNS records list.
   3. Make sure ports 25, 587 and 993 are open at your hosting provider's firewall too, and ask them to set reverse DNS (PTR) for this

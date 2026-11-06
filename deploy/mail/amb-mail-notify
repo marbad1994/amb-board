@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Tells AMB Board when new mail arrives, so it can notify the person (and open the webmail).
+
+Runs as the mail user (vmail). Every few seconds it looks at the unread folder (new/) of each mailbox under /var/vmail and reports
+messages it has not reported before: the mailbox address, and for each message the sender and subject (the headers only, never the
+body). Spam is filed into Junk by a Sieve rule, so it is not in new/ and not reported. Mailboxes encrypted at rest cannot be read here,
+so those are reported without sender and subject. AMB Board checks the shared secret in /etc/amb-mail/notify.conf.
+The first run records what is already there without reporting it. --once is for tests.
+"""
+import argparse, json, os, sys, time, urllib.error, urllib.request
+from email import message_from_binary_file, policy
+from email.header import decode_header, make_header
+
+BATCH = 20
+
+
+def read_headers(path):
+    try:
+        with open(path, 'rb') as f:
+            msg = message_from_binary_file(f, policy=policy.default)
+        out = {}
+        for k in ('From', 'Subject'):
+            v = msg.get(k)
+            out[k.lower()] = ' '.join(str(make_header(decode_header(str(v)))).split())[:300] if v else ''
+        # encrypted or garbled files give no usable header: report them without details
+        if not out['from'] and not out['subject']:
+            return {'from': '', 'subject': ''}
+        return {'from': out['from'], 'subject': out['subject']}
+    except Exception:  # noqa
+        return {'from': '', 'subject': ''}
+
+
+def mailboxes(vmail):
+    try:
+        domains = [d for d in os.listdir(vmail) if not d.startswith('.')]
+    except OSError:
+        return
+    for d in sorted(domains):
+        dp = os.path.join(vmail, d)
+        if not os.path.isdir(dp):
+            continue
+        for u in sorted(os.listdir(dp)):
+            new = os.path.join(dp, u, 'new')
+            if not u.startswith('.') and os.path.isdir(new):
+                yield '%s@%s' % (u, d), new
+
+
+def post(cfg, address, items):
+    body = json.dumps({'address': address, 'messages': items}).encode()
+    req = urllib.request.Request(cfg['url'], data=body, method='POST', headers={'content-type': 'application/json', 'authorization': 'Bearer ' + cfg['secret']})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return 200 <= r.status < 300
+
+
+def scan(cfg, vmail, state_file):
+    first = not os.path.exists(state_file)
+    try:
+        seen = json.load(open(state_file)) if not first else {}
+    except (OSError, ValueError):
+        seen, first = {}, True
+    now_seen, sent = {}, 0
+    for address, new in mailboxes(vmail):
+        try:
+            names = sorted(n for n in os.listdir(new) if not n.startswith('.'))
+        except OSError:
+            continue
+        old = set(seen.get(address, []))
+        fresh = [n for n in names if n not in old]
+        if first or not fresh:
+            now_seen[address] = names
+            continue
+        fresh.sort(key=lambda n: os.path.getmtime(os.path.join(new, n)) if os.path.exists(os.path.join(new, n)) else 0)
+        items = [dict(id=n, **read_headers(os.path.join(new, n))) for n in fresh[:BATCH]]
+        try:
+            ok = post(cfg, address, items)
+        except urllib.error.HTTPError as e:
+            ok = 400 <= e.code < 500 and e.code not in (401, 404, 429)   # a bad request will not get better; auth or load problems are retried
+            print('amb-mail-notify: %s answered %s' % (address, e.code), file=sys.stderr, flush=True)
+        except Exception as e:  # noqa
+            ok = False
+            print('amb-mail-notify: %s: %s' % (address, e), file=sys.stderr, flush=True)
+        if ok:
+            now_seen[address] = names
+            sent += len(items)
+        else:
+            now_seen[address] = sorted(old & set(names))   # not marked as reported: tried again next time
+    tmp = state_file + '.tmp'
+    os.makedirs(os.path.dirname(state_file), exist_ok=True)
+    with open(tmp, 'w') as f:
+        json.dump(now_seen, f)
+    os.replace(tmp, state_file)
+    return sent
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--config', default='/etc/amb-mail/notify.conf')
+    ap.add_argument('--vmail', default='/var/vmail')
+    ap.add_argument('--state', default='/var/lib/amb-mail-notify/seen.json')
+    ap.add_argument('--interval', type=int, default=15)
+    ap.add_argument('--once', action='store_true')
+    a = ap.parse_args()
+    while True:
+        try:
+            cfg = json.load(open(a.config))
+            if not (cfg.get('url') and cfg.get('secret')):
+                raise ValueError('url and secret are required')
+            n = scan(cfg, a.vmail, a.state)
+            if a.once:
+                print(n)
+        except Exception as e:  # noqa
+            print('amb-mail-notify: %s' % e, file=sys.stderr, flush=True)
+            if a.once:
+                sys.exit(1)
+        if a.once:
+            return
+        time.sleep(a.interval)
+
+
+if __name__ == '__main__':
+    main()

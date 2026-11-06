@@ -25,9 +25,9 @@ router.post('/:id/read', (req, res) => {
   res.json(list(req));
 });
 
-const PREF_KEYS = ['event_reminders', 'task_due', 'budget_alerts', 'email'];
+const PREF_KEYS = ['event_reminders', 'task_due', 'budget_alerts', 'mail', 'email'];
 const prefs = (userId) => {
-  const r = db.prepare('SELECT event_reminders, task_due, budget_alerts, email FROM notification_preferences WHERE user_id = ?').get(userId) || { event_reminders: 1, task_due: 1, budget_alerts: 1, email: 0 };
+  const r = db.prepare('SELECT event_reminders, task_due, budget_alerts, mail, email FROM notification_preferences WHERE user_id = ?').get(userId) || { event_reminders: 1, task_due: 1, budget_alerts: 1, mail: 1, email: 0 };
   return { ...Object.fromEntries(PREF_KEYS.map((k) => [k, !!r[k]])), email_available: mailConfigured() };
 };
 router.get('/preferences', (req, res) => res.json(prefs(req.user.id)));
@@ -37,10 +37,10 @@ router.put('/preferences', (req, res) => {
   if (cur.email && !mailConfigured()) return res.status(409).json({ error: 'Email delivery is not set up on this server yet. Ask the server administrator to add the SMTP settings.' });
   const was = db.prepare('SELECT email FROM notification_preferences WHERE user_id = ?').get(req.user.id)?.email;
   // only notifications created after email is switched on are sent, so turning it on never floods the inbox with old ones
-  db.prepare(`INSERT INTO notification_preferences (user_id, event_reminders, task_due, budget_alerts, email, email_enabled_at) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT (user_id) DO UPDATE SET event_reminders = excluded.event_reminders, task_due = excluded.task_due, budget_alerts = excluded.budget_alerts, email = excluded.email,
+  db.prepare(`INSERT INTO notification_preferences (user_id, event_reminders, task_due, budget_alerts, mail, email, email_enabled_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (user_id) DO UPDATE SET event_reminders = excluded.event_reminders, task_due = excluded.task_due, budget_alerts = excluded.budget_alerts, mail = excluded.mail, email = excluded.email,
       email_enabled_at = CASE WHEN excluded.email = 1 AND COALESCE(notification_preferences.email, 0) = 0 THEN excluded.email_enabled_at ELSE notification_preferences.email_enabled_at END`)
-    .run(req.user.id, +cur.event_reminders, +cur.task_due, +cur.budget_alerts, +cur.email, cur.email && !was ? nowIso() : null);
+    .run(req.user.id, +cur.event_reminders, +cur.task_due, +cur.budget_alerts, +cur.mail, +cur.email, cur.email && !was ? nowIso() : null);
   res.json(prefs(req.user.id));
 });
 
