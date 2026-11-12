@@ -123,6 +123,10 @@ Do not set `NODE_ENV=production` unless the site is served over HTTPS: productio
 
 Owners and admins can host email for their domains (see `docs/MAIL.md`): attach a domain, prove ownership with DNS, and create mailboxes and aliases. Every member gets a **Mail** entry in the sidebar that opens the webmail on your mail host, and the bell announces new mail (sender and subject only) and opens the webmail when clicked. A mailbox's stored mail can be encrypted at rest (Dovecot mail_crypt).
 
+## Push notes
+
+A tester can be emailed a plain-language "what to test" summary whenever a project checked out on this server changes: see `docs/PUSH-NOTES.md` and `deploy/push-notes/install.sh`.
+
 ## Email notifications
 
 Set the SMTP values in `server/.env` (see `server/.env.example`; Zoho EU: `smtppro.zoho.eu`, port 465, SSL, sender `admin@makketing.com`, `SMTP_USER` is the full mailbox address and `SMTP_PASS` its password or application-specific password). Restart with `sudo bash deploy.sh`. Each person then turns on "Also email me these notifications" under Workspace & account and can send themselves a test email. Only notifications created after they turn it on are mailed.
